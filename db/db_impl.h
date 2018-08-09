@@ -75,7 +75,7 @@ class DBImpl : public DB {
 
   Status NewDB();
 
-  // Recover the descriptor from persistent storage.  May do a significant
+  // Recover the descriptor(MANIFEST) from persistent storage.  May do a significant
   // amount of work to recover recently logged updates.  Any changes to
   // be made to the descriptor are added to *edit.
   Status Recover(VersionEdit* edit, bool* save_manifest)
@@ -95,9 +95,11 @@ class DBImpl : public DB {
                         VersionEdit* edit, SequenceNumber* max_sequence)
       EXCLUSIVE_LOCKS_REQUIRED(mutex_);
 
+  // 순서가 CompactMemtable -> WriteLevel0Table ??
   Status WriteLevel0Table(MemTable* mem, VersionEdit* edit, Version* base)
       EXCLUSIVE_LOCKS_REQUIRED(mutex_);
 
+  // Room이 뜻하는게?
   Status MakeRoomForWrite(bool force /* compact even if there is room? */)
       EXCLUSIVE_LOCKS_REQUIRED(mutex_);
   WriteBatch* BuildBatchGroup(Writer** last_writer)
@@ -176,8 +178,9 @@ class DBImpl : public DB {
 
   // Per level compaction stats.  stats_[level] stores the stats for
   // compactions that produced data for the specified "level".
+  // 여기서 말하는 specified level이 compaction이 발생한 N 레벨인듯함 (N+1)이 아니라
   struct CompactionStats {
-    int64_t micros;
+    int64_t micros; // 아마도 compaction에 걸렸던 시간이라고 한승이형께서 얘기해줌 ㅎㅎ
     int64_t bytes_read;
     int64_t bytes_written;
 

@@ -321,6 +321,7 @@ class VersionSet {
 
 // A Compaction encapsulates information about a compaction.
 class Compaction {
+
  public:
   ~Compaction();
 

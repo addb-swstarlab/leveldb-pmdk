@@ -44,6 +44,7 @@ void PutFixed64(std::string* dst, uint64_t value) {
   dst->append(buf, sizeof(buf));
 }
 
+// 이게 대체 뭐지..?
 char* EncodeVarint32(char* dst, uint32_t v) {
   // Operate on characters as unsigneds
   unsigned char* ptr = reinterpret_cast<unsigned char*>(dst);
@@ -71,7 +72,7 @@ char* EncodeVarint32(char* dst, uint32_t v) {
   }
   return reinterpret_cast<char*>(ptr);
 }
-
+// 이게 대체 뭐지...?
 void PutVarint32(std::string* dst, uint32_t v) {
   char buf[5];
   char* ptr = EncodeVarint32(buf, v);

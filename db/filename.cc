@@ -105,6 +105,7 @@ bool ParseFileName(const std::string& filename,
     // Avoid strtoull() to keep filename format independent of the
     // current locale
     uint64_t num;
+    // 파일명 속 String -> num integer 인듯
     if (!ConsumeDecimalNumber(&rest, &num)) {
       return false;
     }

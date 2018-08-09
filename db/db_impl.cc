@@ -51,12 +51,14 @@ struct DBImpl::Writer {
 };
 
 struct DBImpl::CompactionState {
+  // Compaction encapsulation class in version_set
   Compaction* const compaction;
 
   // Sequence numbers < smallest_snapshot are not significant since we
   // will never have to service a snapshot below smallest_snapshot.
   // Therefore if we have seen a sequence number S <= smallest_snapshot,
   // we can drop all entries for the same key with sequence numbers < S.
+  // 얘보다 낮으면 snapshot 안찍어줌 ??
   SequenceNumber smallest_snapshot;
 
   // Files produced by compaction
@@ -68,11 +70,14 @@ struct DBImpl::CompactionState {
   std::vector<Output> outputs;
 
   // State kept for output being generated
+  // output이 만들어지기 위해 유지하는 것들?
+  // Table 안에 Writable File
   WritableFile* outfile;
   TableBuilder* builder;
 
   uint64_t total_bytes;
 
+  // current == 가장 마지막 output
   Output* current_output() { return &outputs[outputs.size()-1]; }
 
   explicit CompactionState(Compaction* c)
@@ -121,7 +126,7 @@ static int TableCacheSize(const Options& sanitized_options) {
   return sanitized_options.max_open_files - kNumNonTableCacheFiles;
 }
 
-// options에 갖는 정보들을 활용하고 dbname을 지정하면서
+// options이 갖는 정보들을 활용하고 dbname을 지정하면서
 // 나머지 정보들은 default 값으로 설정하는 생성자
 DBImpl::DBImpl(const Options& raw_options, const std::string& dbname)
     : env_(raw_options.env),
@@ -137,7 +142,7 @@ DBImpl::DBImpl(const Options& raw_options, const std::string& dbname)
       shutting_down_(nullptr),
       background_work_finished_signal_(&mutex_),
       mem_(nullptr),
-      imm_(nullptr),
+      imm_(nullptr), // immutable memtable.
       logfile_(nullptr),
       logfile_number_(0),
       log_(nullptr),
@@ -180,6 +185,8 @@ DBImpl::~DBImpl() {
 }
 
 // 새 DB 생성
+// 유일하게 Recover 할때 쓰임
+// 이 복구는 dbname을 갖는 db가 있었을건데 없을때 (create_if_missing)
 Status DBImpl::NewDB() {
   VersionEdit new_db;
   new_db.SetComparatorName(user_comparator()->Name());
@@ -196,7 +203,7 @@ Status DBImpl::NewDB() {
     return s;
   }
   {
-    // log Writer 생성. 생성자-> crc 체크
+    // data를 file에다가 append할 writer 생성
     // record 인코딩해서 붙이고 file 닫음
     // ??? record 값이 어디서 나오지?
     log::Writer log(file);
@@ -217,6 +224,8 @@ Status DBImpl::NewDB() {
   return s;
 }
 
+// Status는 OK가 아닌데,
+// 무시가능한 error 처리하되 info log 작성
 void DBImpl::MaybeIgnoreError(Status* s) const {
   if (s->ok() || options_.paranoid_checks) {
     // No change needed
@@ -226,6 +235,8 @@ void DBImpl::MaybeIgnoreError(Status* s) const {
   }
 }
 
+// GC: memory든 storage든 불필요한, 오래된 파일 지울 것
+// CompactMemtable , BackgroundCompaction , DB Open 시에 호출됨
 void DBImpl::DeleteObsoleteFiles() {
   mutex_.AssertHeld();
 
@@ -236,15 +247,18 @@ void DBImpl::DeleteObsoleteFiles() {
   }
 
   // Make a set of all of the live files
-  std::set<uint64_t> live = pending_outputs_;
+  std::set<uint64_t> live = pending_outputs_; // compaction이 진행중이라 삭제되서는 안될 sst파일
   versions_->AddLiveFiles(&live);
 
   std::vector<std::string> filenames;
   env_->GetChildren(dbname_, &filenames);  // Ignoring errors on purpose
-  uint64_t number;
+  uint64_t number; // 이 숫자가 file type에 따라서 각각 의미하는 바가 달라짐.
   FileType type;
+  // db가 있는 디렉토리 하위에 속하는 모든 file들에 대해 loop
   for (size_t i = 0; i < filenames.size(); i++) {
+    // 형식에 맞지 않는 파일명은 제외
     if (ParseFileName(filenames[i], &number, &type)) {
+      // 유지 조건 체크
       bool keep = true;
       switch (type) {
         case kLogFile:
@@ -264,6 +278,7 @@ void DBImpl::DeleteObsoleteFiles() {
           // be recorded in pending_outputs_, which is inserted into "live"
           keep = (live.find(number) != live.end());
           break;
+        // CurrenFile, DBLockFile, InfoLogFIle은 무조건 keep
         case kCurrentFile:
         case kDBLockFile:
         case kInfoLogFile:
@@ -271,7 +286,9 @@ void DBImpl::DeleteObsoleteFiles() {
           break;
       }
 
+      // 유지 조건을 벗어나면 지우자
       if (!keep) {
+        // SST 파일이면 cache에서 evict부터
         if (type == kTableFile) {
           table_cache_->Evict(number);
         }
@@ -284,12 +301,15 @@ void DBImpl::DeleteObsoleteFiles() {
   }
 }
 
+// storage에서 descriptor(MANIFEST)만 복구
+// 최근에 로그기록된 update를 복구하기 위해서 많은 일이 필요할 것. MANIFEST 변화는 edit에 추가
 Status DBImpl::Recover(VersionEdit* edit, bool *save_manifest) {
   mutex_.AssertHeld();
 
   // Ignore error from CreateDir since the creation of the DB is
   // committed only when the descriptor is created, and this directory
   // may already exist from a previous failed creation attempt.
+  // 이미 디렉토리 있어서 발생하는 에러는 무시하겠다는 소리
   env_->CreateDir(dbname_);
   assert(db_lock_ == nullptr);
   Status s = env_->LockFile(LockFileName(dbname_), &db_lock_);
@@ -297,8 +317,10 @@ Status DBImpl::Recover(VersionEdit* edit, bool *save_manifest) {
     return s;
   }
 
+  // dbname의 CURRENT 없으면
   if (!env_->FileExists(CurrentFileName(dbname_))) {
     if (options_.create_if_missing) {
+      // 여기에 CURRENT 만드는 process가 포함되어 있으니
       s = NewDB();
       if (!s.ok()) {
         return s;
@@ -308,12 +330,13 @@ Status DBImpl::Recover(VersionEdit* edit, bool *save_manifest) {
           dbname_, "does not exist (create_if_missing is false)");
     }
   } else {
+    // CURRENT file이 있다고? --> 복구하려는데 db가 있다고? --> 옵션이 그러면 그냥 에러 낼래
     if (options_.error_if_exists) {
       return Status::InvalidArgument(
           dbname_, "exists (error_if_exists is true)");
     }
   }
-
+  // ?? save_manifest는 bool 타입인데..
   s = versions_->Recover(save_manifest);
   if (!s.ok()) {
     return s;
@@ -327,6 +350,8 @@ Status DBImpl::Recover(VersionEdit* edit, bool *save_manifest) {
   // Note that PrevLogNumber() is no longer used, but we pay
   // attention to it in case we are recovering a database
   // produced by an older version of leveldb.
+  // live file(살아있어야 하는 파일?)과 하위 자식 파일중 겹치는 이름을 제거
+  // --> 살아있어야 하는 SST파일이 없으면 missing file 문제
   const uint64_t min_log = versions_->LogNumber();
   const uint64_t prev_log = versions_->PrevLogNumber();
   std::vector<std::string> filenames;
@@ -342,6 +367,7 @@ Status DBImpl::Recover(VersionEdit* edit, bool *save_manifest) {
   for (size_t i = 0; i < filenames.size(); i++) {
     if (ParseFileName(filenames[i], &number, &type)) {
       expected.erase(number);
+      // 이중에서 살려야하는 로그들만 따로 저장
       if (type == kLogFile && ((number >= min_log) || (number == prev_log)))
         logs.push_back(number);
     }
@@ -417,8 +443,8 @@ Status DBImpl::RecoverLogFile(uint64_t log_number, bool last_log,
   Log(options_.info_log, "Recovering log #%llu",
       (unsigned long long) log_number);
 
-  // Read all the records and add to a memtable
-  std::string scratch;
+  // Read all the records and add to a memtable (Batch로)
+  std::string scratch; // temporary storage
   Slice record;
   WriteBatch batch;
   int compactions = 0;
@@ -428,14 +454,16 @@ Status DBImpl::RecoverLogFile(uint64_t log_number, bool last_log,
     if (record.size() < 12) {
       reporter.Corruption(
           record.size(), Status::Corruption("log record too small"));
+
       continue;
     }
     WriteBatchInternal::SetContents(&batch, record);
 
     if (mem == nullptr) {
-      mem = new MemTable(internal_comparator_);
+      mem = new MemTable(internal_comparator_); // ref count 0
       mem->Ref();
     }
+    // memtable에 batch insert 추가
     status = WriteBatchInternal::InsertInto(&batch, mem);
     MaybeIgnoreError(&status);
     if (!status.ok()) {
@@ -447,12 +475,12 @@ Status DBImpl::RecoverLogFile(uint64_t log_number, bool last_log,
     if (last_seq > *max_sequence) {
       *max_sequence = last_seq;
     }
-
+    // memtable이 임계 사이즈 넘어서면, Level0 table로 바꿔주고 memtable 제거
     if (mem->ApproximateMemoryUsage() > options_.write_buffer_size) {
-      compactions++;
+      compactions++; // 이것 또한 컴팩션
       *save_manifest = true;
       status = WriteLevel0Table(mem, edit, nullptr);
-      mem->Unref();
+      mem->Unref(); // delete memtable instance
       mem = nullptr;
       if (!status.ok()) {
         // Reflect errors immediately so that conditions like full
@@ -461,24 +489,24 @@ Status DBImpl::RecoverLogFile(uint64_t log_number, bool last_log,
       }
     }
   }
-
+  // log full scan 할 때 SequentialFile로 생성했었음
   delete file;
 
   // See if we should keep reusing the last log file.
-  if (status.ok() && options_.reuse_logs && last_log && compactions == 0) {
+  if (status.ok() && options_.reuse_logs && last_log && compactions == 0) { // 컴팩션도 없었음
     assert(logfile_ == nullptr);
     assert(log_ == nullptr);
-    assert(mem_ == nullptr);
+    assert(mem_ == nullptr); // DBimpl이 소유한 memtable인거 같은데 용도는 잘;
     uint64_t lfile_size;
     if (env_->GetFileSize(fname, &lfile_size).ok() &&
         env_->NewAppendableFile(fname, &logfile_).ok()) {
-      Log(options_.info_log, "Reusing old log %s \n", fname.c_str());
+      Log(options_.info_log, "Reusing old log %s \n", fname.c_str()); // 로그 파일 하나뿐임
       log_ = new log::Writer(logfile_, lfile_size);
       logfile_number_ = log_number;
-      if (mem != nullptr) {
-        mem_ = mem;
+      if (mem != nullptr) { // 아까 생성한 memtable 한개가 유지되고 있다면
+        mem_ = mem;           // 그걸 DBimpl 소유로 돌려
         mem = nullptr;
-      } else {
+      } else {              // 이건 로그파일에 로그가 아예 없었거나 혹은 딱 떨어지게 memtable이 꽉참
         // mem can be nullptr if lognum exists but was empty.
         mem_ = new MemTable(internal_comparator_);
         mem_->Ref();

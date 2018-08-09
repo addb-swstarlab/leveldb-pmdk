@@ -45,7 +45,7 @@ std::string EscapeString(const Slice& value) {
   AppendEscapedStringTo(&r, value);
   return r;
 }
-
+// 파일명 속 String -> num integer 용도 인듯
 bool ConsumeDecimalNumber(Slice* in, uint64_t* val) {
   // Constants that will be optimized away.
   constexpr const uint64_t kMaxUint64 = std::numeric_limits<uint64_t>::max();
