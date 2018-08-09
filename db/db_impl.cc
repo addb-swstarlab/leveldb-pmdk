@@ -121,6 +121,8 @@ static int TableCacheSize(const Options& sanitized_options) {
   return sanitized_options.max_open_files - kNumNonTableCacheFiles;
 }
 
+// options에 갖는 정보들을 활용하고 dbname을 지정하면서
+// 나머지 정보들은 default 값으로 설정하는 생성자
 DBImpl::DBImpl(const Options& raw_options, const std::string& dbname)
     : env_(raw_options.env),
       internal_comparator_(raw_options.comparator),
@@ -177,6 +179,7 @@ DBImpl::~DBImpl() {
   }
 }
 
+// 새 DB 생성
 Status DBImpl::NewDB() {
   VersionEdit new_db;
   new_db.SetComparatorName(user_comparator()->Name());
@@ -184,16 +187,21 @@ Status DBImpl::NewDB() {
   new_db.SetNextFile(2);
   new_db.SetLastSequence(0);
 
+  // 새 DB는 번호가 1번인 MANIFEST 파일명 생성
   const std::string manifest = DescriptorFileName(dbname_, 1);
   WritableFile* file;
+  // 해당 MANIFEST 파일을 갖는 쓰기 가능한 파일을 만들고, 그 파일로의 포인터를 file에 저장
   Status s = env_->NewWritableFile(manifest, &file);
   if (!s.ok()) {
     return s;
   }
   {
+    // log Writer 생성. 생성자-> crc 체크
+    // record 인코딩해서 붙이고 file 닫음
+    // ??? record 값이 어디서 나오지?
     log::Writer log(file);
-    std::string record;
-    new_db.EncodeTo(&record);
+    std::string record;         // 이게 초기화 안되어있는데,
+    new_db.EncodeTo(&record);   // 이게 무슨 소용인지?
     s = log.AddRecord(record);
     if (s.ok()) {
       s = file->Close();

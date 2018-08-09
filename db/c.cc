@@ -40,6 +40,7 @@ using leveldb::WritableFile;
 using leveldb::WriteBatch;
 using leveldb::WriteOptions;
 
+// C binding
 extern "C" {
 
 struct leveldb_t              { DB*               rep; };
@@ -56,6 +57,9 @@ struct leveldb_writablefile_t { WritableFile*     rep; };
 struct leveldb_logger_t       { Logger*           rep; };
 struct leveldb_filelock_t     { FileLock*         rep; };
 
+// 위에 애들은 단순히 정의된 클래스를 사용하는 반면,
+// comparator와 filter policy만 아래와 같이 상속을 받는다.
+// 그 이유는 이 둘은 user-defined class 로 사용할 수 있기 때문
 struct leveldb_comparator_t : public Comparator {
   void* state_;
   void (*destructor_)(void*);
@@ -123,11 +127,14 @@ struct leveldb_filterpolicy_t : public FilterPolicy {
   }
 };
 
+// 얘도 상위처럼 기존 Env를 사용하는데, is_default 때문인지 따로 놓은건가?
 struct leveldb_env_t {
   Env* rep;
   bool is_default;
 };
 
+// 2차원 errptr에 대한 용도 체크
+// Error가 맞으면 return true
 static bool SaveError(char** errptr, const Status& s) {
   assert(errptr != nullptr);
   if (s.ok()) {
@@ -142,6 +149,7 @@ static bool SaveError(char** errptr, const Status& s) {
   return true;
 }
 
+// 여기 파일 안에서 leveldb_get에서 1번만 사용됨
 static char* CopyString(const std::string& str) {
   char* result = reinterpret_cast<char*>(malloc(sizeof(char) * str.size()));
   memcpy(result, str.data(), sizeof(char) * str.size());
