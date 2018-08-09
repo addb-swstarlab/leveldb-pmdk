@@ -134,6 +134,7 @@ struct leveldb_env_t {
 };
 
 // 2차원 errptr에 대한 용도 체크
+// db operation에 대해 error check하는 듯함
 // Error가 맞으면 return true
 static bool SaveError(char** errptr, const Status& s) {
   assert(errptr != nullptr);
@@ -150,6 +151,7 @@ static bool SaveError(char** errptr, const Status& s) {
 }
 
 // 여기 파일 안에서 leveldb_get에서 1번만 사용됨
+// str에 있는 데이터를 result에 복사하고 이를 리턴
 static char* CopyString(const std::string& str) {
   char* result = reinterpret_cast<char*>(malloc(sizeof(char) * str.size()));
   memcpy(result, str.data(), sizeof(char) * str.size());
@@ -208,6 +210,7 @@ char* leveldb_get(
     size_t* vallen,
     char** errptr) {
   char* result = nullptr;
+  // tmp는 key를 찾았을 때 그 value를 저장하는 용도
   std::string tmp;
   Status s = db->rep->Get(options->rep, Slice(key, keylen), &tmp);
   if (s.ok()) {
@@ -215,7 +218,7 @@ char* leveldb_get(
     result = CopyString(tmp);
   } else {
     *vallen = 0;
-    if (!s.IsNotFound()) {
+    if (!s.IsNotFound()) { // Get 실패하면 IsNotFound 리턴해주기로 했는데, 그것도 아니면 문제
       SaveError(errptr, s);
     }
   }
@@ -244,6 +247,8 @@ void leveldb_release_snapshot(
   delete snapshot;
 }
 
+// 4 properties
+//  : num-files-at-level<N> , stats , sstables , approximate-memory-usage
 char* leveldb_property_value(
     leveldb_t* db,
     const char* propname) {
@@ -255,14 +260,14 @@ char* leveldb_property_value(
     return nullptr;
   }
 }
-
+// key range에 속하는 데이터에 대한 대략적 사이즈 측정
 void leveldb_approximate_sizes(
     leveldb_t* db,
     int num_ranges,
     const char* const* range_start_key, const size_t* range_start_key_len,
     const char* const* range_limit_key, const size_t* range_limit_key_len,
-    uint64_t* sizes) {
-  Range* ranges = new Range[num_ranges];
+    uint64_t* sizes) { // range array에서 각 range 마다의 size를 배열로
+  Range* ranges = new Range[num_ranges]; // 하나 이상의 key range
   for (int i = 0; i < num_ranges; i++) {
     ranges[i].start = Slice(range_start_key[i], range_start_key_len[i]);
     ranges[i].limit = Slice(range_limit_key[i], range_limit_key_len[i]);
@@ -271,6 +276,7 @@ void leveldb_approximate_sizes(
   delete[] ranges;
 }
 
+// storage에서의 해당 key range를 compact ==> 삭제된 or 오버라이트된 버전 데이터 제거
 void leveldb_compact_range(
     leveldb_t* db,
     const char* start_key, size_t start_key_len,
@@ -278,10 +284,11 @@ void leveldb_compact_range(
   Slice a, b;
   db->rep->CompactRange(
       // Pass null Slice if corresponding "const char*" is null
-      (start_key ? (a = Slice(start_key, start_key_len), &a) : nullptr),
-      (limit_key ? (b = Slice(limit_key, limit_key_len), &b) : nullptr));
+      (start_key ? (a = Slice(start_key, start_key_len), &a) : nullptr), // nullptr이면 가장앞 key
+      (limit_key ? (b = Slice(limit_key, limit_key_len), &b) : nullptr)); // nullptr이면 가장뒤 key
 }
 
+// db_impl.cc
 void leveldb_destroy_db(
     const leveldb_options_t* options,
     const char* name,
@@ -289,6 +296,7 @@ void leveldb_destroy_db(
   SaveError(errptr, DestroyDB(name, options->rep));
 }
 
+// repair.cc
 void leveldb_repair_db(
     const leveldb_options_t* options,
     const char* name,
@@ -296,6 +304,7 @@ void leveldb_repair_db(
   SaveError(errptr, RepairDB(name, options->rep));
 }
 
+/* Iterator */
 void leveldb_iter_destroy(leveldb_iterator_t* iter) {
   delete iter->rep;
   delete iter;
@@ -366,11 +375,14 @@ void leveldb_writebatch_delete(
   b->rep.Delete(Slice(key, klen));
 }
 
+// handler를 위한 인자들을 다 받아서,
+// handler 형태로 set해주는 정도
 void leveldb_writebatch_iterate(
     leveldb_writebatch_t* b,
     void* state,
     void (*put)(void*, const char* k, size_t klen, const char* v, size_t vlen),
     void (*deleted)(void*, const char* k, size_t klen)) {
+  // handler가 batch속 content의 iterator를 위함임
   class H : public WriteBatch::Handler {
    public:
     void* state_;
@@ -390,6 +402,7 @@ void leveldb_writebatch_iterate(
   b->rep.Iterate(&handler);
 }
 
+/* Options */
 leveldb_options_t* leveldb_options_create() {
   return new leveldb_options_t;
 }
@@ -458,9 +471,11 @@ void leveldb_options_set_max_file_size(leveldb_options_t* opt, size_t s) {
 }
 
 void leveldb_options_set_compression(leveldb_options_t* opt, int t) {
-  opt->rep.compression = static_cast<CompressionType>(t);
+  opt->rep.compression = static_cast<CompressionType>(t); // No(0x0) or Snappy(0x1)
 }
 
+/* Comparator */
+// user-defined
 leveldb_comparator_t* leveldb_comparator_create(
     void* state,
     void (*destructor)(void*),
@@ -481,6 +496,8 @@ void leveldb_comparator_destroy(leveldb_comparator_t* cmp) {
   delete cmp;
 }
 
+/* FilterPolicy */
+// user-defined
 leveldb_filterpolicy_t* leveldb_filterpolicy_create(
     void* state,
     void (*destructor)(void*),
@@ -524,12 +541,13 @@ leveldb_filterpolicy_t* leveldb_filterpolicy_create_bloom(int bits_per_key) {
     static void DoNothing(void*) { }
   };
   Wrapper* wrapper = new Wrapper;
-  wrapper->rep_ = NewBloomFilterPolicy(bits_per_key);
+  wrapper->rep_ = NewBloomFilterPolicy(bits_per_key); // 실제 FilterPolicy에 BloomFilterPolicy 심음
   wrapper->state_ = nullptr;
   wrapper->destructor_ = &Wrapper::DoNothing;
   return wrapper;
 }
 
+/* ReadOptions */
 leveldb_readoptions_t* leveldb_readoptions_create() {
   return new leveldb_readoptions_t;
 }
@@ -555,6 +573,7 @@ void leveldb_readoptions_set_snapshot(
   opt->rep.snapshot = (snap ? snap->rep : nullptr);
 }
 
+/* WriteOptions */
 leveldb_writeoptions_t* leveldb_writeoptions_create() {
   return new leveldb_writeoptions_t;
 }
@@ -568,6 +587,7 @@ void leveldb_writeoptions_set_sync(
   opt->rep.sync = v;
 }
 
+/* Cache */
 leveldb_cache_t* leveldb_cache_create_lru(size_t capacity) {
   leveldb_cache_t* c = new leveldb_cache_t;
   c->rep = NewLRUCache(capacity);
@@ -579,6 +599,7 @@ void leveldb_cache_destroy(leveldb_cache_t* cache) {
   delete cache;
 }
 
+/* Env */
 leveldb_env_t* leveldb_create_default_env() {
   leveldb_env_t* result = new leveldb_env_t;
   result->rep = Env::Default();
@@ -587,7 +608,7 @@ leveldb_env_t* leveldb_create_default_env() {
 }
 
 void leveldb_env_destroy(leveldb_env_t* env) {
-  if (!env->is_default) delete env->rep;
+  if (!env->is_default) delete env->rep; // default env가 아니면 포인터 객체만 날리자
   delete env;
 }
 
@@ -603,6 +624,7 @@ char* leveldb_env_get_test_directory(leveldb_env_t* env) {
   return buffer;
 }
 
+/* Other utilities */
 void leveldb_free(void* ptr) {
   free(ptr);
 }
