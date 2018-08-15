@@ -115,9 +115,11 @@ static bool BeforeFile(const Comparator* ucmp,
                        const Slice* user_key, const FileMetaData* f) {
   // null user_key occurs after all keys and is therefore never before *f
   return (user_key != nullptr &&
-          ucmp->Compare(*user_key, f->smallest.user_key()) < 0);
+          ucmp->Compare(*user_key, f->smallest.user_key()) < 0); // 선택한 range largest key < sst smallest key
 }
 
+// 선택한 Range에서의 largest key값과 특정 level에 존재하는 SST File의 smallest key 값을 비교하여,
+// Overlap되는지 확인하고 있음
 bool SomeFileOverlapsRange(
     const InternalKeyComparator& icmp,
     bool disjoint_sorted_files,
@@ -125,6 +127,7 @@ bool SomeFileOverlapsRange(
     const Slice* smallest_user_key,
     const Slice* largest_user_key) {
   const Comparator* ucmp = icmp.user_comparator();
+  // level == 0
   if (!disjoint_sorted_files) {
     // Need to check against all files
     for (size_t i = 0; i < files.size(); i++) {
@@ -902,7 +905,8 @@ Status VersionSet::LogAndApply(VersionEdit* edit, port::Mutex* mu) {
 
   return s;
 }
-
+// save_manifest --> manifest의 저장이 필요한지 여부
+// true -> 필요 / false -> 불필요?
 Status VersionSet::Recover(bool *save_manifest) {
   struct LogReporter : public log::Reader::Reporter {
     Status* status;
@@ -1293,14 +1297,21 @@ Iterator* VersionSet::MakeInputIterator(Compaction* c) {
   return result;
 }
 
+// Major Compaction
 Compaction* VersionSet::PickCompaction() {
   Compaction* c;
   int level;
 
+  /*
+   * 1) c->inputs_[0] 설정
+   */
   // We prefer compactions triggered by too much data in a level over
   // the compactions triggered by seeks.
+  // Seek(탐색)에 의한 compaction보다는 too much data compaction을 선호한다
+  // --> if문 순서 결정
   const bool size_compaction = (current_->compaction_score_ >= 1);
-  const bool seek_compaction = (current_->file_to_compact_ != nullptr);
+  const bool seek_compaction = (current_->file_to_compact_ != nullptr); // compaction할 FileMetaData
+  // size 먼저
   if (size_compaction) {
     level = current_->compaction_level_;
     assert(level >= 0);
@@ -1308,19 +1319,23 @@ Compaction* VersionSet::PickCompaction() {
     c = new Compaction(options_, level);
 
     // Pick the first file that comes after compact_pointer_[level]
+    // 해당 Level에 있는 file들을 돌거임
     for (size_t i = 0; i < current_->files_[level].size(); i++) {
       FileMetaData* f = current_->files_[level][i];
+      // ***이 compact_pointer_가 어디서, 왜 채워지는지 찾아야함.
       if (compact_pointer_[level].empty() ||
           icmp_.Compare(f->largest.Encode(), compact_pointer_[level]) > 0) {
-        c->inputs_[0].push_back(f);
+        c->inputs_[0].push_back(f); // Level@ 꺼 push
         break;
       }
     }
     if (c->inputs_[0].empty()) {
       // Wrap-around to the beginning of the key space
-      c->inputs_[0].push_back(current_->files_[level][0]);
+      c->inputs_[0].push_back(current_->files_[level][0]); // 해당 레벨의 가장 첫번째 file을 push
     }
-  } else if (seek_compaction) {
+  }
+  // size보고나서 seek compaction
+  else if (seek_compaction) {
     level = current_->file_to_compact_level_;
     c = new Compaction(options_, level);
     c->inputs_[0].push_back(current_->file_to_compact_);
@@ -1341,12 +1356,17 @@ Compaction* VersionSet::PickCompaction() {
     current_->GetOverlappingInputs(0, &smallest, &largest, &c->inputs_[0]);
     assert(!c->inputs_[0].empty());
   }
-
+  /*
+   * 2) c->inputs_[1] 설정
+   */
+  // Level @+1에서 Compaction 대상이 되는 File inputs 설정
   SetupOtherInputs(c);
 
   return c;
 }
 
+// Level @+1 에 맞는 Input files 설정
+// 필요하면 읽어보기
 void VersionSet::SetupOtherInputs(Compaction* c) {
   const int level = c->level();
   InternalKey smallest, largest;
@@ -1461,6 +1481,7 @@ Compaction::~Compaction() {
   }
 }
 
+// 체크
 bool Compaction::IsTrivialMove() const {
   const VersionSet* vset = input_version_->vset_;
   // Avoid a move if there is lots of overlapping grandparent data.

@@ -400,7 +400,7 @@ Status DBImpl::Recover(VersionEdit* edit, bool *save_manifest) {
 
   return Status::OK();
 }
-
+// Recovery 시에만 불림
 Status DBImpl::RecoverLogFile(uint64_t log_number, bool last_log,
                               bool* save_manifest, VersionEdit* edit,
                               SequenceNumber* max_sequence) {
@@ -526,20 +526,27 @@ Status DBImpl::RecoverLogFile(uint64_t log_number, bool last_log,
   return status;
 }
 
+// 얘도 Compaction의 일종
+// CompactMemTable 함수와 비교하여 분석할 것
+// Version, VersionEdit, VersionSet 이해 필요
 Status DBImpl::WriteLevel0Table(MemTable* mem, VersionEdit* edit,
                                 Version* base) {
   mutex_.AssertHeld();
-  const uint64_t start_micros = env_->NowMicros();
+  const uint64_t start_micros = env_->NowMicros(); // 시간 측정
+  // L0에 SST file 생성을 위한 준비과정
   FileMetaData meta;
-  meta.number = versions_->NewFileNumber();
-  pending_outputs_.insert(meta.number);
+  meta.number = versions_->NewFileNumber(); // 새로운 file number 할당
+  pending_outputs_.insert(meta.number);     // 삭제되어서는 안될 table file (number) 들의 set
   Iterator* iter = mem->NewIterator();
   Log(options_.info_log, "Level-0 table #%llu: started",
       (unsigned long long) meta.number);
 
   Status s;
+  // lock 순서 체크
+  // Unlock -> @@ -> Lock ??
   {
     mutex_.Unlock();
+    // Table File을 만들 때 Memtable 자체가 아닌 Memtable의 Itarator로.
     s = BuildTable(dbname_, env_, options_, table_cache_, iter, &meta);
     mutex_.Lock();
   }
@@ -559,12 +566,14 @@ Status DBImpl::WriteLevel0Table(MemTable* mem, VersionEdit* edit,
     const Slice min_user_key = meta.smallest.user_key();
     const Slice max_user_key = meta.largest.user_key();
     if (base != nullptr) {
+      // Memtable로 만들어낸 Table file이 어떤 Level에 들어가기에 적절한지 찾아줌
+      // 그렇다는 얘기는 무조건 Level0로 가는게 아닐 수 있다는 것? 왜?
       level = base->PickLevelForMemTableOutput(min_user_key, max_user_key);
     }
     edit->AddFile(level, meta.number, meta.file_size,
                   meta.smallest, meta.largest);
   }
-
+  // 선택된 Level에 stat 추가
   CompactionStats stats;
   stats.micros = env_->NowMicros() - start_micros;
   stats.bytes_written = meta.file_size;
@@ -572,6 +581,8 @@ Status DBImpl::WriteLevel0Table(MemTable* mem, VersionEdit* edit,
   return s;
 }
 
+// Convert immutable memtable into table file
+// immutable memtable = memtable being compacted
 void DBImpl::CompactMemTable() {
   mutex_.AssertHeld();
   assert(imm_ != nullptr);
@@ -598,18 +609,21 @@ void DBImpl::CompactMemTable() {
     // Commit to the new state
     imm_->Unref();
     imm_ = nullptr;
-    has_imm_.Release_Store(nullptr);
+    has_imm_.Release_Store(nullptr); // atomic pointer. bg가 imm_ 감지 가능
     DeleteObsoleteFiles();
   } else {
     RecordBackgroundError(s);
   }
 }
 
+// For manual compaction
+// custom compaction을 구현하는 유저가 사용하길 바라는 코드
 void DBImpl::CompactRange(const Slice* begin, const Slice* end) {
   int max_level_with_files = 1;
   {
     MutexLock l(&mutex_);
     Version* base = versions_->current();
+    // Overlap되는 최대 level을 찾아내는 과정
     for (int level = 1; level < config::kNumLevels; level++) {
       if (base->OverlapInLevel(level, begin, end)) {
         max_level_with_files = level;
@@ -624,6 +638,7 @@ void DBImpl::CompactRange(const Slice* begin, const Slice* end) {
 
 void DBImpl::TEST_CompactRange(int level, const Slice* begin,
                                const Slice* end) {
+  // 0 <= level <= (kNumLevels -1)
   assert(level >= 0);
   assert(level + 1 < config::kNumLevels);
 
@@ -684,13 +699,14 @@ void DBImpl::RecordBackgroundError(const Status& s) {
   }
 }
 
+// Compaction 결과로
 void DBImpl::MaybeScheduleCompaction() {
   mutex_.AssertHeld();
   if (background_compaction_scheduled_) {
     // Already scheduled
   } else if (shutting_down_.Acquire_Load()) {
     // DB is being deleted; no more background compactions
-  } else if (!bg_error_.ok()) {
+  } else if (!bg_error_.ok()) { // ok가 아닌 것
     // Already got an error; no more changes
   } else if (imm_ == nullptr &&
              manual_compaction_ == nullptr &&
@@ -698,7 +714,7 @@ void DBImpl::MaybeScheduleCompaction() {
     // No work to be done
   } else {
     background_compaction_scheduled_ = true;
-    env_->Schedule(&DBImpl::BGWork, this);
+    env_->Schedule(&DBImpl::BGWork, this); // 함수 포인터 보냄
   }
 }
 
@@ -706,12 +722,13 @@ void DBImpl::BGWork(void* db) {
   reinterpret_cast<DBImpl*>(db)->BackgroundCall();
 }
 
+// BG Compaction wrapper (+ Check condition, Lock, Additional compaction)
 void DBImpl::BackgroundCall() {
   MutexLock l(&mutex_);
   assert(background_compaction_scheduled_);
   if (shutting_down_.Acquire_Load()) {
     // No more background work when shutting down.
-  } else if (!bg_error_.ok()) {
+  } else if (!bg_error_.ok()) { // ok가 아닌 것
     // No more background work after a background error.
   } else {
     BackgroundCompaction();
@@ -725,9 +742,11 @@ void DBImpl::BackgroundCall() {
   background_work_finished_signal_.SignalAll();
 }
 
+// 실제 Background Compaction 함수
 void DBImpl::BackgroundCompaction() {
   mutex_.AssertHeld();
 
+  // Mem to L0
   if (imm_ != nullptr) {
     CompactMemTable();
     return;
@@ -736,6 +755,8 @@ void DBImpl::BackgroundCompaction() {
   Compaction* c;
   bool is_manual = (manual_compaction_ != nullptr);
   InternalKey manual_end;
+  // manual compaction이 있는 경우 실행
+  // manual compaction은 사용자에 의해 CompactRange()가 불렸을 때만.
   if (is_manual) {
     ManualCompaction* m = manual_compaction_;
     c = versions_->CompactRange(m->level, m->begin, m->end);
@@ -756,10 +777,14 @@ void DBImpl::BackgroundCompaction() {
   Status status;
   if (c == nullptr) {
     // Nothing to do
-  } else if (!is_manual && c->IsTrivialMove()) {
+  }
+  // grandparent(level @+2)의 data와 overlapping 되는게 많으면,
+  // 불필요한 움직임을 만들어낼 수 있다.
+  else if (!is_manual && c->IsTrivialMove()) {
     // Move file to next level
-    assert(c->num_input_files(0) == 1);
+    assert(c->num_input_files(0) == 1); // level @ 에서 선택한 input file은 하나여야만 한다
     FileMetaData* f = c->input(0, 0);
+    // 단순 다음 level로 이동을 VersionEdit에 찍어놓음
     c->edit()->DeleteFile(c->level(), f->number);
     c->edit()->AddFile(c->level() + 1, f->number, f->file_size,
                        f->smallest, f->largest);
@@ -774,16 +799,25 @@ void DBImpl::BackgroundCompaction() {
         static_cast<unsigned long long>(f->file_size),
         status.ToString().c_str(),
         versions_->LevelSummary(&tmp));
-  } else {
+  }
+  // common case
+  // 이게 진짜 compaction
+  else {
     CompactionState* compact = new CompactionState(c);
     status = DoCompactionWork(compact);
     if (!status.ok()) {
       RecordBackgroundError(status);
     }
+    // CompactionState 속에 있는 것과 CompactionState마저 삭제
     CleanupCompaction(compact);
+    // PickCompaction() 에서 올린 Version refs를 풀어줌
+    // Version Unrefs
     c->ReleaseInputs();
+    // 정리
     DeleteObsoleteFiles();
   }
+
+  // 다 끝나면 삭제해줘야한다고 들음
   delete c;
 
   if (status.ok()) {

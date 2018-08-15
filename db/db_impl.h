@@ -138,7 +138,7 @@ class DBImpl : public DB {
 
   // State below is protected by mutex_
   port::Mutex mutex_;
-  port::AtomicPointer shutting_down_;
+  port::AtomicPointer shutting_down_; // .Acquire_Load()  == true --> DB는 이미 삭제, 더이상 bgcompaction X
   port::CondVar background_work_finished_signal_ GUARDED_BY(mutex_);
   MemTable* mem_;
   MemTable* imm_ GUARDED_BY(mutex_);  // Memtable being compacted
@@ -198,7 +198,7 @@ class DBImpl : public DB {
   DBImpl(const DBImpl&);
   void operator=(const DBImpl&);
 
-  const Comparator* user_comparator() const {
+  const Comparator* user_compara tor() const {
     return internal_comparator_.user_comparator();
   }
 };

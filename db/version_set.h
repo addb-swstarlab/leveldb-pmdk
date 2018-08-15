@@ -136,13 +136,17 @@ class Version {
   // List of files per level
   std::vector<FileMetaData*> files_[config::kNumLevels];
 
+
   // Next file to compact based on seek stats.
+  // PickCompaction() --> seek_compaction
+  // seek compaction이 정확히 어떤 경우인지 알아야함
   FileMetaData* file_to_compact_;
   int file_to_compact_level_;
 
   // Level that should be compacted next and its compaction score.
   // Score < 1 means compaction is not strictly needed.  These fields
   // are initialized by Finalize().
+  // PickCompaction() --> size_compaction
   double compaction_score_;
   int compaction_level_;
 
@@ -311,6 +315,7 @@ class VersionSet {
   Version* current_;        // == dummy_versions_.prev_
 
   // Per-level key at which the next compaction at that level should start.
+  // 해당 레벨의 다음 컴팩션이 시작되어야하는 레벨별 키 래..
   // Either an empty string, or a valid InternalKey.
   std::string compact_pointer_[config::kNumLevels];
 
