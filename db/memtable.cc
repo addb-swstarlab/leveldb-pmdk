@@ -90,19 +90,21 @@ void MemTable::Add(SequenceNumber s, ValueType type,
   size_t key_size = key.size();
   size_t val_size = value.size();
   size_t internal_key_size = key_size + 8;
+  // 버퍼 사이즈 결정
   const size_t encoded_len =
       VarintLength(internal_key_size) + internal_key_size +
       VarintLength(val_size) + val_size;
+  // arena 에 메모리 영역 할당 (degree of locality 때문)
   char* buf = arena_.Allocate(encoded_len);
-  char* p = EncodeVarint32(buf, internal_key_size);
-  memcpy(p, key.data(), key_size);
-  p += key_size;
-  EncodeFixed64(p, (s << 8) | type);
-  p += 8;
-  p = EncodeVarint32(p, val_size);
-  memcpy(p, value.data(), val_size);
+  char* p = EncodeVarint32(buf, internal_key_size); // key 자리 (가변)
+  memcpy(p, key.data(), key_size); // key 복사
+  p += key_size; // next byte address to SeqNum & Type
+  EncodeFixed64(p, (s << 8) | type);  // SequenceNumber, Type (고정길이) + 복사까지 인듯
+  p += 8;       // next byte address to value
+  p = EncodeVarint32(p, val_size);    // val 자리 (가변)
+  memcpy(p, value.data(), val_size);  // value 복사
   assert(p + val_size == buf + encoded_len);
-  table_.Insert(buf);
+  table_.Insert(buf); // skip list에 해당 entry의 주소를 linked list 연결하듯
 }
 
 bool MemTable::Get(const LookupKey& key, std::string* value, Status* s) {

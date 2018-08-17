@@ -12,12 +12,13 @@ namespace leveldb {
 static uint64_t PackSequenceAndType(uint64_t seq, ValueType t) {
   assert(seq <= kMaxSequenceNumber);
   assert(t <= kValueTypeForSeek);
-  return (seq << 8) | t;
+  return (seq << 8) | t; // 64비트중 상위를 seq, 하위를 type으로 채움
 }
 
+// string pointer에다가 data, seq+type 함께 저장
 void AppendInternalKey(std::string* result, const ParsedInternalKey& key) {
-  result->append(key.user_key.data(), key.user_key.size());
-  PutFixed64(result, PackSequenceAndType(key.sequence, key.type));
+  result->append(key.user_key.data(), key.user_key.size()); // size만큼의 data를 append
+  PutFixed64(result, PackSequenceAndType(key.sequence, key.type)); // 8bits * (7(seq)+1(type)) = 64
 }
 
 std::string ParsedInternalKey::DebugString() const {
