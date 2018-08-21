@@ -66,6 +66,11 @@ class LEVELDB_EXPORT WriteBatch {
  private:
   friend class WriteBatchInternal;
 
+  // sequence number를 가지고 있음 (DBImpl::Write - WriteBatchInternal::SetSequence)
+  // WriteBatch::rep_ :=
+  //    sequence: fixed64
+  //    count: fixed32
+  //    data: record[count]
   std::string rep_;  // See comment in write_batch.cc for the format of rep_
 };
 
