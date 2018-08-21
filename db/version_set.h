@@ -139,13 +139,15 @@ class Version {
 
   // Next file to compact based on seek stats.
   // PickCompaction() --> seek_compaction
-  // seek compaction이 정확히 어떤 경우인지 알아야함
+  // file은 read시에 compaction 할 file로 업데이트됨 DBImpl::Get
+  // seek compaction --> File이 너무 많이 찾아질 때 compaction 필요
   FileMetaData* file_to_compact_;
   int file_to_compact_level_;
 
   // Level that should be compacted next and its compaction score.
   // Score < 1 means compaction is not strictly needed.  These fields
   // are initialized by Finalize().
+  // score는 compaction 마지막 단계쯤에서 업데이트됨 VersionSet::Finalize
   // PickCompaction() --> size_compaction
   double compaction_score_;
   int compaction_level_;
