@@ -156,7 +156,7 @@ static void ReleaseBlock(void* arg, void* h) {
 
 // Convert an index iterator value (i.e., an encoded BlockHandle)
 // into an iterator over the contents of the corresponding block.
-Iterator* Table::BlockReader(void* arg,
+Iterator* Table::BlockReader(void* arg, // only Table obj
                              const ReadOptions& options,
                              const Slice& index_value) {
   Table* table = reinterpret_cast<Table*>(arg);
@@ -173,17 +173,19 @@ Iterator* Table::BlockReader(void* arg,
   if (s.ok()) {
     BlockContents contents;
     if (block_cache != nullptr) {
+      // 16byte block
       char cache_key_buffer[16];
-      EncodeFixed64(cache_key_buffer, table->rep_->cache_id);
-      EncodeFixed64(cache_key_buffer+8, handle.offset());
+      EncodeFixed64(cache_key_buffer, table->rep_->cache_id); // table id
+      EncodeFixed64(cache_key_buffer+8, handle.offset());     // SST안에서 block의 위치
       Slice key(cache_key_buffer, sizeof(cache_key_buffer));
-      cache_handle = block_cache->Lookup(key);
+      cache_handle = block_cache->Lookup(key); // 위를 사용하여 key로 만들어내고, 이를 통해 lookup시행
       if (cache_handle != nullptr) {
-        block = reinterpret_cast<Block*>(block_cache->Value(cache_handle));
+        block = reinterpret_cast<Block*>(block_cache->Value(cache_handle)); // Cache에 있으면 handle 반환
       } else {
-        s = ReadBlock(table->rep_->file, options, handle, &contents);
+        s = ReadBlock(table->rep_->file, options, handle, &contents); // 없으면 disk로부터 읽어와서
         if (s.ok()) {
           block = new Block(contents);
+          // 캐싱 가능한 상태면 insert
           if (contents.cachable && options.fill_cache) {
             cache_handle = block_cache->Insert(
                 key, block, block->size(), &DeleteCachedBlock);
