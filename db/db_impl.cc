@@ -102,9 +102,9 @@ Options SanitizeOptions(const std::string& dbname,
   result.comparator = icmp;
   result.filter_policy = (src.filter_policy != nullptr) ? ipolicy : nullptr;
   ClipToRange(&result.max_open_files,    64 + kNumNonTableCacheFiles, 50000);
-  ClipToRange(&result.write_buffer_size, 64<<10,                      1<<30);
-  ClipToRange(&result.max_file_size,     1<<20,                       1<<30);
-  ClipToRange(&result.block_size,        1<<10,                       4<<20);
+  ClipToRange(&result.write_buffer_size, 64<<10,                      1<<30); // 64KB ~ 1GB
+  ClipToRange(&result.max_file_size,     1<<20,                       1<<30); // 1MB ~ 1GB
+  ClipToRange(&result.block_size,        1<<10,                       4<<20); // 1KB ~ 4MB
   if (result.info_log == nullptr) {
     // Open a log file in the same directory as the db
     src.env->CreateDir(dbname);  // In case it does not exist
@@ -115,8 +115,9 @@ Options SanitizeOptions(const std::string& dbname,
       result.info_log = nullptr;
     }
   }
+  // default block cache for client
   if (result.block_cache == nullptr) {
-    result.block_cache = NewLRUCache(8 << 20);
+    result.block_cache = NewLRUCache(8 << 20); // 8 * 2^20 = 8MB
   }
   return result;
 }
@@ -303,6 +304,7 @@ void DBImpl::DeleteObsoleteFiles() {
 
 // storage에서 descriptor(MANIFEST)만 복구
 // 최근에 로그기록된 update를 복구하기 위해서 많은 일이 필요할 것. MANIFEST 변화는 edit에 추가
+// 복구 순서: current Vesrion -> Memtable
 Status DBImpl::Recover(VersionEdit* edit, bool *save_manifest) {
   mutex_.AssertHeld();
 
@@ -330,13 +332,13 @@ Status DBImpl::Recover(VersionEdit* edit, bool *save_manifest) {
           dbname_, "does not exist (create_if_missing is false)");
     }
   } else {
-    // CURRENT file이 있다고? --> 복구하려는데 db가 있다고? --> 옵션이 그러면 그냥 에러 낼래
     if (options_.error_if_exists) {
       return Status::InvalidArgument(
           dbname_, "exists (error_if_exists is true)");
     }
   }
-  // ?? save_manifest는 bool 타입인데..
+  // Version recovery
+  // save_manifest 시작은 무조건 false로
   s = versions_->Recover(save_manifest);
   if (!s.ok()) {
     return s;
@@ -526,9 +528,7 @@ Status DBImpl::RecoverLogFile(uint64_t log_number, bool last_log,
   return status;
 }
 
-// 얘도 Compaction의 일종
-// CompactMemTable 함수와 비교하여 분석할 것
-// Version, VersionEdit, VersionSet 이해 필요
+// ImmMem -> SST
 Status DBImpl::WriteLevel0Table(MemTable* mem, VersionEdit* edit,
                                 Version* base) {
   mutex_.AssertHeld();
@@ -591,6 +591,7 @@ void DBImpl::CompactMemTable() {
   VersionEdit edit;
   Version* base = versions_->current();
   base->Ref();
+  // memtable -> persistent sorted table
   Status s = WriteLevel0Table(imm_, &edit, base);
   base->Unref();
 
@@ -602,6 +603,7 @@ void DBImpl::CompactMemTable() {
   if (s.ok()) {
     edit.SetPrevLogNumber(0);
     edit.SetLogNumber(logfile_number_);  // Earlier logs no longer needed
+    // edit내용을 current version에 적용
     s = versions_->LogAndApply(&edit, &mutex_);
   }
 
@@ -699,7 +701,8 @@ void DBImpl::RecordBackgroundError(const Status& s) {
   }
 }
 
-// Compaction 결과로
+// BackgroundCall를 불러내는 최외각 wrapper
+// Compaction 결과에서 또 Compaction이 필요할 수 있으므로, 얘가 그때도 불려짐
 void DBImpl::MaybeScheduleCompaction() {
   mutex_.AssertHeld();
   if (background_compaction_scheduled_) {
@@ -810,7 +813,7 @@ void DBImpl::BackgroundCompaction() {
     }
     // CompactionState 속에 있는 것과 CompactionState마저 삭제
     CleanupCompaction(compact);
-    // PickCompaction() 에서 올린 Version refs를 풀어줌
+    // PickCompaction() 에서 올린 Version refs를 내림
     // Version Unrefs
     c->ReleaseInputs();
     // 정리
@@ -960,6 +963,7 @@ Status DBImpl::InstallCompactionResults(CompactionState* compact) {
   return versions_->LogAndApply(compact->compaction->edit(), &mutex_);
 }
 
+// Compact SST
 Status DBImpl::DoCompactionWork(CompactionState* compact) {
   const uint64_t start_micros = env_->NowMicros();
   int64_t imm_micros = 0;  // Micros spent doing imm_ compactions
@@ -981,7 +985,7 @@ Status DBImpl::DoCompactionWork(CompactionState* compact) {
 
   // Release mutex while we're actually doing the compaction work
   mutex_.Unlock();
-
+  // (1) 두 레벨에서 특정 범위의 key를 포함하는 iterator를 얻음
   Iterator* input = versions_->MakeInputIterator(compact->compaction);
   input->SeekToFirst();
   Status status;
@@ -989,6 +993,7 @@ Status DBImpl::DoCompactionWork(CompactionState* compact) {
   std::string current_user_key;
   bool has_current_user_key = false;
   SequenceNumber last_sequence_for_key = kMaxSequenceNumber;
+  // 위에서 얻은 iterator를 통해 Iteration 시작
   for (; input->Valid() && !shutting_down_.Acquire_Load(); ) {
     // Prioritize immutable compaction work
     if (has_imm_.NoBarrier_Load() != nullptr) {
@@ -1028,7 +1033,8 @@ Status DBImpl::DoCompactionWork(CompactionState* compact) {
         has_current_user_key = true;
         last_sequence_for_key = kMaxSequenceNumber;
       }
-
+      // (2) key가 drop되어야하는지 테스트
+      // 찾으려는 key에 대해서 sequence number를 비교
       if (last_sequence_for_key <= compact->smallest_snapshot) {
         // Hidden by an newer entry for same user key
         drop = true;    // (A)
@@ -1038,6 +1044,8 @@ Status DBImpl::DoCompactionWork(CompactionState* compact) {
         // For this user key:
         // (1) there is no data in higher levels
         // (2) data in lower levels will have larger sequence numbers
+           // 살아있는 snapshot 중에 가장 오래된(first) sequence number보다 작으면
+           // 그 key는 버려도 됨
         // (3) data in layers that are being compacted here and have
         //     smaller sequence numbers will be dropped in the next
         //     few iterations of this loop (by rule (A) above).
@@ -1056,7 +1064,7 @@ Status DBImpl::DoCompactionWork(CompactionState* compact) {
         compact->compaction->IsBaseLevelForKey(ikey.user_key),
         (int)last_sequence_for_key, (int)compact->smallest_snapshot);
 #endif
-
+    // drop되지 않아도 되면, table_builder에 key-value 추가
     if (!drop) {
       // Open output file if necessary
       if (compact->builder == nullptr) {
@@ -1069,7 +1077,7 @@ Status DBImpl::DoCompactionWork(CompactionState* compact) {
         compact->current_output()->smallest.DecodeFrom(key);
       }
       compact->current_output()->largest.DecodeFrom(key);
-      compact->builder->Add(key, input->value());
+      compact->builder->Add(key, input->value()); // add
 
       // Close output file if it is big enough
       if (compact->builder->FileSize() >=
@@ -1083,6 +1091,7 @@ Status DBImpl::DoCompactionWork(CompactionState* compact) {
 
     input->Next();
   }
+  // iteration end
 
   if (status.ok() && shutting_down_.Acquire_Load()) {
     status = Status::IOError("Deleting DB during compaction");
@@ -1109,7 +1118,9 @@ Status DBImpl::DoCompactionWork(CompactionState* compact) {
 
   mutex_.Lock();
   stats_[compact->compaction->level() + 1].Add(stats);
-
+  // (4) install changes
+  //   1) log : clear related log entry
+  //   2) versionSet : add new file in new versionSet
   if (status.ok()) {
     status = InstallCompactionResults(compact);
   }
@@ -1146,6 +1157,7 @@ static void CleanupIteratorState(void* arg1, void* arg2) {
 
 }  // anonymous namespace
 
+//
 Iterator* DBImpl::NewInternalIterator(const ReadOptions& options,
                                       SequenceNumber* latest_snapshot,
                                       uint32_t* seed) {
@@ -1154,17 +1166,23 @@ Iterator* DBImpl::NewInternalIterator(const ReadOptions& options,
 
   // Collect together all needed child iterators
   std::vector<Iterator*> list;
+    // 1) Memtable
   list.push_back(mem_->NewIterator());
   mem_->Ref();
+    // 2) Immutable Memtable
   if (imm_ != nullptr) {
     list.push_back(imm_->NewIterator());
     imm_->Ref();
   }
+    // 3) all SSTables
   versions_->current()->AddIterators(options, &list);
+  // 셋다 Merge한 iterator 생성
   Iterator* internal_iter =
       NewMergingIterator(&internal_comparator_, &list[0], list.size());
   versions_->current()->Ref();
 
+  // iterator가 살아있는 동안에는 유지될 것.
+  // 대신에 iterator가 죽으면? 삭제시킬 것
   IterState* cleanup = new IterState(&mutex_, mem_, imm_, versions_->current());
   internal_iter->RegisterCleanup(CleanupIteratorState, cleanup, nullptr);
 
@@ -1184,11 +1202,15 @@ int64_t DBImpl::TEST_MaxNextLevelOverlappingBytes() {
   return versions_->MaxNextLevelOverlappingBytes();
 }
 
+// Get function
 Status DBImpl::Get(const ReadOptions& options,
                    const Slice& key,
                    std::string* value) {
   Status s;
+  // consistent view를 제공하기 위해
   MutexLock l(&mutex_);
+  // 모든 read operation은 db의 snapshot 기반으로 이루어짐
+  // From ReadOptions or VersionSet
   SequenceNumber snapshot;
   if (options.snapshot != nullptr) {
     snapshot =
@@ -1197,9 +1219,12 @@ Status DBImpl::Get(const ReadOptions& options,
     snapshot = versions_->LastSequence();
   }
 
+  // local pointer 지정으로,
+  // 해당 pointer가 새로 업데이트 되어도 지장이 없을 것
   MemTable* mem = mem_;
   MemTable* imm = imm_;
   Version* current = versions_->current();
+  // Ref count로 lifecycle 유지시킴
   mem->Ref();
   if (imm != nullptr) imm->Ref();
   current->Ref();
@@ -1208,13 +1233,15 @@ Status DBImpl::Get(const ReadOptions& options,
   Version::GetStats stats;
 
   // Unlock while reading from files and memtables
+  // Read 시 만큼은 concurrent reads가 가능하도록??
   {
     mutex_.Unlock();
     // First look in the memtable, then in the immutable memtable (if any).
+    // memtable -> immutable memtable -> Version (All SST in db) 순서로 진행
     LookupKey lkey(key, snapshot);
     if (mem->Get(lkey, value, &s)) {
       // Done
-    } else if (imm != nullptr && imm->Get(lkey, value, &s)) {
+    } else if (imm != nullptr && imm->Get(lkey, value, &s)) { // immutable은 경우에따라 없을수도
       // Done
     } else {
       s = current->Get(options, lkey, value, &stats);
@@ -1222,10 +1249,12 @@ Status DBImpl::Get(const ReadOptions& options,
     }
     mutex_.Lock();
   }
-
-  if (have_stat_update && current->UpdateStats(stats)) {
+  // Compaction 확인 및, compact 필요한 SST 찾음
+  if (have_stat_update && current->UpdateStats(stats)) { // SST에서 찾음 && seek file이 있을때 작동
+    // condition에서 compaction 조건 만족시켜줌 (file_to_compact_ , file_to_compact_level_)
     MaybeScheduleCompaction();
   }
+  // Unreferencing
   mem->Unref();
   if (imm != nullptr) imm->Unref();
   current->Unref();
@@ -1271,13 +1300,18 @@ Status DBImpl::Delete(const WriteOptions& options, const Slice& key) {
 }
 
 Status DBImpl::Write(const WriteOptions& options, WriteBatch* my_batch) {
+  // Serialization
+  // to-be-performed operation
   Writer w(&mutex_);
   w.batch = my_batch;
   w.sync = options.sync;
   w.done = false;
 
-  MutexLock l(&mutex_);
-  writers_.push_back(&w);
+  MutexLock l(&mutex_); // writers_ 도 보호
+  writers_.push_back(&w); // current thread가 수행
+  // 또다른 write가 수행중인지 체크
+  // 수행중이면 lock을 풀고 wait 하려고
+  // front가 아니라는건 active writer가 아니라는 것 == current writer가 아니라는 것
   while (!w.done && &w != writers_.front()) {
     w.cv.Wait();
   }
@@ -1286,28 +1320,36 @@ Status DBImpl::Write(const WriteOptions& options, WriteBatch* my_batch) {
   }
 
   // May temporarily unlock and wait.
+  // MemTable에 빈자리가 있는지 체크
   Status status = MakeRoomForWrite(my_batch == nullptr);
-  uint64_t last_sequence = versions_->LastSequence();
+  uint64_t last_sequence = versions_->LastSequence(); // 마지막 sequence number를 get
   Writer* last_writer = &w;
   if (status.ok() && my_batch != nullptr) {  // nullptr batch is for compactions
+    // 마지막으로 사용한 writer로부터 변경된점을 알 수 있음
+    // 또한 이전의 여러 write-request들을 하나의 current write로 batch group 생성
     WriteBatch* updates = BuildBatchGroup(&last_writer);
+    // WriteBatch에도 똑같이 Sequence number가 있어서,
+    // 새로만들어진 BatchGroup에 새로운 Sequence number를 세팅
     WriteBatchInternal::SetSequence(updates, last_sequence + 1);
-    last_sequence += WriteBatchInternal::Count(updates);
+    last_sequence += WriteBatchInternal::Count(updates); // 변화 개수만큼 +
 
     // Add to log and apply to memtable.  We can release the lock
     // during this phase since &w is currently responsible for logging
     // and protects against concurrent loggers and concurrent writes
     // into mem_.
     {
+      // 업데이트에 대해서 logging (serializing을 통해)
       mutex_.Unlock();
-      status = log_->AddRecord(WriteBatchInternal::Contents(updates));
+      status = log_->AddRecord(WriteBatchInternal::Contents(updates)); // key, value data 모두 포함한 로그
       bool sync_error = false;
+      // [OPTIONAL] For durability
       if (status.ok() && options.sync) {
         status = logfile_->Sync();
         if (!status.ok()) {
           sync_error = true;
         }
       }
+      // 문제가 없으면 모든 update가 memtable에 insert
       if (status.ok()) {
         status = WriteBatchInternal::InsertInto(updates, mem_);
       }
@@ -1321,7 +1363,7 @@ Status DBImpl::Write(const WriteOptions& options, WriteBatch* my_batch) {
     }
     if (updates == tmp_batch_) tmp_batch_->Clear();
 
-    versions_->SetLastSequence(last_sequence);
+    versions_->SetLastSequence(last_sequence); // 가장 마지막 Sequence Number 세팅
   }
 
   while (true) {
@@ -1395,11 +1437,13 @@ WriteBatch* DBImpl::BuildBatchGroup(Writer** last_writer) {
 
 // REQUIRES: mutex_ is held
 // REQUIRES: this thread is currently at the front of the writer queue
+// MemTable에 빈 공간이 있는지 체크
+// arg [force] = WriteBatch 존재 유무 (있으면 true)
 Status DBImpl::MakeRoomForWrite(bool force) {
   mutex_.AssertHeld();
   assert(!writers_.empty());
-  bool allow_delay = !force;
-  Status s;
+  bool allow_delay = !force; // WriteBatch가 있으면 delay 허용치 않음.
+  Status s; // s.ok
   while (true) {
     if (!bg_error_.ok()) {
       // Yield previous error
@@ -1414,6 +1458,7 @@ Status DBImpl::MakeRoomForWrite(bool force) {
       // individual write by 1ms to reduce latency variance.  Also,
       // this delay hands over some CPU to the compaction thread in
       // case it is sharing the same core as the writer.
+      // L0 SST가 8개가 넘으면 좀 천천히 하라고 Sleep
       mutex_.Unlock();
       env_->SleepForMicroseconds(1000);
       allow_delay = false;  // Do not delay a single write more than once
@@ -1425,14 +1470,19 @@ Status DBImpl::MakeRoomForWrite(bool force) {
     } else if (imm_ != nullptr) {
       // We have filled up the current memtable, but the previous
       // one is still being compacted, so we wait.
+      // 일단 빈자리는 없고, immutable도 남아있음
+      // 그러니 가득차서 spin lock 처럼 기다리는중
       Log(options_.info_log, "Current memtable full; waiting...\n");
       background_work_finished_signal_.Wait();
     } else if (versions_->NumLevelFiles(0) >= config::kL0_StopWritesTrigger) {
       // There are too many level-0 files.
+      // L0 SST가 12개 넘으면 모든 쓰기를 일시적으로 멈춰!
       Log(options_.info_log, "Too many L0 files; waiting...\n");
       background_work_finished_signal_.Wait();
     } else {
       // Attempt to switch to a new memtable and trigger compaction of old
+      // imm는 없고 자리도 없고
+      // Mem to ImmMem , New Mem, Setting(current를 새걸로 지정)
       assert(versions_->PrevLogNumber() == 0);
       uint64_t new_log_number = versions_->NewFileNumber();
       WritableFile* lfile = nullptr;
@@ -1452,6 +1502,7 @@ Status DBImpl::MakeRoomForWrite(bool force) {
       mem_ = new MemTable(internal_comparator_);
       mem_->Ref();
       force = false;   // Do not force another compaction if have room
+      // 새로운 imm Mem 생성에 대한 BGCompaction 등록
       MaybeScheduleCompaction();
     }
   }

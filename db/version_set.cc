@@ -413,7 +413,7 @@ Status Version::Get(const ReadOptions& options,
       saver.ucmp = ucmp;
       saver.user_key = user_key;
       saver.value = value;
-      // Cache로부터 진짜 데이터를 찾는 과정
+      // index table Cache로부터 진짜 데이터를 찾는 과정
       s = vset_->table_cache_->Get(options, f->number, f->file_size,
                                    ikey, &saver, SaveValue);
       if (!s.ok()) {
