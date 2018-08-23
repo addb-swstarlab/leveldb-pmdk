@@ -87,18 +87,20 @@ int FindFile(const InternalKeyComparator& icmp,
              const std::vector<FileMetaData*>& files,
              const Slice& key) {
   uint32_t left = 0;
-  uint32_t right = files.size();
+  uint32_t right = files.size(); // 그 level에 file개수
+  // right -> mid로 수렴
+  // mid는 left로 수렴
   while (left < right) {
     uint32_t mid = (left + right) / 2;
     const FileMetaData* f = files[mid];
     if (icmp.InternalKeyComparator::Compare(f->largest.Encode(), key) < 0) {
       // Key at "mid.largest" is < "target".  Therefore all
       // files at or before "mid" are uninteresting.
-      left = mid + 1;
+      left = mid + 1; // (mid, right]
     } else {
       // Key at "mid.largest" is >= "target".  Therefore all files
       // after "mid" are uninteresting.
-      right = mid;
+      right = mid;    // [left, mid)
     }
   }
   return right;
@@ -331,7 +333,7 @@ void Version::ForEachOverlapping(Slice user_key, Slice internal_key,
     }
   }
 }
-
+// DBImpl::Get ->
 Status Version::Get(const ReadOptions& options,
                     const LookupKey& k,
                     std::string* value,
@@ -349,7 +351,7 @@ Status Version::Get(const ReadOptions& options,
   // We can search level-by-level since entries never hop across
   // levels.  Therefore we are guaranteed that if we find data
   // in an smaller level, later levels are irrelevant.
-  std::vector<FileMetaData*> tmp;
+  std::vector<FileMetaData*> tmp; // 해당하는 File을 임시로 모으는 용도
   FileMetaData* tmp2;
   for (int level = 0; level < config::kNumLevels; level++) {
     size_t num_files = files_[level].size();
@@ -363,6 +365,7 @@ Status Version::Get(const ReadOptions& options,
       tmp.reserve(num_files);
       for (uint32_t i = 0; i < num_files; i++) {
         FileMetaData* f = files[i];
+        // 해당 키 범위에 속하는 SST를 모두 벡터에
         if (ucmp->Compare(user_key, f->smallest.user_key()) >= 0 &&
             ucmp->Compare(user_key, f->largest.user_key()) <= 0) {
           tmp.push_back(f);
@@ -392,6 +395,8 @@ Status Version::Get(const ReadOptions& options,
       }
     }
 
+    // Metadata로 키범위만 알고있으니까, 해당 MetaData를 갖는 SST File들을 모두 찾아냈음.
+    // 이제 SST 안에 실제 찾고자하는 데이터가 있는지 확인할 것
     for (uint32_t i = 0; i < num_files; ++i) {
       if (last_file_read != nullptr && stats->seek_file == nullptr) {
         // We have had more than one seek for this read.  Charge the 1st file.
@@ -408,6 +413,7 @@ Status Version::Get(const ReadOptions& options,
       saver.ucmp = ucmp;
       saver.user_key = user_key;
       saver.value = value;
+      // Cache로부터 진짜 데이터를 찾는 과정
       s = vset_->table_cache_->Get(options, f->number, f->file_size,
                                    ikey, &saver, SaveValue);
       if (!s.ok()) {
@@ -917,6 +923,7 @@ Status VersionSet::Recover(bool *save_manifest) {
   };
 
   // Read "CURRENT" file, which contains a pointer to the current manifest file
+  // CURRENT file은 version의 변경에 대한 로그 기록에 사용된 file
   std::string current;
   Status s = ReadFileToString(env_, CurrentFileName(dbname_), &current);
   if (!s.ok()) {
@@ -925,8 +932,9 @@ Status VersionSet::Recover(bool *save_manifest) {
   if (current.empty() || current[current.size()-1] != '\n') {
     return Status::Corruption("CURRENT file does not end with newline");
   }
-  current.resize(current.size() - 1);
+  current.resize(current.size() - 1); // newline 삭제
 
+  // dbname/CURRENT_File
   std::string dscname = dbname_ + "/" + current;
   SequentialFile* file;
   s = env_->NewSequentialFile(dscname, &file);
