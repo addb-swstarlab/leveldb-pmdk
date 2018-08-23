@@ -220,14 +220,16 @@ Iterator* Table::NewIterator(const ReadOptions& options) const {
       &Table::BlockReader, const_cast<Table*>(this), options);
 }
 
+// From TableCache::Get
 Status Table::InternalGet(const ReadOptions& options, const Slice& k,
                           void* arg,
                           void (*saver)(void*, const Slice&, const Slice&)) {
   Status s;
+  // index block에서 해당 internal key를 갖는 entry를 찾음
   Iterator* iiter = rep_->index_block->NewIterator(rep_->options.comparator);
   iiter->Seek(k);
   if (iiter->Valid()) {
-    Slice handle_value = iiter->value();
+    Slice handle_value = iiter->value(); // Block handle 일 것??
     FilterBlockReader* filter = rep_->filter;
     BlockHandle handle;
     if (filter != nullptr &&
@@ -235,8 +237,11 @@ Status Table::InternalGet(const ReadOptions& options, const Slice& k,
         !filter->KeyMayMatch(handle.offset(), k)) {
       // Not found
     } else {
+      // Block Reader에 의해 실제로 Block안의 내용을 읽음
+      // BlockReader : index iterator value (encoded BlockHandle) -> Block contents iterator
       Iterator* block_iter = BlockReader(this, options, iiter->value());
       block_iter->Seek(k);
+      // 찾았으면 cache 저장인듯
       if (block_iter->Valid()) {
         (*saver)(arg, block_iter->key(), block_iter->value());
       }
