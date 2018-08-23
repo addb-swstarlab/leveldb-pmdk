@@ -10,7 +10,11 @@
 #include "util/coding.h"
 
 namespace leveldb {
-
+/*
+ * File은 우리가 생각하는 파일시스템의 파일을 객체화. 곧 실제 파일을 이야기할 수 있으므로 가시적
+ * Table은 levelDB에서 구조화한 SSTable을 의미함. 즉, 추상적인 형체
+ * 그렇다면 TableAndFile은 특정 Table이 위치한 File객체를 묶어서 표현한 것으로 보임
+*/
 struct TableAndFile {
   RandomAccessFile* file;
   Table* table;
@@ -42,13 +46,16 @@ TableCache::~TableCache() {
   delete cache_;
 }
 
+// table_cache -> get
 Status TableCache::FindTable(uint64_t file_number, uint64_t file_size,
                              Cache::Handle** handle) {
   Status s;
   char buf[sizeof(file_number)];
   EncodeFixed64(buf, file_number);
   Slice key(buf, sizeof(buf));
+  // table cache에서 해당 key에 대한 매핑이 있으면 Cache handle을 반환받음
   *handle = cache_->Lookup(key);
+  // table cache에 해당 key에 대한 매핑이 없으면 새로 만들어서 insert해줌
   if (*handle == nullptr) {
     std::string fname = TableFileName(dbname_, file_number);
     RandomAccessFile* file = nullptr;
@@ -102,6 +109,7 @@ Iterator* TableCache::NewIterator(const ReadOptions& options,
   return result;
 }
 
+// DBImpl -> VersionSet -> TableCache
 Status TableCache::Get(const ReadOptions& options,
                        uint64_t file_number,
                        uint64_t file_size,
@@ -109,9 +117,9 @@ Status TableCache::Get(const ReadOptions& options,
                        void* arg,
                        void (*saver)(void*, const Slice&, const Slice&)) {
   Cache::Handle* handle = nullptr;
-  Status s = FindTable(file_number, file_size, &handle);
+  Status s = FindTable(file_number, file_size, &handle); // table cache로 부터 handle을 받음
   if (s.ok()) {
-    Table* t = reinterpret_cast<TableAndFile*>(cache_->Value(handle))->table;
+    Table* t = reinterpret_cast<TableAndFile*>(cache_->Value(handle))->table; //
     s = t->InternalGet(options, k, arg, saver);
     cache_->Release(handle);
   }
