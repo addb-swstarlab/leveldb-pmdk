@@ -5,6 +5,10 @@
 #ifndef STORAGE_LEVELDB_DB_DB_IMPL_H_
 #define STORAGE_LEVELDB_DB_DB_IMPL_H_
 
+// custom by JH
+#define MAX_LEVEL 5
+#define MAX_LDB 50000
+
 #include <deque>
 #include <set>
 #include "db/dbformat.h"
@@ -198,9 +202,18 @@ class DBImpl : public DB {
   DBImpl(const DBImpl&);
   void operator=(const DBImpl&);
 
-  const Comparator* user_compara tor() const {
+  const Comparator* user_comparator() const {
     return internal_comparator_.user_comparator();
   }
+  // Customized by JH
+  unsigned int totalCompactionCount;
+  unsigned int eachCompactionCount[MAX_LEVEL] = {0};
+  unsigned int eachLDBState[MAX_LDB] = {0};
+  unsigned int eachLDBLifetime[MAX_LDB] = {0};
+  unsigned int eachLDBLevel[MAX_LDB] = {0};
+//   unsigned int eachCompactionCount[MAX_LEVEL];
+//   unsigned int eachLDBState[MAX_LDB];
+//   unsigned int eachLDBLifttime[MAX_LDB];
 };
 
 // Sanitize db options.  The caller should delete result.info_log if

@@ -152,7 +152,9 @@ DBImpl::DBImpl(const Options& raw_options, const std::string& dbname)
       background_compaction_scheduled_(false),
       manual_compaction_(nullptr),
       versions_(new VersionSet(dbname_, &options_, table_cache_,
-                               &internal_comparator_)) {
+                               &internal_comparator_)),
+      // Customized by JH
+      totalCompactionCount(0) {
   has_imm_.Release_Store(nullptr);
 }
 
@@ -271,7 +273,7 @@ void DBImpl::DeleteObsoleteFiles() {
           // (in case there is a race that allows other incarnations)
           keep = (number >= versions_->ManifestFileNumber());
           break;
-        case kTableFile:
+        case kTableFile: // SST라면, number는 하나의 ID 값이 됨
           keep = (live.find(number) != live.end());
           break;
         case kTempFile:
@@ -292,10 +294,15 @@ void DBImpl::DeleteObsoleteFiles() {
         // SST 파일이면 cache에서 evict부터
         if (type == kTableFile) {
           table_cache_->Evict(number);
-        }
-        Log(options_.info_log, "Delete type=%d #%lld\n",
+          Log(options_.info_log, "Delete type=%d #%lld [%s]\n",
             static_cast<int>(type),
-            static_cast<unsigned long long>(number));
+            static_cast<unsigned long long>(number),
+            filenames[i].c_str());          
+        }
+        // Log(options_.info_log, "Delete type=%d #%lld [%s]\n",
+        //     static_cast<int>(type),
+        //     static_cast<unsigned long long>(number),
+        //     filenames[i].c_str());
         env_->DeleteFile(dbname_ + "/" + filenames[i]);
       }
     }
@@ -529,6 +536,7 @@ Status DBImpl::RecoverLogFile(uint64_t log_number, bool last_log,
 }
 
 // ImmMem -> SST
+// CompactMemetable --> WriteLevel0Table
 Status DBImpl::WriteLevel0Table(MemTable* mem, VersionEdit* edit,
                                 Version* base) {
   mutex_.AssertHeld();
@@ -538,8 +546,8 @@ Status DBImpl::WriteLevel0Table(MemTable* mem, VersionEdit* edit,
   meta.number = versions_->NewFileNumber(); // 새로운 file number 할당
   pending_outputs_.insert(meta.number);     // 삭제되어서는 안될 table file (number) 들의 set
   Iterator* iter = mem->NewIterator();
-  Log(options_.info_log, "Level-0 table #%llu: started",
-      (unsigned long long) meta.number);
+  // Log(options_.info_log, "Level-0 table #%llu: started",
+  //     (unsigned long long) meta.number);
 
   Status s;
   // lock 순서 체크
@@ -550,6 +558,11 @@ Status DBImpl::WriteLevel0Table(MemTable* mem, VersionEdit* edit,
     s = BuildTable(dbname_, env_, options_, table_cache_, iter, &meta);
     mutex_.Lock();
   }
+  // Customized by JH
+  // Start L0 lifetime
+  eachLDBState[meta.number] = 1;
+  eachLDBLifetime[meta.number] = eachCompactionCount[0];
+  eachLDBLevel[meta.number] = 0;
 
   Log(options_.info_log, "Level-0 table #%llu: %lld bytes %s",
       (unsigned long long) meta.number,
@@ -584,6 +597,7 @@ Status DBImpl::WriteLevel0Table(MemTable* mem, VersionEdit* edit,
 // Convert immutable memtable into table file
 // immutable memtable = memtable being compacted
 void DBImpl::CompactMemTable() {
+  // Log(options_.info_log, "CompactMemtable()");
   mutex_.AssertHeld();
   assert(imm_ != nullptr);
 
@@ -747,6 +761,7 @@ void DBImpl::BackgroundCall() {
 
 // 실제 Background Compaction 함수
 void DBImpl::BackgroundCompaction() {
+  // Log(options_.info_log, "BackgroundCompaction()");
   mutex_.AssertHeld();
 
   // Mem to L0
@@ -783,6 +798,7 @@ void DBImpl::BackgroundCompaction() {
   }
   // grandparent(level @+2)의 data와 overlapping 되는게 많으면,
   // 불필요한 움직임을 만들어낼 수 있다.
+  // [Merge나 Split없이 다음 Level로 이동하는 케이스]
   else if (!is_manual && c->IsTrivialMove()) {
     // Move file to next level
     assert(c->num_input_files(0) == 1); // level @ 에서 선택한 input file은 하나여야만 한다
@@ -796,8 +812,16 @@ void DBImpl::BackgroundCompaction() {
       RecordBackgroundError(status);
     }
     VersionSet::LevelSummaryStorage tmp;
-    Log(options_.info_log, "Moved #%lld to level-%d %lld bytes %s: %s\n",
+    //Log(options_.info_log, "Moved #%lld to level-%d %lld bytes %s: %s\n",
+    //    static_cast<unsigned long long>(f->number),
+    //    c->level() + 1,
+    //    static_cast<unsigned long long>(f->file_size),
+    //    status.ToString().c_str(),
+     //   versions_->LevelSummary(&tmp));
+    Log(options_.info_log, "Moved #%lld (L:%s) to level-%d %lld bytes %s: %s\n",
         static_cast<unsigned long long>(f->number),
+        //static_cast<char>((f->largest.user_key()).data()),
+        f->largest.user_key().ToString().c_str(),
         c->level() + 1,
         static_cast<unsigned long long>(f->file_size),
         status.ToString().c_str(),
@@ -805,7 +829,7 @@ void DBImpl::BackgroundCompaction() {
   }
   // common case
   // 이게 진짜 compaction
-  else {
+  else {  
     CompactionState* compact = new CompactionState(c);
     status = DoCompactionWork(compact);
     if (!status.ok()) {
@@ -936,6 +960,14 @@ Status DBImpl::FinishCompactionOutputFile(CompactionState* compact,
           compact->compaction->level(),
           (unsigned long long) current_entries,
           (unsigned long long) current_bytes);
+      // Customized by JH
+      // About creating new LDB
+      // 1) Change State
+      eachLDBState[output_number] = 1;
+      // 2) Set lifetime
+      eachLDBLifetime[output_number] = eachCompactionCount[compact->compaction->level()];
+      // 3) Set Level about this LDB
+      eachLDBLevel[output_number] = compact->compaction->level();
     }
   }
   return s;
@@ -973,6 +1005,48 @@ Status DBImpl::DoCompactionWork(CompactionState* compact) {
       compact->compaction->level(),
       compact->compaction->num_input_files(1),
       compact->compaction->level() + 1);
+
+  // Customized by JH
+  int c_level = compact->compaction->level();
+  // 1) Count total and each-level
+  totalCompactionCount += 1;
+  eachCompactionCount[c_level] += 1;
+  // Log(options_.info_log, "Level %d", compact->compaction->level());
+  // for (int i = 0; i<compact->compaction->num_input_files(0); i++) {
+  //   Log(options_.info_log, "File number: %d", compact->compaction->input(0, i)->number);
+  // }
+  
+  // Log(options_.info_log, "Level %d", compact->compaction->level()+1);
+  // for (int i = 0; i<compact->compaction->num_input_files(1); i++) {
+  //   Log(options_.info_log, "File number: %d", compact->compaction->input(1, i)->number);
+  // }
+
+  // 2) Compaction Input == Will delete files soon.
+  for (int layer=0; layer<2; layer++) {
+    for (int i=0; i < compact->compaction->num_input_files(layer); i++) {
+      uint64_t ldb_number = compact->compaction->input(layer, i)->number;
+      Log(options_.info_log,  "[DEBUG] [%d] : lifetime-%d %d-CompactionCount-%d",
+          ldb_number, eachLDBLifetime[ldb_number], c_level, eachCompactionCount[c_level]);
+      // 2-1) Set lifetime
+      if (eachLDBLifetime[ldb_number] // Level-Inconsistency --> set 0 (yet)
+            > eachCompactionCount[c_level]) {
+        // Do not happened..
+        eachLDBLifetime[ldb_number] = -1; // ERROR FLAG
+      } else if (eachLDBLifetime[ldb_number] // Level-Consistency --> count correctly
+            < eachCompactionCount[c_level]) {
+        eachLDBLifetime[ldb_number] = eachCompactionCount[c_level] - eachLDBLifetime[ldb_number];
+      } else { // equal case => After make ldb file, immediatly delete this ldb file.
+        // Log(options_.info_log,  "[ERROR] Lifetime is equal to CompactionCount ... %d : lifetime-%d %d-CompactionCount-%d",
+        //   ldb_number, eachLDBLifetime[ldb_number], c_level, eachCompactionCount[c_level]);
+        eachLDBLifetime[ldb_number] = 1; // TO DO, Temp value
+      }
+      Log(options_.info_log,  "[DEBUG] [%d] : lifetime-%d %d-CompactionCount-%d",
+          ldb_number, eachLDBLifetime[ldb_number], c_level, eachCompactionCount[c_level]);
+      // 2-2) Change state [Exit state]
+      eachLDBState[ldb_number] = 2;
+    }
+  }
+  
 
   assert(versions_->NumLevelFiles(compact->compaction->level()) > 0);
   assert(compact->builder == nullptr);
@@ -1292,6 +1366,9 @@ void DBImpl::ReleaseSnapshot(const Snapshot* snapshot) {
 
 // Convenience methods
 Status DBImpl::Put(const WriteOptions& o, const Slice& key, const Slice& val) {
+  Log(options_.info_log, "Key: %s , Value: %s",
+    key.ToString().c_str(),
+    val.ToString().c_str());
   return DB::Put(o, key, val);
 }
 
@@ -1300,6 +1377,7 @@ Status DBImpl::Delete(const WriteOptions& options, const Slice& key) {
 }
 
 Status DBImpl::Write(const WriteOptions& options, WriteBatch* my_batch) {
+  // Log(options_.info_log, "Write Command!");
   // Serialization
   // to-be-performed operation
   Writer w(&mutex_);
@@ -1571,6 +1649,38 @@ bool DBImpl::GetProperty(const Slice& property, std::string* value) {
              static_cast<unsigned long long>(total_usage));
     value->append(buf);
     return true;
+  } 
+  // Customized by JH
+  else if (in == "JH-stats") {
+    char buf[400];
+    snprintf(buf, sizeof(buf),
+      "                               [JH - statistics]\n"
+      "1) --------------------------------------------------------\n"
+      "Total compaction count: %d\n"
+      "Level-0 compaction count: %d\n"
+      "Level-1 compaction count: %d\n"
+      "Level-2 compaction count: %d\n"
+      "Level-3 compaction count: %d\n"
+      "Level-4 compaction count: %d\n"
+      "2) --------------------------------------------------------\n"
+    , totalCompactionCount,
+      eachCompactionCount[0],
+      eachCompactionCount[1],
+      eachCompactionCount[2],
+      eachCompactionCount[3],
+      eachCompactionCount[4]);
+    value->append(buf);
+
+    for (int i=0; i < MAX_LDB; i++) {
+      if (eachLDBState[i] == 2 && eachLDBLifetime[i] != 0) {
+        snprintf(buf, sizeof(buf), "[%d] Level-%d : %d \n",
+          i,
+          eachLDBLevel[i],
+          eachLDBLifetime[i]);
+        value->append(buf);
+      }
+    }
+    return true;
   }
 
   return false;
@@ -1620,6 +1730,7 @@ DB::~DB() { }
 
 Status DB::Open(const Options& options, const std::string& dbname,
                 DB** dbptr) {
+  Log(options.info_log, "DB::Open()");
   *dbptr = nullptr;
 
   DBImpl* impl = new DBImpl(options, dbname);

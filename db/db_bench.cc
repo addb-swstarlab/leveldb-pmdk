@@ -545,6 +545,8 @@ class Benchmark {
         RunBenchmark(num_threads, name, method);
       }
     }
+    // Customized by JH
+    PrintStats("leveldb.JH-stats");
   }
 
  private:
