@@ -207,6 +207,14 @@ class DBImpl : public DB {
   }
   // Customized by JH
   unsigned int totalCompactionCount;
+  /*
+   * <eachCompactionCount>
+   * [0] = Creation and 0~1
+   * [1] = 0~1 + 1~2
+   * [2] = 1~2 + 2~3
+   * [3] = 2~3 + 3~4
+   * [4] = 3~4 + 4~5
+  */
   unsigned int eachCompactionCount[MAX_LEVEL] = {0};
   unsigned int eachLDBState[MAX_LDB] = {0};
   unsigned int eachLDBLifetime[MAX_LDB] = {0};

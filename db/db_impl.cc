@@ -560,6 +560,7 @@ Status DBImpl::WriteLevel0Table(MemTable* mem, VersionEdit* edit,
   }
   // Customized by JH
   // Start L0 lifetime
+  eachCompactionCount[0] += 1;
   eachLDBState[meta.number] = 1;
   eachLDBLifetime[meta.number] = eachCompactionCount[0];
   eachLDBLevel[meta.number] = 0;
@@ -961,13 +962,16 @@ Status DBImpl::FinishCompactionOutputFile(CompactionState* compact,
           (unsigned long long) current_entries,
           (unsigned long long) current_bytes);
       // Customized by JH
-      // About creating new LDB
+      /* 
+       * About creating new LDB,
+       * New creation --> Compacted Level = Compaction Level "+ 1"
+       */
       // 1) Change State
       eachLDBState[output_number] = 1;
       // 2) Set lifetime
-      eachLDBLifetime[output_number] = eachCompactionCount[compact->compaction->level()];
+      eachLDBLifetime[output_number] = eachCompactionCount[compact->compaction->level() + 1];
       // 3) Set Level about this LDB
-      eachLDBLevel[output_number] = compact->compaction->level();
+      eachLDBLevel[output_number] = (compact->compaction->level() + 1);
     }
   }
   return s;
@@ -1010,38 +1014,33 @@ Status DBImpl::DoCompactionWork(CompactionState* compact) {
   int c_level = compact->compaction->level();
   // 1) Count total and each-level
   totalCompactionCount += 1;
+  // Increase count based on between-Counting
   eachCompactionCount[c_level] += 1;
-  // Log(options_.info_log, "Level %d", compact->compaction->level());
-  // for (int i = 0; i<compact->compaction->num_input_files(0); i++) {
-  //   Log(options_.info_log, "File number: %d", compact->compaction->input(0, i)->number);
-  // }
-  
-  // Log(options_.info_log, "Level %d", compact->compaction->level()+1);
-  // for (int i = 0; i<compact->compaction->num_input_files(1); i++) {
-  //   Log(options_.info_log, "File number: %d", compact->compaction->input(1, i)->number);
-  // }
+  eachCompactionCount[c_level+1] += 1;
 
   // 2) Compaction Input == Will delete files soon.
   for (int layer=0; layer<2; layer++) {
     for (int i=0; i < compact->compaction->num_input_files(layer); i++) {
       uint64_t ldb_number = compact->compaction->input(layer, i)->number;
-      Log(options_.info_log,  "[DEBUG] [%d] : lifetime-%d %d-CompactionCount-%d",
-          ldb_number, eachLDBLifetime[ldb_number], c_level, eachCompactionCount[c_level]);
+      int ldb_level = eachLDBLevel[ldb_number];
       // 2-1) Set lifetime
       if (eachLDBLifetime[ldb_number] // Level-Inconsistency --> set 0 (yet)
-            > eachCompactionCount[c_level]) {
+            > eachCompactionCount[ldb_level]) {
         // Do not happened..
+        Log(options_.info_log,  "[ERROR] Lifetime is greater than CompactionCount ... %d : lifetime-%d ldb-%d %d-CompactionCount-%d %d",
+          // ldb_number, eachLDBLifetime[ldb_number], c_level, eachCompactionCount[c_level]);
+          ldb_number, eachLDBLifetime[ldb_number], ldb_level, c_level, eachCompactionCount[ldb_level], eachCompactionCount[c_level]);
         eachLDBLifetime[ldb_number] = -1; // ERROR FLAG
       } else if (eachLDBLifetime[ldb_number] // Level-Consistency --> count correctly
-            < eachCompactionCount[c_level]) {
-        eachLDBLifetime[ldb_number] = eachCompactionCount[c_level] - eachLDBLifetime[ldb_number];
+            < eachCompactionCount[ldb_level]) {
+        eachLDBLifetime[ldb_number] = eachCompactionCount[ldb_level] - eachLDBLifetime[ldb_number];
       } else { // equal case => After make ldb file, immediatly delete this ldb file.
-        // Log(options_.info_log,  "[ERROR] Lifetime is equal to CompactionCount ... %d : lifetime-%d %d-CompactionCount-%d",
-        //   ldb_number, eachLDBLifetime[ldb_number], c_level, eachCompactionCount[c_level]);
-        eachLDBLifetime[ldb_number] = 1; // TO DO, Temp value
+        Log(options_.info_log,  "[ERROR] Lifetime is equal to CompactionCount ... %d : lifetime-%d ldb-%d %d-CompactionCount-%d %d",
+          // ldb_number, eachLDBLifetime[ldb_number], c_level, eachCompactionCount[c_level]);
+          ldb_number, eachLDBLifetime[ldb_number], ldb_level, c_level, eachCompactionCount[ldb_level], eachCompactionCount[c_level]);
+        eachLDBLifetime[ldb_number] = -2; // ERROR FLAG
       }
-      Log(options_.info_log,  "[DEBUG] [%d] : lifetime-%d %d-CompactionCount-%d",
-          ldb_number, eachLDBLifetime[ldb_number], c_level, eachCompactionCount[c_level]);
+
       // 2-2) Change state [Exit state]
       eachLDBState[ldb_number] = 2;
     }
@@ -1671,15 +1670,55 @@ bool DBImpl::GetProperty(const Slice& property, std::string* value) {
       eachCompactionCount[4]);
     value->append(buf);
 
-    for (int i=0; i < MAX_LDB; i++) {
-      if (eachLDBState[i] == 2 && eachLDBLifetime[i] != 0) {
-        snprintf(buf, sizeof(buf), "[%d] Level-%d : %d \n",
-          i,
-          eachLDBLevel[i],
-          eachLDBLifetime[i]);
-        value->append(buf);
-      }
+    // DEBUG
+    // for (int i=0; i < MAX_LDB; i++) {
+    //   if (eachLDBState[i] == 2 /* && eachLDBLifetime[i] != 0 */) {
+    //     snprintf(buf, sizeof(buf), "[%d] Level-%d : %d \n",
+    //       i,
+    //       eachLDBLevel[i],
+    //       eachLDBLifetime[i]);
+    //     value->append(buf);
+    //   }
+    // }
+    
+    int totalCount[MAX_LEVEL] = {0};
+    int reusedCount[MAX_LEVEL] = {0};
+    int sumOfLifetime[MAX_LEVEL] = {0};
+    
+    // Get Statistics
+    for (int level=0; level < MAX_LEVEL; level++) {
+      for (int ldb=0; ldb < MAX_LDB; ldb++) {
+        if (eachLDBLevel[ldb] == level && eachLDBState[ldb] != 0) {
+          totalCount[level] += 1;
+          if (eachLDBState[ldb] == 2) {
+            reusedCount[level] += 1;
+            sumOfLifetime[level] += eachLDBLifetime[ldb];
+          }
+        }
+      }        
     }
+
+    // Print Statistics
+    for (int level=0; level < MAX_LEVEL; level++) {
+      float reusePercent = 0.0;
+      float avgLifetime = 0.0;
+      if (totalCount[level] != 0 ) reusePercent = (reusedCount[level] * 1.0 / totalCount[level] * 100);
+      if (reusedCount[level] != 0 ) avgLifetime = (sumOfLifetime[level] * 1.0 / reusedCount[level]);
+      snprintf(buf, sizeof(buf),
+        "[Level-%d]\n"
+        "Total ldb: %d\n"
+        "reused ldb: %d (%.3f\%)\n"
+        "Average lifetime: %.3f\n"
+        "------------------------\n"
+      , level,
+        totalCount[level],
+        reusedCount[level], reusePercent ,
+        avgLifetime
+      );
+      value->append(buf);
+    }
+
+
     return true;
   }
 
