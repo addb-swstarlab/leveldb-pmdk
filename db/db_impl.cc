@@ -274,7 +274,7 @@ void DBImpl::DeleteObsoleteFiles() {
           keep = (number >= versions_->ManifestFileNumber());
           break;
         case kTableFile: // SST라면, number는 하나의 ID 값이 됨
-          keep = (live.find(number) != live.end());
+          keep = (live.find(number) != live.end()); // end가 맞으면 keep == 0
           break;
         case kTempFile:
           // Any temp files that are currently being written to must
@@ -798,7 +798,7 @@ void DBImpl::BackgroundCompaction() {
     // Nothing to do
   }
   // grandparent(level @+2)의 data와 overlapping 되는게 많으면,
-  // 불필요한 움직임을 만들어낼 수 있다.
+  // 불필요한 움직임을 만들어낼 수 있다. <수직하강>
   // [Merge나 Split없이 다음 Level로 이동하는 케이스]
   else if (!is_manual && c->IsTrivialMove()) {
     // Move file to next level
@@ -836,7 +836,7 @@ void DBImpl::BackgroundCompaction() {
     if (!status.ok()) {
       RecordBackgroundError(status);
     }
-    // CompactionState 속에 있는 것과 CompactionState마저 삭제
+    // Compaction builder, outputs 삭제
     CleanupCompaction(compact);
     // PickCompaction() 에서 올린 Version refs를 내림
     // Version Unrefs
@@ -845,6 +845,7 @@ void DBImpl::BackgroundCompaction() {
     DeleteObsoleteFiles();
   }
 
+  // 컴팩션 내용에 대한 삭제
   // 다 끝나면 삭제해줘야한다고 들음
   delete c;
 
@@ -857,6 +858,7 @@ void DBImpl::BackgroundCompaction() {
         "Compaction error: %s", status.ToString().c_str());
   }
 
+  // 무시
   if (is_manual) {
     ManualCompaction* m = manual_compaction_;
     if (!status.ok()) {
@@ -889,6 +891,7 @@ void DBImpl::CleanupCompaction(CompactionState* compact) {
   delete compact;
 }
 
+// Output ldb파일 생성에 대해서,
 Status DBImpl::OpenCompactionOutputFile(CompactionState* compact) {
   assert(compact != nullptr);
   assert(compact->builder == nullptr);
@@ -907,6 +910,8 @@ Status DBImpl::OpenCompactionOutputFile(CompactionState* compact) {
 
   // Make the output file
   std::string fname = TableFileName(dbname_, file_number);
+  // JH
+  // Log(options_.info_log, "TableFileName : %s", fname.c_str());
   Status s = env_->NewWritableFile(fname, &compact->outfile);
   if (s.ok()) {
     compact->builder = new TableBuilder(options_, compact->outfile);
@@ -914,6 +919,11 @@ Status DBImpl::OpenCompactionOutputFile(CompactionState* compact) {
   return s;
 }
 
+/*
+ * OutputFile 종결자
+ * - SST(LDB) 파일 만들어주기
+ * - Statistics 정리
+ */
 Status DBImpl::FinishCompactionOutputFile(CompactionState* compact,
                                           Iterator* input) {
   assert(compact != nullptr);
@@ -927,6 +937,7 @@ Status DBImpl::FinishCompactionOutputFile(CompactionState* compact,
   Status s = input->status();
   const uint64_t current_entries = compact->builder->NumEntries();
   if (s.ok()) {
+    // 진짜 SST(LDB)를 FileSystem에 써내리는 시점
     s = compact->builder->Finish();
   } else {
     compact->builder->Abandon();
@@ -938,6 +949,7 @@ Status DBImpl::FinishCompactionOutputFile(CompactionState* compact,
   compact->builder = nullptr;
 
   // Finish and check for file errors
+  // 마무리
   if (s.ok()) {
     s = compact->outfile->Sync();
   }
@@ -977,7 +989,7 @@ Status DBImpl::FinishCompactionOutputFile(CompactionState* compact,
   return s;
 }
 
-
+// CompactionState->outputs  들을 현재 Version_set 기준으로 AddFile(Edit사용)
 Status DBImpl::InstallCompactionResults(CompactionState* compact) {
   mutex_.AssertHeld();
   Log(options_.info_log,  "Compacted %d@%d + %d@%d files => %lld bytes",
@@ -999,7 +1011,7 @@ Status DBImpl::InstallCompactionResults(CompactionState* compact) {
   return versions_->LogAndApply(compact->compaction->edit(), &mutex_);
 }
 
-// Compact SST
+// Level-Compaction SST[LDB]
 Status DBImpl::DoCompactionWork(CompactionState* compact) {
   const uint64_t start_micros = env_->NowMicros();
   int64_t imm_micros = 0;  // Micros spent doing imm_ compactions
@@ -1047,6 +1059,7 @@ Status DBImpl::DoCompactionWork(CompactionState* compact) {
   }
   
 
+  // 여기까진 TableBuilder랑 WritableFile이 만들어지지 않았어야함
   assert(versions_->NumLevelFiles(compact->compaction->level()) > 0);
   assert(compact->builder == nullptr);
   assert(compact->outfile == nullptr);
@@ -1058,7 +1071,7 @@ Status DBImpl::DoCompactionWork(CompactionState* compact) {
 
   // Release mutex while we're actually doing the compaction work
   mutex_.Unlock();
-  // (1) 두 레벨에서 특정 범위의 key를 포함하는 iterator를 얻음
+  // (1) 이미 뽑힌 file들을 바탕으로, Iterator를 생성함
   Iterator* input = versions_->MakeInputIterator(compact->compaction);
   input->SeekToFirst();
   Status status;
@@ -1067,8 +1080,10 @@ Status DBImpl::DoCompactionWork(CompactionState* compact) {
   bool has_current_user_key = false;
   SequenceNumber last_sequence_for_key = kMaxSequenceNumber;
   // 위에서 얻은 iterator를 통해 Iteration 시작
+  // 즉 각 Key에 대한. 
   for (; input->Valid() && !shutting_down_.Acquire_Load(); ) {
     // Prioritize immutable compaction work
+    // BG로 Level compaction이 이루어지는 마당에, immutable이 있으면 먼저 L0로 만들어주려함..
     if (has_imm_.NoBarrier_Load() != nullptr) {
       const uint64_t imm_start = env_->NowMicros();
       mutex_.Lock();
@@ -1083,7 +1098,9 @@ Status DBImpl::DoCompactionWork(CompactionState* compact) {
 
     Slice key = input->key();
     if (compact->compaction->ShouldStopBefore(key) &&
-        compact->builder != nullptr) {
+        compact->builder != nullptr) { // Builder가 삭제되지 않고 재활용되는듯? ==> 같은 파일 내에 존재할 키들에 대해서?
+      // JH
+      // Log(options_.info_log, "[DEBUG] Why builder exists ..? ");
       status = FinishCompactionOutputFile(compact, input);
       if (!status.ok()) {
         break;
@@ -1106,10 +1123,11 @@ Status DBImpl::DoCompactionWork(CompactionState* compact) {
         has_current_user_key = true;
         last_sequence_for_key = kMaxSequenceNumber;
       }
-      // (2) key가 drop되어야하는지 테스트
+      // (2) SST가 drop되어야하는지 테스트 => !drop은 
       // 찾으려는 key에 대해서 sequence number를 비교
       if (last_sequence_for_key <= compact->smallest_snapshot) {
         // Hidden by an newer entry for same user key
+        // [UPDATE]
         drop = true;    // (A)
       } else if (ikey.type == kTypeDeletion &&
                  ikey.sequence <= compact->smallest_snapshot &&
@@ -1137,7 +1155,7 @@ Status DBImpl::DoCompactionWork(CompactionState* compact) {
         compact->compaction->IsBaseLevelForKey(ikey.user_key),
         (int)last_sequence_for_key, (int)compact->smallest_snapshot);
 #endif
-    // drop되지 않아도 되면, table_builder에 key-value 추가
+    // drop되지 않아도 되면, 그냥 열어서 table_builder에 key-value 추가
     if (!drop) {
       // Open output file if necessary
       if (compact->builder == nullptr) {
@@ -1155,6 +1173,8 @@ Status DBImpl::DoCompactionWork(CompactionState* compact) {
       // Close output file if it is big enough
       if (compact->builder->FileSize() >=
           compact->compaction->MaxOutputFileSize()) {
+        // JH
+        // Log(options_.info_log, "[DEBUG] !drop && Finish compaction output-files");
         status = FinishCompactionOutputFile(compact, input);
         if (!status.ok()) {
           break;

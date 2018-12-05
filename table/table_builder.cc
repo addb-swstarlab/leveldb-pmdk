@@ -196,6 +196,13 @@ Status TableBuilder::status() const {
   return rep_->status;
 }
 
+/*
+ * Builder로 만들어놓고,
+ * Finish 함수가 불려지면 
+ * SST(LDB) format에 맞춰서 실제 생성
+ * Table File 하나를 생성하기위해 여러 Block들을 조각모음.
+ * LDB = Flush() + filter + metaindex + index + footer 
+ */
 Status TableBuilder::Finish() {
   Rep* r = rep_;
   Flush();

@@ -17,7 +17,7 @@ class VersionSet;
 struct FileMetaData {
   int refs;
   int allowed_seeks;          // Seeks allowed until compaction
-  uint64_t number;
+  uint64_t number;            // ID [JH]
   uint64_t file_size;         // File size in bytes
   InternalKey smallest;       // Smallest internal key served by table
   InternalKey largest;        // Largest internal key served by table

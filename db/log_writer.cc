@@ -33,6 +33,8 @@ Writer::Writer(WritableFile* dest, uint64_t dest_length)
 Writer::~Writer() {
 }
 
+// Log에 record를 직접 넣어줄 때.
+// 3-types에 따라서 적절한 생성 및 삽입
 Status Writer::AddRecord(const Slice& slice) {
   const char* ptr = slice.data();
   size_t left = slice.size();
@@ -81,6 +83,8 @@ Status Writer::AddRecord(const Slice& slice) {
   return s;
 }
 
+// AddRecord --> EmitPhysicalRecord
+// 실 로그 데이터 삽입
 Status Writer::EmitPhysicalRecord(RecordType t, const char* ptr, size_t n) {
   assert(n <= 0xffff);  // Must fit in two bytes
   assert(block_offset_ + kHeaderSize + n <= kBlockSize);

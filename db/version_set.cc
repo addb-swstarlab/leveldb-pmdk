@@ -437,6 +437,7 @@ Status Version::Get(const ReadOptions& options,
   return Status::NotFound(Slice());  // Use an empty error message for speed
 }
 
+// DBImpl::Get , Version::RecordReadSample
 bool Version::UpdateStats(const GetStats& stats) {
   FileMetaData* f = stats.seek_file;
   if (f != nullptr) {
@@ -537,6 +538,7 @@ int Version::PickLevelForMemTableOutput(
 }
 
 // Store in "*inputs" all files in "level" that overlap [begin,end]
+// 특정 Level에서의 모든 Input을 같는다? boundary
 void Version::GetOverlappingInputs(
     int level,
     const InternalKey* begin,
@@ -845,10 +847,11 @@ Status VersionSet::LogAndApply(VersionEdit* edit, port::Mutex* mu) {
 
   Version* v = new Version(this);
   {
-    Builder builder(this, current_);
+    Builder builder(this, current_); // 현재 VersionSet에 current 다음으로.
     builder.Apply(edit);
     builder.SaveTo(v);
   }
+  // 새롭게 추가할 Version v에, 다음 Compaction 후보 지정
   Finalize(v);
 
   // Initialize new descriptor log file if necessary by creating
@@ -862,6 +865,8 @@ Status VersionSet::LogAndApply(VersionEdit* edit, port::Mutex* mu) {
     new_manifest_file = DescriptorFileName(dbname_, manifest_file_number_);
     edit->SetNextFile(next_file_number_);
     s = env_->NewWritableFile(new_manifest_file, &descriptor_file_);
+    // JH
+    // Log(options_->info_log, "next file number %lld , new manifest file %s", next_file_number_, new_manifest_file.c_str());
     if (s.ok()) {
       descriptor_log_ = new log::Writer(descriptor_file_);
       s = WriteSnapshot(descriptor_log_);
@@ -896,6 +901,7 @@ Status VersionSet::LogAndApply(VersionEdit* edit, port::Mutex* mu) {
 
   // Install the new version
   if (s.ok()) {
+    // 최종적 Version 추가 완료
     AppendVersion(v);
     log_number_ = edit->log_number_;
     prev_log_number_ = edit->prev_log_number_;
@@ -1079,6 +1085,7 @@ void VersionSet::MarkFileNumberUsed(uint64_t number) {
   }
 }
 
+// 해당 Version에 대해서, 다음에 수행되어야할 최적의 compaction 위치를 지정해주고 끝냄
 void VersionSet::Finalize(Version* v) {
   // Precomputed best level for next compaction
   int best_level = -1;
@@ -1286,7 +1293,7 @@ Iterator* VersionSet::MakeInputIterator(Compaction* c) {
   int num = 0;
   for (int which = 0; which < 2; which++) {
     if (!c->inputs_[which].empty()) {
-      if (c->level() + which == 0) {
+      if (c->level() + which == 0) { // Level 0 -> 단순 merge
         const std::vector<FileMetaData*>& files = c->inputs_[which];
         for (size_t i = 0; i < files.size(); i++) {
           list[num++] = table_cache_->NewIterator(
@@ -1312,17 +1319,17 @@ Compaction* VersionSet::PickCompaction() {
   int level;
 
   /*
-   * 1) c->inputs_[0] 설정
+   * 1) c->inputs_[0] 설정 --> 1개의 SST(LDB)
    */
   // We prefer compactions triggered by too much data in a level over
   // the compactions triggered by seeks.
   // Seek(탐색)에 의한 compaction보다는 too much data compaction을 선호한다
   // --> if문 순서 결정
-  const bool size_compaction = (current_->compaction_score_ >= 1);
+  const bool size_compaction = (current_->compaction_score_ >= 1); // Finalize에서만 매겨지는 스코어
   const bool seek_compaction = (current_->file_to_compact_ != nullptr); // compaction할 FileMetaData
   // size 먼저
   if (size_compaction) {
-    level = current_->compaction_level_;
+    level = current_->compaction_level_; // From Finalize()
     assert(level >= 0);
     assert(level+1 < config::kNumLevels);
     c = new Compaction(options_, level);
@@ -1332,9 +1339,14 @@ Compaction* VersionSet::PickCompaction() {
     for (size_t i = 0; i < current_->files_[level].size(); i++) {
       FileMetaData* f = current_->files_[level][i];
       // ***이 compact_pointer_가 어디서, 왜 채워지는지 찾아야함.
+      // ==> SetupOtherInputs, Apply
+      // compact_pointer_[level].empty() => 첫 Compaction?   이거나
+      // icmp_.Compare(f->largest.Encode(), compact_pointer_[level]) > 0
       if (compact_pointer_[level].empty() ||
           icmp_.Compare(f->largest.Encode(), compact_pointer_[level]) > 0) {
-        c->inputs_[0].push_back(f); // Level@ 꺼 push
+        // JH
+        // Log(options_->info_log, "[DEBUG] %s > %s", f->largest.Encode().ToString().c_str(), compact_pointer_[level].c_str());
+        c->inputs_[0].push_back(f);
         break;
       }
     }
@@ -1343,8 +1355,11 @@ Compaction* VersionSet::PickCompaction() {
       c->inputs_[0].push_back(current_->files_[level][0]); // 해당 레벨의 가장 첫번째 file을 push
     }
   }
-  // size보고나서 seek compaction
+  // over size가 없다면,  seek compaction
+  // file_to_compact_* := Get->Version::UpdateStats
   else if (seek_compaction) {
+    // JH
+    // Log(options_->info_log, "[DEBUG] seek_compaction on!");
     level = current_->file_to_compact_level_;
     c = new Compaction(options_, level);
     c->inputs_[0].push_back(current_->file_to_compact_);
@@ -1352,22 +1367,24 @@ Compaction* VersionSet::PickCompaction() {
     return nullptr;
   }
 
+  // 2) Version 설정
   c->input_version_ = current_;
-  c->input_version_->Ref();
+  c->input_version_->Ref(); // 현재 Version에 대한 ref count
 
   // Files in level 0 may overlap each other, so pick up all overlapping ones
-  // L0에서 compaction이 될 SST가 있을 때, 범위가 겹치는 다른 SST도 compaction이 되야할 SST로 만들어주자
+  // [L0~L1 Compaction] L0에서 compaction이 될 SST가 있을 때, 범위가 겹치는 다른 SST도 compaction이 되야할 SST로 만들어주자
+  // 있다면, inputs[0]에 push 될 것
   if (level == 0) {
     InternalKey smallest, largest;
     GetRange(c->inputs_[0], &smallest, &largest);
     // Note that the next call will discard the file we placed in
     // c->inputs_[0] earlier and replace it with an overlapping set
     // which will include the picked file.
-    current_->GetOverlappingInputs(0, &smallest, &largest, &c->inputs_[0]);
+    current_->GetOverlappingInputs(0, &smallest, &largest, &c->inputs_[0]); 
     assert(!c->inputs_[0].empty());
   }
   /*
-   * 2) c->inputs_[1] 설정
+   * 3) c->inputs_[1] 설정 *[핵심]*
    */
   // Level @+1에서 Compaction 대상이 되는 File inputs 설정
   SetupOtherInputs(c);
@@ -1376,35 +1393,49 @@ Compaction* VersionSet::PickCompaction() {
 }
 
 // Level @+1 에 맞는 Input files 설정
-// 필요하면 읽어보기
 void VersionSet::SetupOtherInputs(Compaction* c) {
-  const int level = c->level();
+  const int level = c->level(); // Level@
+  
+  // Level@의 최소, 최대 Key값 Get
   InternalKey smallest, largest;
   GetRange(c->inputs_[0], &smallest, &largest);
 
+  // Level@ 최소,최대를 바탕으로,  Level@+1의 해당 SST(LDB) Get ==> inputs_[1] 
   current_->GetOverlappingInputs(level+1, &smallest, &largest, &c->inputs_[1]);
 
   // Get entire range covered by compaction
+  // Compaction 전체에 대한 range
   InternalKey all_start, all_limit;
   GetRange2(c->inputs_[0], c->inputs_[1], &all_start, &all_limit);
 
   // See if we can grow the number of inputs in "level" without
   // changing the number of "level+1" files we pick up.
+  /*
+   * Level@+1의 변경 없이 Level@에 있는 inputs의 수를 늘린다?
+   * Level@+1의 영향을 주지 않는 선에서, 만약 Level@+1에 선택된 범위에 있는 것들이 Level@에 또 있다면, 
+   * 걔네들 또한 한방에 내려주겠다.
+   * 이런 기능도 컴팩션 결과가 Level@+1의 전체 사이즈보다 넘지 않아야 가능함 
+   */
   if (!c->inputs_[1].empty()) {
     std::vector<FileMetaData*> expanded0;
+    // 전체 Range를 바탕으로 윗레벨에서 재확인 --> 범위에 있으면 expaneded0 에 담음
     current_->GetOverlappingInputs(level, &all_start, &all_limit, &expanded0);
     const int64_t inputs0_size = TotalFileSize(c->inputs_[0]);
     const int64_t inputs1_size = TotalFileSize(c->inputs_[1]);
     const int64_t expanded0_size = TotalFileSize(expanded0);
+
+    // 새로 만들 결과가 아랫 레벨의 제한보다 큰지 체크 --> 크면 안됨.. 따라서 주로 Level1->2에서 많이 일어나는 경향
     if (expanded0.size() > c->inputs_[0].size() &&
         inputs1_size + expanded0_size <
             ExpandedCompactionByteSizeLimit(options_)) {
       InternalKey new_start, new_limit;
+      // 0에 대한 새로운 Range구함
       GetRange(expanded0, &new_start, &new_limit);
       std::vector<FileMetaData*> expanded1;
+      // 0의 새 Range에 대해서 1에서 추가된게 없는지 체크하게됨 --> 추가되면 안됨
       current_->GetOverlappingInputs(level+1, &new_start, &new_limit,
                                      &expanded1);
-      if (expanded1.size() == c->inputs_[1].size()) {
+      if (expanded1.size() == c->inputs_[1].size()) { // Level@+1의 개수는 변함이 없어야함
         Log(options_->info_log,
             "Expanding@%d %d+%d (%ld+%ld bytes) to %d+%d (%ld+%ld bytes)\n",
             level,
@@ -1434,6 +1465,9 @@ void VersionSet::SetupOtherInputs(Compaction* c) {
   // We update this immediately instead of waiting for the VersionEdit
   // to be applied so that if the compaction fails, we will try a different
   // key range next time.
+  // VersionEdit을 사용하지 않고 즉시 업데이트를 통해, 
+  // compaction 실패시에도 바로 다음번에 compaction 후보가 되도록 설정
+  // 큰 key 값 방향으로 Round-Robin
   compact_pointer_[level] = largest.Encode().ToString();
   c->edit_.SetCompactPointer(level, largest);
 }

@@ -6,7 +6,7 @@
 #define STORAGE_LEVELDB_DB_DB_IMPL_H_
 
 // custom by JH
-#define MAX_LEVEL 5
+#define MAX_LEVEL 7
 #define MAX_LDB 50000
 
 #include <deque>
