@@ -8,8 +8,11 @@
 #include "leveldb/iterator.h"
 #include "table/iterator_wrapper.h"
 
-namespace leveldb {
+// JH
+#include <iostream>
 
+namespace leveldb {
+  
 namespace {
 class MergingIterator : public Iterator {
  public:
@@ -33,6 +36,7 @@ class MergingIterator : public Iterator {
   }
 
   virtual void SeekToFirst() {
+    // std::cout << "Seek To First()" << std::endl;
     for (int i = 0; i < n_; i++) {
       children_[i].SeekToFirst();
     }
@@ -184,12 +188,21 @@ void MergingIterator::FindLargest() {
 }  // namespace
 
 Iterator* NewMergingIterator(const Comparator* cmp, Iterator** list, int n) {
+  // Log(options_.info_log, "NewMerging");
   assert(n >= 0);
   if (n == 0) {
+    // std::cout << "NewMerging n == 1" << std::endl;
+    // Log(options_.info_log, "NewMerging n == 0");
     return NewEmptyIterator();
   } else if (n == 1) {
+    // std::cout << "NewMerging n == 1" << std::endl;
+    // Log(options_.info_log, "NewMerging n == 1");
     return list[0];
-  } else {
+  } 
+  // Compaction
+  else {
+    // std::cout << "NewMerging n == " << n << std::endl;
+    // std::cout << "[Doyoung]" << std::endl;
     return new MergingIterator(cmp, list, n);
   }
 }

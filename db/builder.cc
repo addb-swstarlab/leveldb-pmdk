@@ -14,6 +14,7 @@
 
 namespace leveldb {
 
+// memtable to Level0Table
 Status BuildTable(const std::string& dbname,
                   Env* env,
                   const Options& options,
@@ -24,6 +25,9 @@ Status BuildTable(const std::string& dbname,
   meta->file_size = 0;
   iter->SeekToFirst();
 
+  /* 
+   * [JH] Start building file
+   */
   std::string fname = TableFileName(dbname, meta->number);
   if (iter->Valid()) {
     WritableFile* file;
@@ -57,12 +61,17 @@ Status BuildTable(const std::string& dbname,
     }
     delete file;
     file = nullptr;
+  /* 
+   * [JH] End building file
+   */
 
     if (s.ok()) {
+  // Log(options.info_log, "Before");
       // Verify that the table is usable
       Iterator* it = table_cache->NewIterator(ReadOptions(),
                                               meta->number,
                                               meta->file_size);
+  // Log(options.info_log, "After");
       s = it->status();
       delete it;
     }

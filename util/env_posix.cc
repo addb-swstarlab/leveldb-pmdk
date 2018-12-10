@@ -322,6 +322,8 @@ class PosixWritableFile : public WritableFile {
         s = PosixError(filename_, errno);
       }
     }
+    // char msg[] = "[DEBUG] Sync by env_posix.cc\n";
+    // fwrite(msg, 1, sizeof(msg), stdout);
     return s;
   }
 

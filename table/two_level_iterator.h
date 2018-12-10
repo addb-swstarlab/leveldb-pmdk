@@ -20,6 +20,8 @@ struct ReadOptions;
 //
 // Uses a supplied function to convert an index_iter value into
 // an iterator over the contents of the corresponding block.
+
+// sequence of blocks 으로의 iterator. 각 block은 key-value pair를 갖을 것
 Iterator* NewTwoLevelIterator(
     Iterator* index_iter,
     Iterator* (*block_function)(

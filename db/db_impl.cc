@@ -208,10 +208,9 @@ Status DBImpl::NewDB() {
   {
     // data를 file에다가 append할 writer 생성
     // record 인코딩해서 붙이고 file 닫음
-    // ??? record 값이 어디서 나오지?
     log::Writer log(file);
-    std::string record;         // 이게 초기화 안되어있는데,
-    new_db.EncodeTo(&record);   // 이게 무슨 소용인지?
+    std::string record;         
+    new_db.EncodeTo(&record);   
     s = log.AddRecord(record);
     if (s.ok()) {
       s = file->Close();
@@ -536,7 +535,7 @@ Status DBImpl::RecoverLogFile(uint64_t log_number, bool last_log,
 }
 
 // ImmMem -> SST
-// CompactMemetable --> WriteLevel0Table
+// CompactMemtable --> WriteLevel0Table
 Status DBImpl::WriteLevel0Table(MemTable* mem, VersionEdit* edit,
                                 Version* base) {
   mutex_.AssertHeld();
@@ -546,15 +545,22 @@ Status DBImpl::WriteLevel0Table(MemTable* mem, VersionEdit* edit,
   meta.number = versions_->NewFileNumber(); // 새로운 file number 할당
   pending_outputs_.insert(meta.number);     // 삭제되어서는 안될 table file (number) 들의 set
   Iterator* iter = mem->NewIterator();
+  // Log(options_.info_log, "[JH] I think here...");
+  Iterator* iter2 = mem->NewIterator();
+
+  // JH debug
+  // iter2->SeekToFirst();
+  // for (; iter2->Valid(); ) {
+  //   Log(options_.info_log, "[Mem] %s , %s", iter2->key().ToString().c_str(), iter2->value().ToString().c_str());
+  //   iter2->Next();
+  // }
+
   // Log(options_.info_log, "Level-0 table #%llu: started",
   //     (unsigned long long) meta.number);
 
   Status s;
-  // lock 순서 체크
-  // Unlock -> @@ -> Lock ??
   {
     mutex_.Unlock();
-    // Table File을 만들 때 Memtable 자체가 아닌 Memtable의 Itarator로.
     s = BuildTable(dbname_, env_, options_, table_cache_, iter, &meta);
     mutex_.Lock();
   }
@@ -891,7 +897,7 @@ void DBImpl::CleanupCompaction(CompactionState* compact) {
   delete compact;
 }
 
-// Output ldb파일 생성에 대해서,
+// DoCompactionWork 중에.
 Status DBImpl::OpenCompactionOutputFile(CompactionState* compact) {
   assert(compact != nullptr);
   assert(compact->builder == nullptr);
@@ -908,10 +914,10 @@ Status DBImpl::OpenCompactionOutputFile(CompactionState* compact) {
     mutex_.Unlock();
   }
 
-  // Make the output file
+  // Make the new output file
   std::string fname = TableFileName(dbname_, file_number);
   // JH
-  // Log(options_.info_log, "TableFileName : %s", fname.c_str());
+  Log(options_.info_log, "[OpenCompactionOutputFile] TableFileName : %s", fname.c_str());
   Status s = env_->NewWritableFile(fname, &compact->outfile);
   if (s.ok()) {
     compact->builder = new TableBuilder(options_, compact->outfile);
@@ -939,7 +945,9 @@ Status DBImpl::FinishCompactionOutputFile(CompactionState* compact,
   if (s.ok()) {
     // 진짜 SST(LDB)를 FileSystem에 써내리는 시점
     s = compact->builder->Finish();
+    // s = Status::OK();
   } else {
+    Log(options_.info_log, "[ERROR][FinishCompactionOutputFile] %s", s.ToString().c_str());
     compact->builder->Abandon();
   }
   const uint64_t current_bytes = compact->builder->FileSize();
@@ -951,22 +959,27 @@ Status DBImpl::FinishCompactionOutputFile(CompactionState* compact,
   // Finish and check for file errors
   // 마무리
   if (s.ok()) {
+    // Log(options_.info_log, "[Sync]");
     s = compact->outfile->Sync();
   }
   if (s.ok()) {
+    // Log(options_.info_log, "[Close]");
     s = compact->outfile->Close();
   }
   delete compact->outfile;
   compact->outfile = nullptr;
 
   if (s.ok() && current_entries > 0) {
+    // Log(options_.info_log, "[IN1]");
     // Verify that the table is usable
+    // Temp
     Iterator* iter = table_cache_->NewIterator(ReadOptions(),
                                                output_number,
                                                current_bytes);
     s = iter->status();
     delete iter;
     if (s.ok()) {
+      // Log(options_.info_log, "[IN2]");
       Log(options_.info_log,
           "Generated table #%llu@%d: %lld keys, %lld bytes",
           (unsigned long long) output_number,
@@ -978,6 +991,8 @@ Status DBImpl::FinishCompactionOutputFile(CompactionState* compact,
        * About creating new LDB,
        * New creation --> Compacted Level = Compaction Level "+ 1"
        */
+      // 0) Insert into table cache
+
       // 1) Change State
       eachLDBState[output_number] = 1;
       // 2) Set lifetime
@@ -1072,8 +1087,13 @@ Status DBImpl::DoCompactionWork(CompactionState* compact) {
   // Release mutex while we're actually doing the compaction work
   mutex_.Unlock();
   // (1) 이미 뽑힌 file들을 바탕으로, Iterator를 생성함
+  // NewMergingIterator
   Iterator* input = versions_->MakeInputIterator(compact->compaction);
+  // Iterator랑 TableCache::NewIterator() 연관
+  // Log(options_.info_log, "Before here");
+  // SeekToFirst는 
   input->SeekToFirst();
+  // Log(options_.info_log, "After here");
   Status status;
   ParsedInternalKey ikey;
   std::string current_user_key;
@@ -1082,6 +1102,7 @@ Status DBImpl::DoCompactionWork(CompactionState* compact) {
   // 위에서 얻은 iterator를 통해 Iteration 시작
   // 즉 각 Key에 대한. 
   for (; input->Valid() && !shutting_down_.Acquire_Load(); ) {
+    // Log(options_.info_log, "iter key: [%s]", input->key().ToString().c_str());
     // Prioritize immutable compaction work
     // BG로 Level compaction이 이루어지는 마당에, immutable이 있으면 먼저 L0로 만들어주려함..
     if (has_imm_.NoBarrier_Load() != nullptr) {
@@ -1100,7 +1121,7 @@ Status DBImpl::DoCompactionWork(CompactionState* compact) {
     if (compact->compaction->ShouldStopBefore(key) &&
         compact->builder != nullptr) { // Builder가 삭제되지 않고 재활용되는듯? ==> 같은 파일 내에 존재할 키들에 대해서?
       // JH
-      // Log(options_.info_log, "[DEBUG] Why builder exists ..? ");
+      // Log(options_.info_log, "[DEBUG] Finish 1 ");
       status = FinishCompactionOutputFile(compact, input);
       if (!status.ok()) {
         break;
@@ -1161,6 +1182,7 @@ Status DBImpl::DoCompactionWork(CompactionState* compact) {
       if (compact->builder == nullptr) {
         status = OpenCompactionOutputFile(compact);
         if (!status.ok()) {
+          Log(options_.info_log, "Last log 1..");
           break;
         }
       }
@@ -1175,8 +1197,10 @@ Status DBImpl::DoCompactionWork(CompactionState* compact) {
           compact->compaction->MaxOutputFileSize()) {
         // JH
         // Log(options_.info_log, "[DEBUG] !drop && Finish compaction output-files");
+        // Log(options_.info_log, "[DEBUG] Finish 2 ");
         status = FinishCompactionOutputFile(compact, input);
         if (!status.ok()) {
+          Log(options_.info_log, "Last log 2..");
           break;
         }
       }
@@ -1190,6 +1214,7 @@ Status DBImpl::DoCompactionWork(CompactionState* compact) {
     status = Status::IOError("Deleting DB during compaction");
   }
   if (status.ok() && compact->builder != nullptr) {
+    // Log(options_.info_log, "[DEBUG] Finish 3 ");
     status = FinishCompactionOutputFile(compact, input);
   }
   if (status.ok()) {
@@ -1354,6 +1379,7 @@ Status DBImpl::Get(const ReadOptions& options,
   return s;
 }
 
+// mu_mem, immu_mem, sst 통틀어서 전체에 대한 Iterator
 Iterator* DBImpl::NewIterator(const ReadOptions& options) {
   SequenceNumber latest_snapshot;
   uint32_t seed;

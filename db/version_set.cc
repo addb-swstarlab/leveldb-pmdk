@@ -18,6 +18,9 @@
 #include "util/coding.h"
 #include "util/logging.h"
 
+// JH
+#include <iostream>
+
 namespace leveldb {
 
 static size_t TargetFileSize(const Options* options) {
@@ -215,6 +218,12 @@ class Version::LevelFileNumIterator : public Iterator {
   mutable char value_buf_[16];
 };
 
+/*
+ * MakeInputIterator() [Compaction] , NewConcatenatingIterator()
+ * ***[중요] 실제 File로부터 Iterator를 만들어내는 함수인데, 바로 File을 읽는 것이 아니라
+ * 이 함수를 등록해놓고 Seek이나 그런 요청이 들어올 때 lazily 하게 이 함수를 사용
+ * file_value = file number
+ */
 static Iterator* GetFileIterator(void* arg,
                                  const ReadOptions& options,
                                  const Slice& file_value) {
@@ -223,6 +232,7 @@ static Iterator* GetFileIterator(void* arg,
     return NewErrorIterator(
         Status::Corruption("FileReader invoked with unexpected value"));
   } else {
+    // std::cout << "File size = 16 && file_value: "<< DecodeFixed64(file_value.data())<< " ,  " << file_value.ToString().c_str() << std::endl;
     return cache->NewIterator(options,
                               DecodeFixed64(file_value.data()),
                               DecodeFixed64(file_value.data() + 8));
@@ -236,6 +246,7 @@ Iterator* Version::NewConcatenatingIterator(const ReadOptions& options,
       &GetFileIterator, vset_->table_cache_, options);
 }
 
+// DBImpl::NewInternalIterator()
 void Version::AddIterators(const ReadOptions& options,
                            std::vector<Iterator*>* iters) {
   // Merge all level zero files together since they may overlap
@@ -1280,6 +1291,7 @@ void VersionSet::GetRange2(const std::vector<FileMetaData*>& inputs1,
   GetRange(all, smallest, largest);
 }
 
+// From DoCompactionWork
 Iterator* VersionSet::MakeInputIterator(Compaction* c) {
   ReadOptions options;
   options.verify_checksums = options_->paranoid_checks;
@@ -1296,12 +1308,15 @@ Iterator* VersionSet::MakeInputIterator(Compaction* c) {
       if (c->level() + which == 0) { // Level 0 -> 단순 merge
         const std::vector<FileMetaData*>& files = c->inputs_[which];
         for (size_t i = 0; i < files.size(); i++) {
+          // Log(options_->info_log, "[MakeInputIterator]");
           list[num++] = table_cache_->NewIterator(
               options, files[i]->number, files[i]->file_size);
         }
       } else {
-        // Create concatenating iterator for the files from this level
+        // Log(options_->info_log, "[NewTwoLevelIterator]");
+        // GetFileIterator --> cache->newIterator
         list[num++] = NewTwoLevelIterator(
+        // Create concatenating iterator for the files from this level
             new Version::LevelFileNumIterator(icmp_, &c->inputs_[which]),
             &GetFileIterator, table_cache_, options);
       }
@@ -1309,6 +1324,7 @@ Iterator* VersionSet::MakeInputIterator(Compaction* c) {
   }
   assert(num <= space);
   Iterator* result = NewMergingIterator(&icmp_, list, num);
+  // Log(options_->info_log, "[MergingIterator]");
   delete[] list;
   return result;
 }
