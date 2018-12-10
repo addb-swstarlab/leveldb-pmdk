@@ -522,7 +522,12 @@ class Benchmark {
         PrintStats("leveldb.stats");
       } else if (name == Slice("sstables")) {
         PrintStats("leveldb.sstables");
-      } else {
+      } 
+      // JH
+      else if (name == Slice("memory")) {
+        PrintStats("leveldb.approximate-memory-usage");
+      }
+      else {
         if (name != Slice()) {  // No error message for empty name
           fprintf(stderr, "unknown benchmark '%s'\n", name.ToString().c_str());
         }
