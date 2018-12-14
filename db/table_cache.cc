@@ -9,16 +9,18 @@
 #include "leveldb/table.h"
 #include "util/coding.h"
 
+namespace pobj = pmem::obj;
+
 namespace leveldb {
 /*
  * File은 우리가 생각하는 파일시스템의 파일을 객체화. 곧 실제 파일을 이야기할 수 있으므로 가시적
  * Table은 levelDB에서 구조화한 SSTable을 의미함. 즉, 추상적인 형체
  * 그렇다면 TableAndFile은 특정 Table이 위치한 File객체를 묶어서 표현한 것으로 보임
 */
-struct TableAndFile {
-  RandomAccessFile* file;
-  Table* table;
-};
+// struct TableAndFile {
+//   RandomAccessFile* file;
+//   Table* table;
+// };
 
 static void DeleteEntry(const Slice& key, void* value) {
   TableAndFile* tf = reinterpret_cast<TableAndFile*>(value);
@@ -81,6 +83,25 @@ Status TableCache::FindTable(uint64_t file_number, uint64_t file_size,
       tf->file = file;
       tf->table = table;
       *handle = cache_->Insert(key, tf, 1, &DeleteEntry);
+
+      std::string file = "/home/hwan/pmem_dir/table_cache";
+      // JH
+      TableCache* table_cache = reinterpret_cast<TableCache*>(cache_);
+      // Get the root object
+      if (file_exists(file)) {
+        table_cache->pop = pobj::pool<root>::open (file, POOLID);
+        table_cache->pool = table_cache->pop.get_root();
+        table_cache->pool->sample->insert(file_number);
+        table_cache->pool->sample->printContent();
+      } else {
+      	table_cache->pop = pobj::pool<root>::create (file, POOLID,
+									 PMEMOBJ_MIN_POOL, S_IRUSR | S_IWUSR);
+        table_cache->pool = table_cache->pop.get_root();
+      	// Store the input into persistent memory
+      	pobj::make_persistent_atomic<Sample> (table_cache->pop, table_cache->pool->sample, file_number);
+        table_cache->pool->sample->printContent();
+      }
+      table_cache->pop.close();
     }
   }
   return s;
@@ -130,6 +151,20 @@ void TableCache::Evict(uint64_t file_number) {
   char buf[sizeof(file_number)];
   EncodeFixed64(buf, file_number);
   cache_->Erase(Slice(buf, sizeof(buf)));
+}
+
+// JH
+Sample::Sample (uint64_t input) {
+  value[100] = {input};
+   count = 1;
+}
+void Sample::insert(uint64_t input) {
+  value[count++] = input;
+}
+void Sample::printContent() {
+  for (int i=0; i < count; i++) {
+    std::cout << "[" << i << "]" << value[i] << std::endl;
+  }
 }
 
 }  // namespace leveldb
