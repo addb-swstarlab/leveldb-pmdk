@@ -73,6 +73,11 @@ include_directories(
   "${PROJECT_BINARY_DIR}/include"
   "${PROJECT_SOURCE_DIR}"
 )
+# JH
+include_directories(
+  "/usr/local/include/libpmemobj++"
+)
+#add_subdirectory(libpmemobj++)
 
 if(BUILD_SHARED_LIBS)
   # Only export LEVELDB_EXPORT symbols from the shared library.
@@ -80,6 +85,33 @@ if(BUILD_SHARED_LIBS)
 endif(BUILD_SHARED_LIBS)
 
 add_library(leveldb "")
+# JH
+find_library(
+  LIBPMEM
+  NAMES libpmem.so
+  HINTS /usr/local/lib64
+  REQUIRED
+)
+find_library(
+  LIBPMEMBLK
+  NAMES libpmemblk.so
+  HINTS /usr/local/lib64
+  REQUIRED
+)
+find_library(
+  LIBPMEMOBJ
+  NAMES libpmemobj.so
+  HINTS /usr/local/lib64
+  REQUIRED
+)
+#pmempool
+#find_library(
+#  LIBPMEMPOOL
+#  NAMES libpmempool.so
+#  HINTS /usr/local/lib64
+#  REQUIRED
+#)
+
 target_sources(leveldb
   PRIVATE
     "${PROJECT_BINARY_DIR}/${LEVELDB_PORT_CONFIG_DIR}/port_config.h"
@@ -186,6 +218,8 @@ target_sources(leveldb
     "${PROJECT_SOURCE_DIR}/helpers/memenv/memenv.h"
 )
 
+# JH
+
 target_include_directories(leveldb
   PUBLIC
     $<BUILD_INTERFACE:${PROJECT_SOURCE_DIR}/include>
@@ -232,6 +266,12 @@ endif(HAVE_TCMALLOC)
 # Needed by port_stdcxx.h
 find_package(Threads REQUIRED)
 target_link_libraries(leveldb Threads::Threads)
+
+# JH
+target_link_libraries(leveldb ${LIBPMEM})
+target_link_libraries(leveldb ${LIBPMEMBLK})
+target_link_libraries(leveldb ${LIBPMEMOBJ})
+#target_link_libraries(leveldb ${LIBPMEMPOOL})
 
 add_executable(leveldbutil
   "${PROJECT_SOURCE_DIR}/db/leveldbutil.cc"
@@ -304,6 +344,9 @@ if(LEVELDB_BUILD_TESTS)
     leveldb_test("${PROJECT_SOURCE_DIR}/util/crc32c_test.cc")
     leveldb_test("${PROJECT_SOURCE_DIR}/util/hash_test.cc")
     leveldb_test("${PROJECT_SOURCE_DIR}/util/logging_test.cc")
+
+    # JH
+    leveldb_test("${PROJECT_SOURCE_DIR}/pmem/pmemObj_test.cpp")
 
     # TODO(costan): This test also uses
     #               "${PROJECT_SOURCE_DIR}/util/env_posix_test_helper.h"
