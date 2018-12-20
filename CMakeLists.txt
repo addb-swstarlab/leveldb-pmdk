@@ -219,6 +219,10 @@ target_sources(leveldb
 )
 
 # JH
+target_sources(leveldb
+  PRIVATE
+    "${PROJECT_SOURCE_DIR}/util/env_pmem.cc"
+)
 
 target_include_directories(leveldb
   PUBLIC
