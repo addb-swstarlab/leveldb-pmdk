@@ -34,23 +34,38 @@ SPDX-License-Identifier: BSD-3-Clause
  */
 
 #include <libpmemobj++/make_persistent.hpp>
+#include <libpmemobj++/make_persistent_array.hpp>
 #include <libpmemobj++/make_persistent_atomic.hpp>
 #include <libpmemobj++/p.hpp>
 #include <libpmemobj++/persistent_ptr.hpp>
 #include <libpmemobj++/pool.hpp>
+
+#include <libpmemobj++/mutex.hpp>
+#include <libpmemobj++/transaction.hpp>
 
 #include <fstream>
 #include <iostream>
 #include <string.h>
 
 #define max_msg_size 30        // Size msg char array
-#define LAYOUT "pool"
+#define POOL1 "pool1"
+#define POOL2 "pool2"
+#define POOL3 "pool3"
 
 
 using namespace std;
 namespace pobj = pmem::obj;
 
 /* globals */
+struct root;
+
+/* parameters */
+struct params {
+	pobj::pool<root> pool;
+	std::string* input;
+	params (pobj::pool<root> pool, string input)
+		: pool(pool), input(&input) {};
+};
 
 /* Hello class  */
 /****************************
@@ -75,6 +90,51 @@ class Hello
 	}
 };
 
+class mHello
+{
+  private:
+ 	// pobj::p<char*> msg;
+ 	// pobj::p<string> msg;
+	pobj::persistent_ptr<char[]> msg;	
+	pobj::mutex mutex;
+
+	public:
+	mHello (params *pdata)
+	{ 
+		pobj::transaction::exec_tx (pdata->pool,[&] {
+			// strcpy(msg, pdata->input);
+			// pobj::p<string> tmp = string(pdata->input); 
+			// msg = tmp;
+			// msg = string(pdata->input);
+			unsigned long length = pdata->input->length();
+			msg = pobj::make_persistent<char[]>(length + 1);
+			strcpy(msg.get(), pdata->input->c_str());
+		}, mutex);
+	}
+
+	string get_hello_msg ()
+	{
+		return string(msg.get());
+	}
+	// First method
+	void set_hello_msg1(params *pdata) {
+		pobj::transaction::exec_tx (pdata->pool,[&] {
+			// strcpy(msg, pdata->input);
+			// pobj::p<char*> tmp = pdata->input; 
+			// msg = tmp;
+		}, mutex);
+	}
+	// Second method
+	void set_hello_msg2(params *pdata) {
+		mutex.lock();
+
+		// strcpy(msg.c_str(), pdata->input);
+
+		pdata->pool.persist(msg);
+		mutex.unlock();
+	}
+};
+
 /* root structure  */
 /****************************
  *This root structure contains all the connections the pool and persistent
@@ -82,5 +142,6 @@ class Hello
  *access the pool and print out the message. 
  ******************************/
 struct root {
-	pobj::persistent_ptr<Hello> hello;
+	// pobj::persistent_ptr<Hello> hello;
+	pobj::persistent_ptr<mHello> hello;
 };

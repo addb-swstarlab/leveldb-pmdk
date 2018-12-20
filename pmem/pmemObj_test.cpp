@@ -49,12 +49,12 @@ class PmemObjTest { };
  * will return to the calling function.
  *
  *****************************/
-// inline bool
-// file_exists (const std::string &name)
-// {
-// 	std::ifstream f (name.c_str ());
-// 	return f.good ();
-// }
+inline bool
+file_exists (const std::string &name)
+{
+	std::ifstream f (name.c_str ());
+	return f.good ();
+}
 
 /* End Functions */
 
@@ -113,8 +113,10 @@ class PmemObjTest { };
 
 /* Main */
 TEST (PmemObjTest, HelloWorld) {
-	pobj::pool<root> pop;
-	pobj::persistent_ptr<root> pool;
+	pobj::pool<root> pool1;
+	pobj::pool<root> pool2;
+	pobj::persistent_ptr<root> ptr;
+	pobj::persistent_ptr<root> ptr2;
 	
 	/* Reading parameters from command line */
 	// if (argc < 3) {
@@ -123,29 +125,87 @@ TEST (PmemObjTest, HelloWorld) {
 	// }
 	cout << "# Start " << endl;
 	// char path[max_msg_size] = "/home/hwan/pmem_dir/hello";// argv[2]; //
-	std::string path = "/home/hwan/pmem_dir/filee";
+	// std::string path = "/home/hwan/pmem_dir/filee";
+	std::string path = "/home/hwan/pmem_dir/mutex";
 	// Prepare the input to store into persistent memory
-	char input[max_msg_size] = "Hello Persistent Memory!!!";
+	char input1[max_msg_size] = "Hello1";
+	char input2[max_msg_size] = "Hello2";
 	
-	/* Create pool in persistent memory */
-	// Get the root object
-	pop = pobj::pool<root>::create (path, LAYOUT,
+	// [ERROR] Cannot run
+	/*
+	if (!file_exists(path)) {
+		pool1 = pobj::pool<root>::create (path, POOL1,
 									 PMEMOBJ_MIN_POOL, S_IRUSR | S_IWUSR);
-	// Get pool object
-	pool = pop.get_root ();
+		// Get pool object
+		ptr = pool1.get_root ();		
+		pobj::make_persistent_atomic<Hello> (pool1, ptr->hello, input1);
+
+		pool2 = pobj::pool<root>::create (path, POOL2,
+									 PMEMOBJ_MIN_POOL, S_IRUSR | S_IWUSR);
+		ptr2 = pool1.get_root();
+		pobj::make_persistent_atomic<Hello> (pool1, ptr2->hello, input2);
+	} else {
+		pool1 = pobj::pool<root>::open (path, POOL1);
+		ptr = pool1.get_root ();
+	}
+	*/
+
+	// [WARN] Overwrite
+	/*
+	if (!file_exists(path)) {
+		pool1 = pobj::pool<root>::create (path, POOL1,
+									 PMEMOBJ_MIN_POOL, S_IRUSR | S_IWUSR);
+		// Get pool object
+		ptr = pool1.get_root ();		
+		pobj::make_persistent_atomic<Hello> (pool1, ptr->hello, input1);
+	} else {
+		pool1 = pobj::pool<root>::open (path, POOL1);
+		ptr = pool1.get_root ();
+		pobj::make_persistent_atomic<Hello> (pool1, ptr->hello, input1);
+	}
+	*/
+	// mutex + string test
+	if (!file_exists(path)) {
+		pool1 = pobj::pool<root>::create (path, POOL1,
+									 PMEMOBJ_MIN_POOL, S_IRUSR | S_IWUSR);
+		// Get pool object
+		ptr = pool1.get_root ();		
+		std::string input = "mutex1";
+		params vars = params (pool1, input);
+		pobj::transaction::exec_tx( pool1, [&] {
+			ptr->hello = pobj::make_persistent<mHello> (&vars);
+		});
+	} 
+	else {
+		pool1 = pobj::pool<root>::open (path, POOL1);
+		ptr = pool1.get_root ();		
+		cout << endl << "\n ## " << ptr->hello->get_hello_msg()
+	 		<< " in " << path  << endl << endl;	
+		std::string input = "mutex2";
+		params vars = params (pool1, input);
+		pobj::transaction::exec_tx( pool1, [&] {
+			ptr->hello = pobj::make_persistent<mHello> (&vars);
+		});
+	}
+
+	cout << "# Center " << endl;
+
+	// Store the input in1to persistent memory
+	// pobj::make_persistent_atomic<Hello> (pool1, ptr->hello, input);
 	
-	// Store the input into persistent memory
-	pobj::make_persistent_atomic<Hello> (pop, pool->hello, input);
-	
-	char* result = pool->hello->get_hello_msg();
+	// char* result = ptr->hello->get_hello_msg();
+	string result = ptr->hello->get_hello_msg();
 	// Write to the console
-	cout << endl << "\nWrite the (" << pool->hello->get_hello_msg()
-	 << ") string to persistent-memory." << endl;	
-	ASSERT_EQ(0 , strcmp(input, result));
-			
+	cout << endl << "\n ## " << ptr->hello->get_hello_msg()
+	 << " in " << path  << endl << endl;	
+	// cout << endl << "\n ## " << ptr2->hello->get_hello_msg()
+	//  << " in " << path  << endl << endl;	
+
+	// ASSERT_EQ(0 , strcmp(input1, result));
+	ASSERT_EQ(0 , strcmp("mutex1", result.c_str()));
 	/* Cleanup */
 	/* Close persistent pool */
-	pop.close ();	
+	pool1.close ();	
 }
 
 } // namespace leveldb
