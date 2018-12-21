@@ -28,6 +28,9 @@
 #include "util/posix_logger.h"
 #include "util/env_posix_test_helper.h"
 
+#include <cstring>
+#include <iostream>
+
 // HAVE_FDATASYNC is defined in the auto-generated port_config.h, which is
 // included by port_stdcxx.h.
 #if !HAVE_FDATASYNC
@@ -617,6 +620,7 @@ class PosixEnv : public Env {
 
   virtual Status NewRandomAccessFile(const std::string& fname,
                                      RandomAccessFile** result) {
+    // std::cout <<"Fname2: " << fname.c_str() << std::endl;
     *result = nullptr;
     Status s;
     int fd = open(fname.c_str(), O_RDONLY);
@@ -923,27 +927,27 @@ void PosixEnv::BGThread() {
   }
 }
 
-// namespace {
-// struct StartThreadState {
-//   void (*user_function)(void*);
-//   void* arg;
-// };
-// }
-// static void* StartThreadWrapper(void* arg) {
-//   StartThreadState* state = reinterpret_cast<StartThreadState*>(arg);
-//   state->user_function(state->arg);
-//   delete state;
-//   return nullptr;
-// }
+namespace {
+struct StartThreadState {
+  void (*user_function)(void*);
+  void* arg;
+};
+}
+static void* StartThreadWrapper(void* arg) {
+  StartThreadState* state = reinterpret_cast<StartThreadState*>(arg);
+  state->user_function(state->arg);
+  delete state;
+  return nullptr;
+}
 
-// void PosixEnv::StartThread(void (*function)(void* arg), void* arg) {
-//   pthread_t t;
-//   StartThreadState* state = new StartThreadState;
-//   state->user_function = function;
-//   state->arg = arg;
-//   PthreadCall("start thread",
-//               pthread_create(&t, nullptr,  &StartThreadWrapper, state));
-// }
+void PosixEnv::StartThread(void (*function)(void* arg), void* arg) {
+  pthread_t t;
+  StartThreadState* state = new StartThreadState;
+  state->user_function = function;
+  state->arg = arg;
+  PthreadCall("start thread",
+              pthread_create(&t, nullptr,  &StartThreadWrapper, state));
+}
 
 }  // namespace
 

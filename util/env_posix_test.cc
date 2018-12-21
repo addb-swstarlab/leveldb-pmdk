@@ -8,6 +8,9 @@
 #include "util/testharness.h"
 #include "util/env_posix_test_helper.h"
 
+// JH
+#include <iostream>
+
 namespace leveldb {
 
 static const int kDelayMicros = 100000;
@@ -25,36 +28,73 @@ class EnvPosixTest {
   }
 };
 
-TEST(EnvPosixTest, TestOpenOnRead) {
+// TEST(EnvPosixTest, TestOpenOnRead) {
+//   // Write some test data to a single file that will be opened |n| times.
+//   std::string test_dir;
+//   ASSERT_OK(env_->GetTestDirectory(&test_dir));
+//   std::string test_file = test_dir + "/open_on_read.txt";
+
+//   FILE* f = fopen(test_file.c_str(), "w");
+//   ASSERT_TRUE(f != nullptr);
+//   const char kFileData[] = "abcdefghijklmnopqrstuvwxyz";
+//   fputs(kFileData, f);
+//   fclose(f);
+
+//   // Open test file some number above the sum of the two limits to force
+//   // open-on-read behavior of POSIX Env leveldb::RandomAccessFile.
+//   const int kNumFiles = kReadOnlyFileLimit + kMMapLimit + 5;
+//   leveldb::RandomAccessFile* files[kNumFiles] = {0};
+//   for (int i = 0; i < kNumFiles; i++) {
+//     ASSERT_OK(env_->NewRandomAccessFile(test_file, &files[i]));
+//   }
+//   char scratch;
+//   Slice read_result;
+//   for (int i = 0; i < kNumFiles; i++) {
+//     ASSERT_OK(files[i]->Read(i, 1, &read_result, &scratch));
+//     std::cout << read_result.ToString().c_str() << "\n";
+//     ASSERT_EQ(kFileData[i], read_result[0]);
+//   }
+//   for (int i = 0; i < kNumFiles; i++) {
+//     delete files[i];
+//   }
+//   ASSERT_OK(env_->DeleteFile(test_file));
+// }
+
+TEST(EnvPosixTest, TestOpenPmem) {
   // Write some test data to a single file that will be opened |n| times.
-  std::string test_dir;
-  ASSERT_OK(env_->GetTestDirectory(&test_dir));
-  std::string test_file = test_dir + "/open_on_read.txt";
+  std::string pmem_dir = "/home/hwan/pmem_dir";
+  std::string test_file2 = pmem_dir + "/pmem.txt";
 
-  FILE* f = fopen(test_file.c_str(), "w");
-  ASSERT_TRUE(f != nullptr);
-  const char kFileData[] = "abcdefghijklmnopqrstuvwxyz";
-  fputs(kFileData, f);
-  fclose(f);
+  leveldb::WritableFile* file;
+  std::cout<< "[TEST]New\n";
+  env_->NewWritableFile(test_file2, &file);
+  std::cout<< "[TEST]Make Slice\n";
+  // Slice data = std::string("abcdefghijklmnopqrstuvwxyz");
+  Slice data = Slice("abcdefghijklmnopqrstuvwxyz", 26);
+  // Slice data = Slice(std::string("abcdefghijklmnopqrstuvwxyz"));
 
-  // Open test file some number above the sum of the two limits to force
-  // open-on-read behavior of POSIX Env leveldb::RandomAccessFile.
-  const int kNumFiles = kReadOnlyFileLimit + kMMapLimit + 5;
-  leveldb::RandomAccessFile* files[kNumFiles] = {0};
-  for (int i = 0; i < kNumFiles; i++) {
-    ASSERT_OK(env_->NewRandomAccessFile(test_file, &files[i]));
-  }
-  char scratch;
-  Slice read_result;
-  for (int i = 0; i < kNumFiles; i++) {
-    ASSERT_OK(files[i]->Read(i, 1, &read_result, &scratch));
-    ASSERT_EQ(kFileData[i], read_result[0]);
-  }
-  for (int i = 0; i < kNumFiles; i++) {
-    delete files[i];
-  }
-  ASSERT_OK(env_->DeleteFile(test_file));
+  printf("[TEST]Append %s \n", data.data());
+  Status s = file->Append(data);
+  ASSERT_OK(s);
 }
+
+
+
+// TEST(EnvPosixTest, TestOpenAndWriteInPmem) {
+//   // Write some test data to a single file that will be opened |n| times.
+//   std::string pmem_dir = "/home/hwan/pmem_dir";
+//   std::string test_file = pmem_dir + "/open_on_read.txt";
+
+//   FILE* f = fopen(test_file.c_str(), "w");
+//   ASSERT_TRUE(f != nullptr);
+//   const char kFileData[] = "abcdefghijklmnopqrstuvwxyz";
+//   fputs(kFileData, f);
+//   fclose(f);
+
+//   leveldb::WritableFile* file;
+//   env_->NewWritableFile(test_file, &file);
+
+// }
 
 }  // namespace leveldb
 

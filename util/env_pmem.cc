@@ -30,8 +30,15 @@
 
 // JH
 #include <iostream>
+#include <fstream>
 #include "pmem/pmem_directory.h"
+#include "libpmemobj++/mutex.hpp"
+// #include "pmem/pmem_file.h"
+// #include "libpmemobj++/make_persistent_atomic.hpp"
 #include "env_posix.cc"
+
+#define POOLID "file"
+#define POOL_DIR_ID "directory"
 
 // HAVE_FDATASYNC is defined in the auto-generated port_config.h, which is
 // included by port_stdcxx.h.
@@ -43,11 +50,12 @@ namespace leveldb {
 
 namespace {
 
-// Helper class to limit resource usage to avoid exhaustion.
-// Currently used to limit read-only file descriptors and mmap file usage
-// so that we do not end up running out of file descriptors, virtual memory,
-// or running into kernel performance problems for very large databases.
-
+inline bool
+file_exists (const std::string &name)
+{
+	std::ifstream f (name.c_str ());
+	return f.good ();
+}
 
 // [pmem] JH
 class PmemSequentialFile : public SequentialFile {
@@ -142,126 +150,155 @@ class PmemWritableFile : public WritableFile {
  private:
   // buf_[0, pos_-1] contains data to be written to fd_.
   std::string filename_;
-  int fd_;
-  char buf_[kBufSize];
-  size_t pos_;
+  // pobj::pool<rootFile> *pool;
+  pobj::pool<rootFile> pool;
+  // int fd_;
+  // char buf_[kBufSize];
+  // size_t pos_;
 
  public:
-  PmemWritableFile(const std::string& fname, int fd)
-      : filename_(fname), fd_(fd), pos_(0) { }
+  // PmemWritableFile(const std::string& fname, pobj::pool<rootFile> *pool)
+  //     : filename_(fname), pool(pool) { }
+  // PmemWritableFile(const std::string& fname, pobj::pool<rootFile> pool)
+  //     : filename_(fname), pool(pool) { }
+  PmemWritableFile(const std::string& fname)
+      : filename_(fname) {
+        if (!file_exists(filename_)) {
+          // std::cout<<"not exist"<<std::endl;
+          pool = pobj::pool<rootFile>::create (fname, POOLID,
+                      // PMEMOBJ_MIN_POOL, S_IRUSR | S_IWUSR);
+                      // ((size_t)(1024 * 1024 * 64)), S_IRUSR | S_IWUSR);
+                      ((size_t)(1024 * 1024 * 64)), S_IRUSR | S_IWUSR | S_IRGRP | S_IWGRP | S_IROTH);
+        } else {
+          // std::cout<<"exist"<<std::endl;
+          pool = pobj::pool<rootFile>::open (fname, POOLID);
+        } 
+      }
 
   ~PmemWritableFile() {
-    if (fd_ >= 0) {
-      // Ignoring any potential errors
-      Close();
-    }
+    // Ignoring any potential errors
+    // 
+    // Close();
   }
 
   virtual Status Append(const Slice& data) {
     size_t n = data.size();
     const char* p = data.data();
+    std::cout<< "Get root \n";
+    pobj::persistent_ptr<rootFile> ptr = pool.get_root();
+    std::cout<< "Make \n";
+    pobj::transaction::exec_tx(pool, [&] {
+      ptr->file = pobj::make_persistent<PmemFile> (pool);
+    });
+    // pobj::transaction::exec_tx(pool, [&] {
+    //   ptr->file = pobj::make_persistent<PmemFile> ();
+    // });
+    printf("Append %s \n", data.data());
+    ptr->file->Append(data);
+    std::cout<< "After append "<< ptr->file->getContentsSize()<<"\n";
+    
+    // // Fit as much as possible into buffer.
+    // size_t copy = std::min(n, kBufSize - pos_);
+    // memcpy(buf_ + pos_, p, copy);
+    // p += copy;
+    // n -= copy;
+    // pos_ += copy;
+    // if (n == 0) {
+    //   return Status::OK();
+    // }
 
-    // Fit as much as possible into buffer.
-    size_t copy = std::min(n, kBufSize - pos_);
-    memcpy(buf_ + pos_, p, copy);
-    p += copy;
-    n -= copy;
-    pos_ += copy;
-    if (n == 0) {
-      return Status::OK();
-    }
+    // // Can't fit in buffer, so need to do at least one write.
+    // Status s = FlushBuffered();
+    // if (!s.ok()) {
+    //   return s;
+    // }
 
-    // Can't fit in buffer, so need to do at least one write.
-    Status s = FlushBuffered();
-    if (!s.ok()) {
-      return s;
-    }
+    // // Small writes go to buffer, large writes are written directly.
+    // if (n < kBufSize) {
+    //   memcpy(buf_, p, n);
+    //   pos_ = n;
+    //   return Status::OK();
+    // }
+    // return WriteRaw(p, n);
 
-    // Small writes go to buffer, large writes are written directly.
-    if (n < kBufSize) {
-      memcpy(buf_, p, n);
-      pos_ = n;
-      return Status::OK();
-    }
-    return WriteRaw(p, n);
   }
 
   virtual Status Close() {
-    Status result = FlushBuffered();
-    const int r = close(fd_);
-    if (r < 0 && result.ok()) {
-      result = PosixError(filename_, errno);
-    }
-    fd_ = -1;
-    return result;
+    // Status result = FlushBuffered();
+    // const int r = close(fd_);
+    // if (r < 0 && result.ok()) {
+    //   result = PosixError(filename_, errno);
+    // }
+    // fd_ = -1;
+    // return result;
   }
 
   virtual Status Flush() {
-    return FlushBuffered();
+    // return FlushBuffered();
   }
 
   Status SyncDirIfManifest() {
-    const char* f = filename_.c_str();
-    const char* sep = strrchr(f, '/');
-    Slice basename;
-    std::string dir;
-    if (sep == nullptr) {
-      dir = ".";
-      basename = f;
-    } else {
-      dir = std::string(f, sep - f);
-      basename = sep + 1;
-    }
-    Status s;
-    if (basename.starts_with("MANIFEST")) {
-      int fd = open(dir.c_str(), O_RDONLY);
-      if (fd < 0) {
-        s = PosixError(dir, errno);
-      } else {
-        if (fsync(fd) < 0) {
-          s = PosixError(dir, errno);
-        }
-        close(fd);
-      }
-    }
-    return s;
+    // const char* f = filename_.c_str();
+    // const char* sep = strrchr(f, '/');
+    // Slice basename;
+    // std::string dir;
+    // if (sep == nullptr) {
+    //   dir = ".";
+    //   basename = f;
+    // } else {
+    //   dir = std::string(f, sep - f);
+    //   basename = sep + 1;
+    // }
+    // Status s;
+    // if (basename.starts_with("MANIFEST")) {
+    //   int fd = open(dir.c_str(), O_RDONLY);
+    //   if (fd < 0) {
+    //     s = PosixError(dir, errno);
+    //   } else {
+    //     if (fsync(fd) < 0) {
+    //       s = PosixError(dir, errno);
+    //     }
+    //     close(fd);
+    //   }
+    // }
+    // return s;
   }
 
   virtual Status Sync() {
     // Ensure new files referred to by the manifest are in the filesystem.
-    Status s = SyncDirIfManifest();
-    if (!s.ok()) {
-      return s;
-    }
-    s = FlushBuffered();
-    if (s.ok()) {
-      if (fdatasync(fd_) != 0) {
-        s = PosixError(filename_, errno);
-      }
-    }
-    return s;
+    // Status s = SyncDirIfManifest();
+    // if (!s.ok()) {
+    //   return s;
+    // }
+    // s = FlushBuffered();
+    // if (s.ok()) {
+    //   if (fdatasync(fd_) != 0) {
+    //     s = PosixError(filename_, errno);
+    //   }
+    // }
+    // return s;
   }
 
  private:
   Status FlushBuffered() {
-    Status s = WriteRaw(buf_, pos_);
-    pos_ = 0;
-    return s;
+    // Status s = WriteRaw(buf_, pos_);
+    // pos_ = 0;
+    // return s;
   }
 
   Status WriteRaw(const char* p, size_t n) {
-    while (n > 0) {
-      ssize_t r = write(fd_, p, n);
-      if (r < 0) {
-        if (errno == EINTR) {
-          continue;  // Retry
-        }
-        return PosixError(filename_, errno);
-      }
-      p += r;
-      n -= r;
-    }
-    return Status::OK();
+    // while (n > 0) {
+    //   ssize_t r = write(fd_, p, n);
+    //   if (r < 0) {
+    //     if (errno == EINTR) {
+    //       continue;  // Retry
+    //     }
+    //     return PosixError(filename_, errno);
+    //   }
+    //   p += r;
+    //   n -= r;
+    // }
+    // return Status::OK();
   }
 };
 
@@ -297,18 +334,41 @@ class PmemEnv : public Env {
     char msg[] = "Destroying Env::Default()\n";
     fwrite(msg, 1, sizeof(msg), stderr);
     abort();
+
+    // JH
+    // pobj::delete_persistent<rootDirectory>(Dir_ptr);
+    // Dir_pool.close();
   }
 
   virtual Status NewSequentialFile(const std::string& fname,
                                    SequentialFile** result) {
-    int fd = open(fname.c_str(), O_RDONLY);
-    if (fd < 0) {
-      *result = nullptr;
-      return PosixError(fname, errno);
-    } else {
-      *result = new PosixSequentialFile(fname, fd);
-      return Status::OK();
-    }
+    // int fd = open(fname.c_str(), O_RDONLY);
+    // if (fd < 0) {
+    //   *result = nullptr;
+    //   return PosixError(fname, errno);
+    // } else {
+    //   *result = new PosixSequentialFile(fname, fd);
+    //   return Status::OK();
+    // }
+    pobj::pool<rootFile> pool1;
+  	pobj::persistent_ptr<rootFile> ptr;
+    
+    if (!file_exists(fname)) {
+      pool1 = pobj::pool<rootFile>::create (fname, POOLID,
+                      PMEMOBJ_MIN_POOL, S_IRUSR | S_IWUSR);
+		  // ptr = pool1.get_root ();		
+		  // pobj::transaction::exec_tx( pool1, [&] {
+			  // ptr->hello = pobj::make_persistent<mHello> (&vars);
+		  // });
+	  }  
+	  else {
+		  // pool1 = pobj::pool<rootFile>::open (fname, POOLID);
+		  // ptr = pool1.get_root ();		
+		  // pobj::transaction::exec_tx( pool1, [&] {
+			  // ptr->hello = pobj::make_persistent<mHello> (&vars);
+		  // });
+	  }
+
   }
 
   virtual Status NewRandomAccessFile(const std::string& fname,
@@ -342,13 +402,41 @@ class PmemEnv : public Env {
   virtual Status NewWritableFile(const std::string& fname,
                                  WritableFile** result) {
     Status s;
-    int fd = open(fname.c_str(), O_TRUNC | O_WRONLY | O_CREAT, 0644);
-    if (fd < 0) {
-      *result = nullptr;
-      s = PosixError(fname, errno);
-    } else {
-      *result = new PosixWritableFile(fname, fd);
-    }
+    // pobj::pool<rootFile> pool1;
+  	// pobj::persistent_ptr<rootFile> ptr;
+    std::cout<< "NewWritableFile \n";
+    *result = new PmemWritableFile(fname);
+    // if (!FileExists(fname)) {
+    //   pool1 = pobj::pool<rootFile>::create (fname, POOLID,
+    //                   // PMEMOBJ_MIN_POOL, S_IRUSR | S_IWUSR);
+    //                   ((size_t)(1024 * 1024 * 64)), S_IRUSR | S_IWUSR);
+    //   // *result = new PmemWritableFile(fname, &pool1);
+    //   *result = new PmemWritableFile(fname);
+		//   // ptr = pool1.get_root ();		
+		//   // pobj::transaction::exec_tx( pool1, [&] {
+		// 	  // ptr->hello = pobj::make_persistent<mHello> (&vars);
+		//   // });
+	  // }  
+	  // else {
+    //   pool1 = pobj::pool<rootFile>::open (fname, POOLID);
+    //   *result = new PmemWritableFile(fname);
+		//   // pool1 = pobj::pool<rootFile>::open (fname, POOLID);
+		//   // ptr = pool1.get_root ();		
+		//   // pobj::transaction::exec_tx( pool1, [&] {
+		// 	  // ptr->hello = pobj::make_persistent<mHello> (&vars);
+		//   // });
+	  // }
+
+    // pool1.close();
+
+    // int fd = open(fname.c_str(), O_TRUNC | O_WRONLY | O_CREAT, 0644);
+    // if (fd < 0) {
+    //   *result = nullptr;
+    //   s = PosixError(fname, errno);
+    // } else {
+    //   *result = new PosixWritableFile(fname, fd);
+    // }
+    // return s;
     return s;
   }
 
@@ -536,6 +624,13 @@ class PmemEnv : public Env {
   PosixLockTable locks_;
   Limiter mmap_limit_;
   Limiter fd_limit_;
+
+  // [Pmem] JH
+  std::string path;
+  pobj::pool<rootDirectory> Dir_pool;
+  pobj::persistent_ptr<rootDirectory> Dir_ptr;
+  // pobj::mutex mutex;
+
 };
 
 // // Return the maximum number of concurrent mmaps.
@@ -572,9 +667,25 @@ class PmemEnv : public Env {
 PmemEnv::PmemEnv()
     : started_bgthread_(false),
       mmap_limit_(MaxMmaps()),
-      fd_limit_(MaxOpenFiles()) {
+      fd_limit_(MaxOpenFiles())
+      ,
+      path("/home/hwan/pmem_dir/Directory") 
+      {
   PthreadCall("mutex_init", pthread_mutex_init(&mu_, nullptr));
   PthreadCall("cvar_init", pthread_cond_init(&bgsignal_, nullptr));
+  // JH
+  // if (!FileExists(path)) {
+  //   Dir_pool = pobj::pool<rootDirectory>::create(path, POOL_DIR_ID,
+  //                 ((size_t)(1024 * 1024 * 64)), S_IRUSR | S_IWUSR);
+
+  // } else {
+  //   Dir_pool = pobj::pool<rootDirectory>::open(path, POOL_DIR_ID);
+  // }
+  // Dir_ptr = Dir_pool.get_root();
+  // pobj::transaction::exec_tx(Dir_pool, [&] {
+  //   Dir_ptr->dir = pobj::make_persistent<PmemDirectory> ();
+  // });
+
 }
 
 void PmemEnv::Schedule(void (*function)(void*), void* arg) {
@@ -619,18 +730,18 @@ void PmemEnv::BGThread() {
   }
 }
 
-namespace {
-struct StartThreadState {
-  void (*user_function)(void*);
-  void* arg;
-};
-}
-static void* StartThreadWrapper(void* arg) {
-  StartThreadState* state = reinterpret_cast<StartThreadState*>(arg);
-  state->user_function(state->arg);
-  delete state;
-  return nullptr;
-}
+// namespace {
+// struct StartThreadState {
+//   void (*user_function)(void*);
+//   void* arg;
+// };
+// }
+// static void* StartThreadWrapper(void* arg) {
+//   StartThreadState* state = reinterpret_cast<StartThreadState*>(arg);
+//   state->user_function(state->arg);
+//   delete state;
+//   return nullptr;
+// }
 
 void PmemEnv::StartThread(void (*function)(void* arg), void* arg) {
   pthread_t t;
