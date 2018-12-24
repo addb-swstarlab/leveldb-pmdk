@@ -60,41 +60,76 @@ class EnvPosixTest {
 //   ASSERT_OK(env_->DeleteFile(test_file));
 // }
 
-TEST(EnvPosixTest, TestOpenPmem) {
+TEST(EnvPosixTest, TestWritePmem) {
   // Write some test data to a single file that will be opened |n| times.
   std::string pmem_dir = "/home/hwan/pmem_dir";
   std::string test_file2 = pmem_dir + "/pmem.txt";
 
   leveldb::WritableFile* file;
-  std::cout<< "[TEST]New\n";
   env_->NewWritableFile(test_file2, &file);
-  std::cout<< "[TEST]Make Slice\n";
-  // Slice data = std::string("abcdefghijklmnopqrstuvwxyz");
   Slice data = Slice("abcdefghijklmnopqrstuvwxyz", 26);
-  // Slice data = Slice(std::string("abcdefghijklmnopqrstuvwxyz"));
-
-  printf("[TEST]Append %s \n", data.data());
   Status s = file->Append(data);
+  file->Close();
+  delete file;
   ASSERT_OK(s);
 }
 
+TEST(EnvPosixTest, TestWriteAndAppendPmem) {
+  // Write some test data to a single file that will be opened |n| times.
+  std::string pmem_dir = "/home/hwan/pmem_dir";
+  std::string test_file2 = pmem_dir + "/pmem2.txt";
 
+  leveldb::WritableFile* file;
+  env_->NewWritableFile(test_file2, &file);
+  Slice data = Slice("abcdefghijklmnopqrstuvwxyz", 26);
 
-// TEST(EnvPosixTest, TestOpenAndWriteInPmem) {
-//   // Write some test data to a single file that will be opened |n| times.
-//   std::string pmem_dir = "/home/hwan/pmem_dir";
-//   std::string test_file = pmem_dir + "/open_on_read.txt";
+  printf("[TEST]Append %s \n", data.data());
+  Status s = file->Append(data);
+  s = file->Append(data);
+  s = file->Append(data);
+  file->Close();
+  delete file;
+  ASSERT_OK(s);
+}
 
-//   FILE* f = fopen(test_file.c_str(), "w");
-//   ASSERT_TRUE(f != nullptr);
-//   const char kFileData[] = "abcdefghijklmnopqrstuvwxyz";
-//   fputs(kFileData, f);
-//   fclose(f);
+TEST(EnvPosixTest, TestSequentialReadPmem) {
+  // Write some test data to a single file that will be opened |n| times.
+  std::string pmem_dir = "/home/hwan/pmem_dir";
+  std::string test_file2 = pmem_dir + "/pmem.txt";
 
-//   leveldb::WritableFile* file;
-//   env_->NewWritableFile(test_file, &file);
+  leveldb::SequentialFile* file;
+  env_->NewSequentialFile(test_file2, &file);
 
-// }
+  static const int kBufferSize = 26;
+  char* space = new char[kBufferSize];
+  Slice data;
+  Status s = file->Read(kBufferSize, &data, space);
+  printf("End] data: %s\n", data.data());
+  s = file->Read(kBufferSize, &data, space);
+  printf("Skip End] data: %s, %d\n", data.data(), data.size());
+  std::cout<< data.empty() << std::endl;
+  delete file;
+  ASSERT_OK(s);
+}
+
+TEST(EnvPosixTest, TestRandomReadPmem) {
+  // Write some test data to a single file that will be opened |n| times.
+  std::string pmem_dir = "/home/hwan/pmem_dir";
+  std::string test_file2 = pmem_dir + "/pmem2.txt";
+
+  leveldb::RandomAccessFile* file;
+  env_->NewRandomAccessFile(test_file2, &file);
+
+  static const int kBufferSize = 5;
+  char* space = new char[kBufferSize];
+  Slice data;
+  Status s = file->Read(5, kBufferSize, &data, space);
+  printf("End] data: %s\n", data.data());
+  s = file->Read(10, kBufferSize, &data, space);
+  printf("End2] data: %s\n", data.data());
+  delete file;
+  ASSERT_OK(s);
+}
 
 }  // namespace leveldb
 

@@ -19,6 +19,7 @@
 // #include <string>
 
 // #define MAX_FILESIZE 100000 // 64MB
+// #define BUFFER_SIZE 4294967295
 
 namespace pobj = pmem::obj;
 
@@ -32,28 +33,22 @@ class PmemFile {
 
   // Readable
   //    Sequential
-  Status Read(size_t n, Slice* result, char* scratch);
+  ssize_t Read(size_t n, char* scratch);
   Status Skip(uint64_t n);
   //    RandomAccess
-  Status Read(uint64_t offset, size_t n, Slice* result, char* scratch);
-
+  ssize_t Read(uint64_t offset, size_t n, char* scratch);
   // Writable
   Status Append(const Slice& data);
-  // Status Append(pobj::persistent_ptr<>);
 
   int getContentsSize();
   
  private: 
   pobj::pool<rootFile> pool;
   pobj::persistent_ptr<char[]> contents;
-  // pobj::p<char[]> filter;
-  // pobj::p<char[]> metaindex;
-  // pobj::p<char[]> index;
-  pobj::p<int> contents_size;
-  // pobj::p<int> filter_size;
-  // pobj::p<int> metaindex_size;
-  // pobj::p<int> index_size;
+  pobj::p<ssize_t> contents_size;
   pobj::mutex mutex;
+  // For sequentialFile's Skip()
+  int current_start_index;
 };
 
 struct rootFile{
