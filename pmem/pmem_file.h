@@ -38,7 +38,8 @@ class PmemFile {
   //    RandomAccess
   ssize_t Read(uint64_t offset, size_t n, char* scratch);
   // Writable
-  Status Append(const Slice& data);
+  ssize_t Append(const char* data, size_t n);
+  ssize_t Append(const Slice& data);
 
   int getContentsSize();
   

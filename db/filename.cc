@@ -124,6 +124,7 @@ bool ParseFileName(const std::string& filename,
   return true;
 }
 
+// .dbtmp -> CURRENT
 Status SetCurrentFile(Env* env, const std::string& dbname,
                       uint64_t descriptor_number) {
   // Remove leading "dbname/" and add newline to manifest file name

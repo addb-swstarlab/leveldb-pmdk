@@ -77,17 +77,17 @@ class PmemSequentialFile : public SequentialFile {
   }
 
   virtual Status Read(size_t n, Slice* result, char* scratch) {
-    std::cout<<"Read \n";
+    // std::cout<<"Read \n";
     Status s;
     ssize_t r = ptr->file->Read(n, scratch);
     // std::cout<<"Read End\n";
     *result = Slice(scratch, r);
-    printf("Read%d %s\n", result->size(), result->data());
+    // printf("Read%d '%s'\n", result->size(), result->data());
     return s;
   }
 
   virtual Status Skip(uint64_t n) {
-    std::cout<<"Skip \n";
+    // std::cout<<"Skip \n";
     Status s = ptr->file->Skip(n);
     return s;
   }
@@ -128,9 +128,12 @@ class PmemWritableFile : public WritableFile {
   pobj::pool<rootFile> pool;
   pobj::persistent_ptr<rootFile> ptr;
 
+  char buf_[kBufSize];
+  size_t pos_;
+
  public:
   PmemWritableFile(const std::string& fname, pobj::pool<rootFile> pool)
-      : filename_(fname), pool(pool) { 
+      : filename_(fname), pool(pool), pos_(0) { 
         ptr = pool.get_root();
         pobj::transaction::exec_tx(pool, [&] {
           ptr->file = pobj::make_persistent<PmemFile> (pool);
@@ -159,52 +162,56 @@ class PmemWritableFile : public WritableFile {
     // pobj::transaction::exec_tx(pool, [&] {
     //   ptr->file = pobj::make_persistent<PmemFile> ();
     // });
-    printf("Append %d %s \n", data.size(), data.data());
-    Status s = ptr->file->Append(data);
+    // printf("Append %d %s \n", data.size(), data.data());
+    size_t n = data.size();
+    const char* p = data.data();
+
+    // Fit as much as possible into buffer.
+    size_t copy = std::min(n, kBufSize - pos_); // data size OR remaining buffer size
+    memcpy(buf_ + pos_, p, copy);
+    p += copy;
+    n -= copy;
+    pos_ += copy;
+
+    const uint32_t a = static_cast<uint32_t>(buf_[4]) & 0xff;
+    const uint32_t b = static_cast<uint32_t>(buf_[5]) & 0xff;
+    const unsigned int type = buf_[6];
+    const uint32_t length = a | (b << 8);
+    // printf("%d %d, '%d'\n", copy, pos_, type);
+    // printf("a: '%d' \n b: '%d' \n type: '%d'\n length: '%d'\n", a, b, type, length);
+
+    if (n == 0) {
+      return Status::OK();
+    }
+
+    // Can't fit in buffer, so need to do at least one write.
+    // Current buffer -> flush
+    // allocate new buffer (pos_ = 0)
+    Status s = FlushBuffered();
+    if (!s.ok()) {
+      return s;
+    }
+
+    // Small writes go to buffer, large writes are written directly.
+    if (n < kBufSize) {
+      memcpy(buf_, p, n);
+      pos_ = n;
+      return Status::OK();
+    }
+    // Without through buffer, write.
+    return WriteRaw(p, n);
+
     // std::cout<< "After append "<< ptr->file->getContentsSize()<<"\n";
-    return s;
-    // // Fit as much as possible into buffer.
-    // size_t copy = std::min(n, kBufSize - pos_);
-    // memcpy(buf_ + pos_, p, copy);
-    // p += copy;
-    // n -= copy;
-    // pos_ += copy;
-    // if (n == 0) {
-    //   return Status::OK();
-    // }
-
-    // // Can't fit in buffer, so need to do at least one write.
-    // Status s = FlushBuffered();
-    // if (!s.ok()) {
-    //   return s;
-    // }
-
-    // // Small writes go to buffer, large writes are written directly.
-    // if (n < kBufSize) {
-    //   memcpy(buf_, p, n);
-    //   pos_ = n;
-    //   return Status::OK();
-    // }
-    // return WriteRaw(p, n);
-
   }
 
   virtual Status Close() {
-    // Status result = FlushBuffered();
-    // const int r = close(fd_);
-    // if (r < 0 && result.ok()) {
-    //   result = PosixError(filename_, errno);
-    // }
-    // fd_ = -1;
-    // return result;
-    // Status s;
+    Status result = FlushBuffered();
     pool.close();
-    return Status::OK();
+    return result;
   }
 
   virtual Status Flush() {
-    // return FlushBuffered();
-    return Status::OK();
+    return FlushBuffered();
   }
 
   pobj::persistent_ptr<rootFile> getFilePtr() {
@@ -240,42 +247,51 @@ class PmemWritableFile : public WritableFile {
   }
 
   virtual Status Sync() {
+    // printf("Sync\n");
     // Ensure new files referred to by the manifest are in the filesystem.
-    // Status s = SyncDirIfManifest();
+    Status s = SyncDirIfManifest();
     // if (!s.ok()) {
     //   return s;
     // }
-    // s = FlushBuffered();
+    s = FlushBuffered();
     // if (s.ok()) {
     //   if (fdatasync(fd_) != 0) {
     //     s = PosixError(filename_, errno);
     //   }
     // }
-    // return s;
-    return Status::OK();
+    return s;
+    // return Status::OK();
   }
 
  private:
   Status FlushBuffered() {
-    // Status s = WriteRaw(buf_, pos_);
-    // pos_ = 0;
-    // return s;
-    return Status::OK();
+    Status s = WriteRaw(buf_, pos_);
+    pos_ = 0;
+    return s;
+    // return Status::OK();
   }
 
   Status WriteRaw(const char* p, size_t n) {
-    // while (n > 0) {
-    //   ssize_t r = write(fd_, p, n);
-    //   if (r < 0) {
-    //     if (errno == EINTR) {
-    //       continue;  // Retry
-    //     }
-    //     return PosixError(filename_, errno);
-    //   }
-    //   p += r;
-    //   n -= r;
-    // }
-    // return Status::OK();
+    while (n > 0) {
+      Slice data = Slice(p, n);
+      ssize_t r = ptr->file->Append(p, n);
+      // ssize_t r = ptr->file->Append(data);      
+      // printf("WriteRaw '%c' '%c' '%c' '%c' '%c' '%c' '%c'\n", p[0], p[1], p[2], p[3], p[4], p[5], p[6]);
+      // printf("WriteRaw %d %s %d\n", n, p, r);
+      // char buf;
+      // memcpy(&buf, p+6, sizeof(char));
+      // printf("WriteRaw %d '%d'\n", n, p[6]);
+      // printf("WriteRaw %d %s %d\n", data.size(), data.data(), r);
+      // ssize_t r = write(fd_, p, n);
+      if (r < 0) {
+        if (errno == EINTR) {
+          continue;  // Retry
+        }
+        return PosixError(filename_, errno);
+      }
+      p += r;
+      n -= r;
+    }
     return Status::OK();
   }
 };
@@ -322,7 +338,7 @@ class PmemEnv : public Env {
 
   virtual Status NewSequentialFile(const std::string& fname,
                                    SequentialFile** result) {
-    std::cout<< "NewSequentialFile "<<fname<<" \n";
+    // std::cout<< "NewSequentialFile "<<fname<<" \n";
     Status s;
     pobj::pool<rootFile> pool;
     if (!file_exists(fname)) {
@@ -348,7 +364,7 @@ class PmemEnv : public Env {
 
   virtual Status NewRandomAccessFile(const std::string& fname,
                                      RandomAccessFile** result) {
-    std::cout<< "NewRandomAccessFile "<<fname<<" \n";
+    // std::cout<< "NewRandomAccessFile "<<fname<<" \n";
     Status s;
     pobj::pool<rootFile> pool;
     if (!file_exists(fname)) {
@@ -364,7 +380,7 @@ class PmemEnv : public Env {
   virtual Status NewWritableFile(const std::string& fname,
                                  WritableFile** result) {
     Status s;
-    std::cout<< "NewWritableFile "<<fname<<" \n";
+    // std::cout<< "NewWritableFile "<<fname<<" \n";
     pobj::pool<rootFile> pool;
     if (!file_exists(fname)) {
       pool = pobj::pool<rootFile>::create (fname, POOLID,
@@ -389,7 +405,7 @@ class PmemEnv : public Env {
   virtual Status NewAppendableFile(const std::string& fname,
                                    WritableFile** result) {
     Status s;
-    std::cout<< "NewAppendableFile \n";
+    // std::cout<< "NewAppendableFile \n";
     pobj::pool<rootFile> pool;
     if (!file_exists(fname)) {
       pool = pobj::pool<rootFile>::create (fname, POOLID,
