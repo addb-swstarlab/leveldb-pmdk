@@ -39,6 +39,7 @@
 
 #define POOLID "file"
 #define POOL_DIR_ID "directory"
+#define FILE_SIZE (1024 * 1024 * 12) // @ MB
 
 // HAVE_FDATASYNC is defined in the auto-generated port_config.h, which is
 // included by port_stdcxx.h.
@@ -73,16 +74,16 @@ class PmemSequentialFile : public SequentialFile {
 
 
   virtual ~PmemSequentialFile() {
-    pool.close();
+    // pool.close();
   }
 
   virtual Status Read(size_t n, Slice* result, char* scratch) {
     // std::cout<<"Read \n";
     Status s;
     ssize_t r = ptr->file->Read(n, scratch);
-    // std::cout<<"Read End\n";
+    // printf("Read %d \n", r);
     *result = Slice(scratch, r);
-    // printf("Read%d '%s'\n", result->size(), result->data());
+    // printf("Read %d '%s' %c\n", result->size(), result->data(), scratch[4]);
     return s;
   }
 
@@ -136,7 +137,9 @@ class PmemWritableFile : public WritableFile {
       : filename_(fname), pool(pool), pos_(0) { 
         ptr = pool.get_root();
         pobj::transaction::exec_tx(pool, [&] {
+          // printf("Debug1]\n");
           ptr->file = pobj::make_persistent<PmemFile> (pool);
+          // printf("Debug2]\n");
         });
   }
 
@@ -273,7 +276,7 @@ class PmemWritableFile : public WritableFile {
 
   Status WriteRaw(const char* p, size_t n) {
     while (n > 0) {
-      Slice data = Slice(p, n);
+      // Slice data = Slice(p, n);
       ssize_t r = ptr->file->Append(p, n);
       // ssize_t r = ptr->file->Append(data);      
       // printf("WriteRaw '%c' '%c' '%c' '%c' '%c' '%c' '%c'\n", p[0], p[1], p[2], p[3], p[4], p[5], p[6]);
@@ -338,12 +341,12 @@ class PmemEnv : public Env {
 
   virtual Status NewSequentialFile(const std::string& fname,
                                    SequentialFile** result) {
-    // std::cout<< "NewSequentialFile "<<fname<<" \n";
+    std::cout<< "NewSequentialFile "<<fname<<" \n";
     Status s;
     pobj::pool<rootFile> pool;
     if (!file_exists(fname)) {
       pool = pobj::pool<rootFile>::create (fname, POOLID,
-          ((size_t)(1024 * 1024 * 64)), S_IRUSR | S_IWUSR | S_IRGRP | S_IWGRP | S_IROTH);
+          ((size_t)(FILE_SIZE)), S_IRUSR | S_IWUSR | S_IRGRP | S_IWGRP | S_IROTH);
     } else {
       pool = pobj::pool<rootFile>::open (fname, POOLID);
     } 
@@ -364,12 +367,12 @@ class PmemEnv : public Env {
 
   virtual Status NewRandomAccessFile(const std::string& fname,
                                      RandomAccessFile** result) {
-    // std::cout<< "NewRandomAccessFile "<<fname<<" \n";
+    std::cout<< "NewRandomAccessFile "<<fname<<" \n";
     Status s;
     pobj::pool<rootFile> pool;
     if (!file_exists(fname)) {
       pool = pobj::pool<rootFile>::create (fname, POOLID,
-          ((size_t)(1024 * 1024 * 64)), S_IRUSR | S_IWUSR | S_IRGRP | S_IWGRP | S_IROTH);
+          ((size_t)(FILE_SIZE)), S_IRUSR | S_IWUSR | S_IRGRP | S_IWGRP | S_IROTH);
     } else {
       pool = pobj::pool<rootFile>::open (fname, POOLID);
     } 
@@ -380,11 +383,13 @@ class PmemEnv : public Env {
   virtual Status NewWritableFile(const std::string& fname,
                                  WritableFile** result) {
     Status s;
-    // std::cout<< "NewWritableFile "<<fname<<" \n";
+    std::cout<< "NewWritableFile "<<fname<<" \n";
     pobj::pool<rootFile> pool;
     if (!file_exists(fname)) {
       pool = pobj::pool<rootFile>::create (fname, POOLID,
-          ((size_t)(1024 * 1024 * 64)), S_IRUSR | S_IWUSR | S_IRGRP | S_IWGRP | S_IROTH);
+          // ((size_t)(FILE_SIZE)), S_IRUSR | S_IWUSR | S_IRGRP | S_IWGRP | S_IROTH);
+          ((size_t)(FILE_SIZE)), S_IRUSR | S_IWUSR | S_IRGRP | S_IWGRP | S_IROTH);
+
     } else {
       pool = pobj::pool<rootFile>::open (fname, POOLID);
     } 
@@ -405,11 +410,11 @@ class PmemEnv : public Env {
   virtual Status NewAppendableFile(const std::string& fname,
                                    WritableFile** result) {
     Status s;
-    // std::cout<< "NewAppendableFile \n";
+    std::cout<< "NewAppendableFile \n";
     pobj::pool<rootFile> pool;
     if (!file_exists(fname)) {
       pool = pobj::pool<rootFile>::create (fname, POOLID,
-          ((size_t)(1024 * 1024 * 64)), S_IRUSR | S_IWUSR | S_IRGRP | S_IWGRP | S_IROTH);
+          ((size_t)(FILE_SIZE)), S_IRUSR | S_IWUSR | S_IRGRP | S_IWGRP | S_IROTH);
     } else {
       pool = pobj::pool<rootFile>::open (fname, POOLID);
     } 

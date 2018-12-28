@@ -15,7 +15,10 @@ namespace leveldb
     current_start_index = 0;
   };
   PmemFile::~PmemFile() {
-    pobj::delete_persistent<char[]>(contents, contents_size.get_ro());
+    // pobj::delete_persistent<char[]>(contents, contents_size.get_ro());
+    pobj::delete_persistent<char[]>(contents, MAX_ARRAY_SIZE+1);
+    // pobj::delete_persistent<char[]>(contents2, MAX_ARRAY_SIZE+1);
+    // pobj::delete_persistent<char[]>(contents3, AUX_ARRAY_SIZE+1);
     pool.close();
   };
   ssize_t PmemFile::Read(size_t n, char* scratch) {
@@ -82,15 +85,16 @@ namespace leveldb
     if (contents_size == 0) {
       // printf("[START1] %d \n", n);
       pobj::transaction::exec_tx(pool, [&] {
-        // contents = pobj::make_persistent<char[]>(10000);
+        contents = pobj::make_persistent<char[]>(MAX_ARRAY_SIZE);
+        // contents2 = pobj::make_persistent<char[]>(1000000);
+        // contents3 = pobj::make_persistent<char[]>(500000);
         // contents2 = pobj::make_persistent<char[]>(10000);
-        contents = pobj::make_persistent<char[]>(n+1);
+        // contents = pobj::make_persistent<char[]>(n+1);
         // contents = pobj::make_persistent<char[]>(n);
-        // strcpy(contents.get(), data);
-        // strcpy(contents.get(), data);
-        memcpy(contents.get(), data, n);
+        strcpy(contents.get(), data);
+        // memcpy(contents.get(), data, n);
         // For DEBUG. Have to remove
-        memcpy(contents.get()+n,"\n" ,sizeof(char));
+        // memcpy(contents.get()+n,"\n" ,sizeof(char));
         contents_size = n;
       }, mutex);
     }
@@ -102,24 +106,23 @@ namespace leveldb
         unsigned long new_length = n + contents_size.get_ro();
         printf("DEBUG1]\n");
         char original_contents[original_length];
-        memcpy(original_contents, contents.get(), original_length);
+        // memcpy(original_contents, contents.get(), original_length);
+        strcpy(original_contents, contents.get());
         printf("DEBUG2]\n");
 
-        // pobj::delete_persistent<char[]>(contents, contents_size.get_ro());
-        pobj::delete_persistent<char[]>(contents, original_length+1);
+        // pobj::delete_persistent<char[]>(contents, original_length+1);
         printf("DEBUG2.5] %d \n", new_length);
-        // contents = pobj::make_persistent<char[]>(new_length);
 
-        contents = pobj::make_persistent<char[]>(new_length+1);
+        // contents = pobj::make_persistent<char[]>(new_length+1);
         printf("DEBUG3]\n");
-        memcpy(contents.get(), original_contents, original_length);
+        // memcpy(contents.get(), original_contents, original_length);
+        strcpy(contents.get(), original_contents);
         printf("DEBUG4]\n");
-        memcpy(contents.get()+original_length, data, n);
+        // memcpy(contents.get()+original_length, data, n);
+        strcat(contents.get(), data);        
         printf("DEBUG5]\n");
         // For DEBUG. Have to remove
-        memcpy(contents.get()+new_length, "\n", sizeof(char));
-        // strcpy(contents.get(), original);
-        // strcat(contents.get(), data);        
+        // memcpy(contents.get()+new_length, "\n", sizeof(char));
         contents_size = new_length;
       }, mutex);
     }
