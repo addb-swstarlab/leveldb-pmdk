@@ -46,6 +46,7 @@ class PmemFile {
  private: 
   pobj::pool<rootFile> pool;
   pobj::persistent_ptr<char[]> contents;
+  // pobj::persistent_ptr<char[]> contents2;
   pobj::p<ssize_t> contents_size;
   pobj::mutex mutex;
   // For sequentialFile's Skip()
