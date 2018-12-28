@@ -75,6 +75,7 @@ class PmemSequentialFile : public SequentialFile {
 
   virtual ~PmemSequentialFile() {
     // pool.close();
+    // printf("Delete [S]%s\n", filename_.c_str());
   }
 
   virtual Status Read(size_t n, Slice* result, char* scratch) {
@@ -108,7 +109,7 @@ class PmemRandomAccessFile : public RandomAccessFile {
   }
 
   virtual ~PmemRandomAccessFile() {
-    pool.close();
+    // pool.close();
   }
 
   virtual Status Read(uint64_t offset, size_t n, Slice* result,
@@ -131,16 +132,23 @@ class PmemWritableFile : public WritableFile {
 
   char buf_[kBufSize];
   size_t pos_;
+  
+  /*
+   * For preventing from inserting garbage values,
+   * rootFile ptr is set(made) when writablefile object is appended
+   * [Default] 0
+   * After Append function is called, set 1
+   */
+  unsigned int set_ptr_flag;
 
  public:
   PmemWritableFile(const std::string& fname, pobj::pool<rootFile> pool)
-      : filename_(fname), pool(pool), pos_(0) { 
-        ptr = pool.get_root();
-        pobj::transaction::exec_tx(pool, [&] {
-          // printf("Debug1]\n");
-          ptr->file = pobj::make_persistent<PmemFile> (pool);
-          // printf("Debug2]\n");
-        });
+      // : filename_(fname), pool(pool), pos_(0) { 
+      : filename_(fname), pool(pool), pos_(0), set_ptr_flag(0) { 
+        // ptr = pool.get_root();
+        // pobj::transaction::exec_tx(pool, [&] {
+        //   ptr->file = pobj::make_persistent<PmemFile> (pool);
+        // });
   }
 
   // PmemWritableFile(const std::string& fname)
@@ -157,7 +165,9 @@ class PmemWritableFile : public WritableFile {
   //       } 
   //     }
 
-  virtual ~PmemWritableFile() { }
+  virtual ~PmemWritableFile() { 
+    // printf("Delete [W]%s\n", filename_.c_str());
+  }
 
   virtual Status Append(const Slice& data) {
     // size_t n = data.size();
@@ -165,6 +175,13 @@ class PmemWritableFile : public WritableFile {
     // pobj::transaction::exec_tx(pool, [&] {
     //   ptr->file = pobj::make_persistent<PmemFile> ();
     // });
+    if (!set_ptr_flag) {
+      ptr = pool.get_root();
+        pobj::transaction::exec_tx(pool, [&] {
+          ptr->file = pobj::make_persistent<PmemFile> (pool);
+        });
+      set_ptr_flag = 1;
+    }
     // printf("Append %d %s \n", data.size(), data.data());
     size_t n = data.size();
     const char* p = data.data();
@@ -208,6 +225,7 @@ class PmemWritableFile : public WritableFile {
   }
 
   virtual Status Close() {
+    // printf("Close %s\n", filename_.c_str());
     Status result = FlushBuffered();
     pool.close();
     return result;
@@ -277,10 +295,11 @@ class PmemWritableFile : public WritableFile {
   Status WriteRaw(const char* p, size_t n) {
     while (n > 0) {
       // Slice data = Slice(p, n);
+      // printf("WriteRaw %d %s in %s\n", n, p, filename_.c_str());
       ssize_t r = ptr->file->Append(p, n);
+      // printf("WriteRaw %d %s %d\n", n, p, r);
       // ssize_t r = ptr->file->Append(data);      
       // printf("WriteRaw '%c' '%c' '%c' '%c' '%c' '%c' '%c'\n", p[0], p[1], p[2], p[3], p[4], p[5], p[6]);
-      // printf("WriteRaw %d %s %d\n", n, p, r);
       // char buf;
       // memcpy(&buf, p+6, sizeof(char));
       // printf("WriteRaw %d '%d'\n", n, p[6]);
@@ -332,8 +351,8 @@ class PmemEnv : public Env {
     fwrite(msg, 1, sizeof(msg), stderr);
 
     // JH
-    pobj::delete_persistent<rootDirectory>(Dir_ptr);
-    Dir_pool.close();
+    // pobj::delete_persistent<rootDirectory>(Dir_ptr);
+    // Dir_pool.close();
 
     abort();
 
@@ -397,7 +416,7 @@ class PmemEnv : public Env {
     *result = new PmemWritableFile(fname, pool);
     
     // std::cout<< "Center2 \n";
-    Status a = Dir_ptr->dir->Append(&Dir_pool, pool.get_root());
+    // Status a = Dir_ptr->dir->Append(&Dir_pool, pool.get_root());
     // Status a = Dir_ptr->dir->Append(&pool);
     // std::cout<< "Finish Dir append "<<" \n";
     // pobj::persistent_ptr<rootFile> ptr = pool.get_root();
@@ -422,7 +441,7 @@ class PmemEnv : public Env {
     *result = new PmemWritableFile(fname, pool);
     
     // std::cout<< "Center2 \n";
-    Status a = Dir_ptr->dir->Append(&Dir_pool, pool.get_root());
+    // Status a = Dir_ptr->dir->Append(&Dir_pool, pool.get_root());
     // Status a = Dir_ptr->dir->Append(&pool);
     // std::cout<< "Finish Dir append "<<" \n";
     // pobj::persistent_ptr<rootFile> ptr = pool.get_root();
@@ -605,9 +624,9 @@ class PmemEnv : public Env {
   Limiter fd_limit_;
 
   // [Pmem] JH
-  std::string path;
-  pobj::pool<rootDirectory> Dir_pool;
-  pobj::persistent_ptr<rootDirectory> Dir_ptr;
+  // std::string path;
+  // pobj::pool<rootDirectory> Dir_pool;
+  // pobj::persistent_ptr<rootDirectory> Dir_ptr;
   // pobj::mutex mutex;
 
 };
@@ -646,22 +665,23 @@ class PmemEnv : public Env {
 PmemEnv::PmemEnv()
     : started_bgthread_(false),
       mmap_limit_(MaxMmaps()),
-      fd_limit_(MaxOpenFiles()),
-      path("/home/hwan/pmem_dir/Directory") {
+      fd_limit_(MaxOpenFiles())
+      // ,path("/home/hwan/pmem_dir/Directory") 
+      {
   PthreadCall("mutex_init", pthread_mutex_init(&mu_, nullptr));
   PthreadCall("cvar_init", pthread_cond_init(&bgsignal_, nullptr));
   // JH
-  if (!FileExists(path)) {
-    Dir_pool = pobj::pool<rootDirectory>::create(path, POOL_DIR_ID,
-                  ((size_t)(1024 * 1024 * 64)), S_IRUSR | S_IWUSR);
+  // if (!FileExists(path)) {
+  //   Dir_pool = pobj::pool<rootDirectory>::create(path, POOL_DIR_ID,
+  //                 ((size_t)(1024 * 1024 * 64)), S_IRUSR | S_IWUSR);
 
-  } else {
-    Dir_pool = pobj::pool<rootDirectory>::open(path, POOL_DIR_ID);
-  }
-  Dir_ptr = Dir_pool.get_root();
-  pobj::transaction::exec_tx(Dir_pool, [&] {
-    Dir_ptr->dir = pobj::make_persistent<PmemDirectory> ();
-  });
+  // } else {
+  //   Dir_pool = pobj::pool<rootDirectory>::open(path, POOL_DIR_ID);
+  // }
+  // Dir_ptr = Dir_pool.get_root();
+  // pobj::transaction::exec_tx(Dir_pool, [&] {
+  //   Dir_ptr->dir = pobj::make_persistent<PmemDirectory> ();
+  // });
 
 }
 
