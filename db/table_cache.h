@@ -15,16 +15,16 @@
 #include "port/port.h"
 
 // JH
-#include <iostream>
-#include <fstream>
-#include <libpmemobj++/make_persistent.hpp>
-#include <libpmemobj++/make_persistent_atomic.hpp>
-#include <libpmemobj++/p.hpp>
-#include <libpmemobj++/persistent_ptr.hpp>
-#include <libpmemobj++/pool.hpp>
-#define POOLID "pool"
+// #include <iostream>
+// #include <fstream>
+// #include <libpmemobj++/make_persistent.hpp>
+// #include <libpmemobj++/make_persistent_atomic.hpp>
+// #include <libpmemobj++/p.hpp>
+// #include <libpmemobj++/persistent_ptr.hpp>
+// #include <libpmemobj++/pool.hpp>
+// #define POOLID "pool"
 
-namespace pobj = pmem::obj;
+// namespace pobj = pmem::obj;
 
 namespace leveldb {
 
@@ -46,10 +46,10 @@ class Sample {
   ~Sample();
   void insert(uint64_t input);
   void printContent();
-  
+  int printCount();
 
  private:
-  uint64_t value[100];
+  uint64_t value[200];
   int count;
 
 };
@@ -83,13 +83,7 @@ class TableCache {
 
   // Evict any entry for the specified file number
   void Evict(uint64_t file_number);
-
- private:
-  Env* const env_;
-  const std::string dbname_;
-  const Options& options_;
-  Cache* cache_;
-
+/*
   struct root {
 	  // pobj::persistent_ptr<TableAndFile> taf;
 	  pobj::persistent_ptr<Sample> sample;
@@ -97,8 +91,20 @@ class TableCache {
 
   // JH
   pobj::pool<root> pop;
-	pobj::persistent_ptr<root> pool;
+	// pobj::persistent_ptr<root> pool;
+  pobj::persistent_ptr<root> GetPersistptr();
 
+*/
+ private:
+  Env* const env_;
+  const std::string dbname_;
+  const Options& options_;
+  Cache* cache_;
+/*
+  // JH
+  // pobj::pool<root> pop;
+	pobj::persistent_ptr<root> pool;
+*/
   
 
   Status FindTable(uint64_t file_number, uint64_t file_size, Cache::Handle**);
@@ -118,13 +124,13 @@ class TableCache {
   // JH
 // pobj::pool<root> pop;
 // pobj::persistent_ptr<root> pool;
-
+/*
 inline bool
 file_exists (const std::string &name)
 {
 	std::ifstream f (name.c_str());
 	return f.good ();
-}
+}*/
 
 }  // namespace leveldb
 

@@ -9,7 +9,9 @@
 #include "leveldb/table.h"
 #include "util/coding.h"
 
-namespace pobj = pmem::obj;
+#include <iostream>
+
+// namespace pobj = pmem::obj;
 
 namespace leveldb {
 /*
@@ -82,8 +84,11 @@ Status TableCache::FindTable(uint64_t file_number, uint64_t file_size,
       TableAndFile* tf = new TableAndFile;
       tf->file = file;
       tf->table = table;
+      std::cout <<"DEBUG 1]\n";
       *handle = cache_->Insert(key, tf, 1, &DeleteEntry);
+      std::cout <<"DEBUG 2]\n";
 
+      /*
       std::string file = "/home/hwan/pmem_dir/table_cache";
       // JH
       TableCache* table_cache = reinterpret_cast<TableCache*>(cache_);
@@ -92,16 +97,18 @@ Status TableCache::FindTable(uint64_t file_number, uint64_t file_size,
         table_cache->pop = pobj::pool<root>::open (file, POOLID);
         table_cache->pool = table_cache->pop.get_root();
         table_cache->pool->sample->insert(file_number);
-        table_cache->pool->sample->printContent();
+        // std::cout << table_cache->pool << std::endl;
+        // table_cache->pool->sample->printContent();
       } else {
       	table_cache->pop = pobj::pool<root>::create (file, POOLID,
 									 PMEMOBJ_MIN_POOL, S_IRUSR | S_IWUSR);
         table_cache->pool = table_cache->pop.get_root();
       	// Store the input into persistent memory
       	pobj::make_persistent_atomic<Sample> (table_cache->pop, table_cache->pool->sample, file_number);
-        table_cache->pool->sample->printContent();
+        // table_cache->pool->sample->printContent();
       }
       table_cache->pop.close();
+      */
     }
   }
   return s;
@@ -122,6 +129,7 @@ Iterator* TableCache::NewIterator(const ReadOptions& options,
   }
 
   Table* table = reinterpret_cast<TableAndFile*>(cache_->Value(handle))->table;
+  std::cout<< "create table newIterator\n";
   Iterator* result = table->NewIterator(options);
   result->RegisterCleanup(&UnrefEntry, cache_, handle);
   if (tableptr != nullptr) {
@@ -154,6 +162,10 @@ void TableCache::Evict(uint64_t file_number) {
 }
 
 // JH
+/*
+pobj::persistent_ptr<TableCache::root> TableCache::GetPersistptr() {
+  return pool;
+}
 Sample::Sample (uint64_t input) {
   value[100] = {input};
    count = 1;
@@ -166,5 +178,8 @@ void Sample::printContent() {
     std::cout << "[" << i << "]" << value[i] << std::endl;
   }
 }
-
+int Sample::printCount() {
+  return count;
+}
+*/
 }  // namespace leveldb

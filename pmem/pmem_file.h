@@ -41,23 +41,33 @@ class PmemFile {
   ssize_t Read(uint64_t offset, size_t n, char* scratch);
   // Writable
   ssize_t Append(const char* data, size_t n);
-  ssize_t Append(const Slice& data);
+  // ssize_t Append(const Slice& data);
 
   int getContentsSize();
   
  private: 
   pobj::pool<rootFile> pool;
-  pobj::persistent_ptr<char[]> contents; // 1MB
-  pobj::persistent_ptr<char[]> contents2; // 1MB
-  pobj::persistent_ptr<char[]> contents3; // 0.5MB
-  pobj::p<ssize_t> contents_size;
+
+  pobj::persistent_ptr<char[]> contents0; // 1MB [      0 ~  999999]
+  pobj::persistent_ptr<char[]> contents1; // 1MB [1000000 ~ 1999999]
+  pobj::persistent_ptr<char[]> contents2; // 1MB [2000000 ~ 2999999]
+  pobj::persistent_ptr<char[]> contents3; // 1MB [3000000 ~ 3999999]
+
+  pobj::p<ssize_t> contents_size0; // 1MB [      0 ~  999999]
+  pobj::p<ssize_t> contents_size1; // 1MB [1000000 ~ 1999999]
+  pobj::p<ssize_t> contents_size2; // 1MB [2000000 ~ 2999999]
+  pobj::p<ssize_t> contents_size3; // 1MB [3000000 ~ 3999999]
+
   pobj::mutex mutex;
+
   // For sequentialFile's Skip()
-  int current_start_index;
+  unsigned long current_start_index;         // 4MB [      0 ~ 3999999]
+
   // For appending, Set Contents-Flag
-  //  0 := contents1 (default)
-  //  1 := contents2 
-  //  2 := contents3 
+  //  0 := contents0 (default)
+  //  1 := contents1 
+  //  2 := contents2 
+  //  3 := contents3 
   unsigned int contents_flag;
 };
 
