@@ -10,7 +10,7 @@
 // PMDK
 #include <libpmemobj++/persistent_ptr.hpp>
 #include <libpmemobj++/make_persistent_array.hpp>
-// #include <libpmemobj++/make_persistent.hpp>
+#include <libpmemobj++/make_persistent.hpp>
 #include <libpmemobj++/p.hpp>
 #include <libpmemobj++/pool.hpp>
 #include <libpmemobj++/transaction.hpp>
@@ -52,6 +52,11 @@ class PmemFile {
   pobj::persistent_ptr<char[]> contents1; // 1MB [1000000 ~ 1999999]
   pobj::persistent_ptr<char[]> contents2; // 1MB [2000000 ~ 2999999]
   pobj::persistent_ptr<char[]> contents3; // 1MB [3000000 ~ 3999999]
+
+  // char contents0[MAX_ARRAY_SIZE]; // 1MB [      0 ~  999999]
+  // char contents1[MAX_ARRAY_SIZE]; // 1MB [1000000 ~ 1999999]
+  // char contents2[MAX_ARRAY_SIZE]; // 1MB [2000000 ~ 2999999]
+  // char contents3[MAX_ARRAY_SIZE]; // 1MB [3000000 ~ 3999999]
 
   pobj::p<ssize_t> contents_size0; // 1MB [      0 ~  999999]
   pobj::p<ssize_t> contents_size1; // 1MB [1000000 ~ 1999999]

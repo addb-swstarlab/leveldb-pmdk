@@ -31,10 +31,8 @@
 // JH
 #include <iostream>
 #include <fstream>
-#include "pmem/pmem_directory.h"
+#include "pmem/pmem_file.h"
 #include "libpmemobj++/mutex.hpp"
-// #include "pmem/pmem_file.h"
-// #include "libpmemobj++/make_persistent_atomic.hpp"
 #include "env_posix.cc"
 
 #define POOLID "file"
@@ -79,7 +77,7 @@ class PmemSequentialFile : public SequentialFile {
   }
 
   virtual Status Read(size_t n, Slice* result, char* scratch) {
-    // std::cout<<"Read \n";
+    // std::cout<<"############## Read Seq\n";
     Status s;
     ssize_t r = ptr->file->Read(n, scratch);
     // printf("Read %d \n", r);
@@ -114,7 +112,7 @@ class PmemRandomAccessFile : public RandomAccessFile {
 
   virtual Status Read(uint64_t offset, size_t n, Slice* result,
                       char* scratch) const {
-    // std::cout<<"Read \n";
+    // printf("############# %s Read %lld %lld \n", filename_.c_str(), offset, n);
     Status s;
     ssize_t r = ptr->file->Read(offset, n, scratch);
     *result = Slice(scratch, (r<0 ? 0 : r));
@@ -193,13 +191,6 @@ class PmemWritableFile : public WritableFile {
     n -= copy;
     pos_ += copy;
 
-    const uint32_t a = static_cast<uint32_t>(buf_[4]) & 0xff;
-    const uint32_t b = static_cast<uint32_t>(buf_[5]) & 0xff;
-    const unsigned int type = buf_[6];
-    const uint32_t length = a | (b << 8);
-    // printf("%d %d, '%d'\n", copy, pos_, type);
-    // printf("a: '%d' \n b: '%d' \n type: '%d'\n length: '%d'\n", a, b, type, length);
-
     if (n == 0) {
       return Status::OK();
     }
@@ -225,7 +216,7 @@ class PmemWritableFile : public WritableFile {
   }
 
   virtual Status Close() {
-    // printf("Close %s\n", filename_.c_str());
+    // printf("############ Close %s\n", filename_.c_str());
     Status result = FlushBuffered();
     pool.close();
     return result;
@@ -235,9 +226,9 @@ class PmemWritableFile : public WritableFile {
     return FlushBuffered();
   }
 
-  pobj::persistent_ptr<rootFile> getFilePtr() {
-    return pool.get_root();
-  };
+  // pobj::persistent_ptr<rootFile> getFilePtr() {
+  //   return pool.get_root();
+  // };
 
   Status SyncDirIfManifest() {
     // const char* f = filename_.c_str();
@@ -268,7 +259,7 @@ class PmemWritableFile : public WritableFile {
   }
 
   virtual Status Sync() {
-    // printf("Sync\n");
+    // printf("############# Sync\n");
     // Ensure new files referred to by the manifest are in the filesystem.
     Status s = SyncDirIfManifest();
     // if (!s.ok()) {
@@ -295,7 +286,7 @@ class PmemWritableFile : public WritableFile {
   Status WriteRaw(const char* p, size_t n) {
     while (n > 0) {
       // Slice data = Slice(p, n);
-      // printf("WriteRaw %d %s in %s\n", n, p, filename_.c_str());
+      // printf("WriteRaw %d in %s\n", n, filename_.c_str());
       ssize_t r = ptr->file->Append(p, n);
       // printf("WriteRaw %d %s %d\n", n, p, r);
       // ssize_t r = ptr->file->Append(data);      
@@ -405,10 +396,12 @@ class PmemEnv : public Env {
     std::cout<< "NewWritableFile "<<fname<<" \n";
     pobj::pool<rootFile> pool;
     if (!file_exists(fname)) {
+      printf("Before create\n");
       pool = pobj::pool<rootFile>::create (fname, POOLID,
           // ((size_t)(FILE_SIZE)), S_IRUSR | S_IWUSR | S_IRGRP | S_IWGRP | S_IROTH);
           ((size_t)(FILE_SIZE)), S_IRUSR | S_IWUSR | S_IRGRP | S_IWGRP | S_IROTH);
 
+      printf("After create\n");
     } else {
       pool = pobj::pool<rootFile>::open (fname, POOLID);
     } 

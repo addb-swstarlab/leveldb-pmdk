@@ -27,19 +27,11 @@ namespace leveldb
     pool.close();
   };
   ssize_t PmemFile::Read(size_t n, char* scratch) {
-    // std::cout<<""<< std::string(contents0.get()) <<"\n";
-    // printf("size: %d, index: %d\n", contents_size0.get_ro(), current_start_index);
-
     // Already be read
     if (contents_size0.get_ro() == current_start_index) {
       return 0;
     }
     int available_indexspace = contents_size0.get_ro() - current_start_index;
-
-    // 1) Check offset range
-    // if (available_indexspace) {
-
-    // }
 
     // check size
     if (n > available_indexspace) {
@@ -52,12 +44,15 @@ namespace leveldb
 
       // contents0[current_start_index, remaining_contents) (available_indexspace size)
       memcpy(scratch, contents0.get()+current_start_index, available_indexspace);
+      // TX_MEMCPY(scratch, contents0+current_start_index, available_indexspace);
       /*
        * [Important]
        * File Descriptor append null string at the end.
        * But, actual size is not n+1, but n.
        */ 
-      memcpy(scratch+available_indexspace, "\0", sizeof(char));
+      // TMP
+      // memcpy(scratch+available_indexspace, "\0", sizeof(char));
+      
       // Skip read area
       Skip(available_indexspace);
       // return read size
@@ -71,7 +66,9 @@ namespace leveldb
 
       // contents0[current_start_index, current + n] (n size)
       memcpy(scratch, contents0.get()+current_start_index, (n));
-      memcpy(scratch+n, "\0", sizeof(char));
+      // TX_MEMCPY(scratch, contents0+current_start_index, (n));
+      // TMP
+      // memcpy(scratch+n, "\0", sizeof(char));
       Skip(n);
       return n;
     }
@@ -86,7 +83,7 @@ namespace leveldb
     // strcpy(scratch, str.substr(offset, n).data());
 
     // 1) Check offset range
-    if (0 <= offset && offset < 999999) {
+    if (0 <= offset && offset <= 999999) {
       unsigned long size = contents_size0.get_ro();
       // 2) Check exceptions
       if (size < offset) {
@@ -106,6 +103,7 @@ namespace leveldb
         // contents0[offset, remained_space-offset) (remained_space size)
       // printf("[READ DEBUG Center1] \n");
         memcpy(scratch, contents0.get()+offset, remained_space);
+        // TX_MEMCPY(scratch, contents0+offset, remained_space);
         
         // 4) recursively read next contents
         Read(MAX_ARRAY_SIZE * 1, required_space, scratch + remained_space);
@@ -115,13 +113,15 @@ namespace leveldb
         // contents0[offset, n-offset) (n size)
         // memcpy(scratch, contents0.get()+offset, (n-offset));
         memcpy(scratch, contents0.get()+offset, n);
+        // TX_MEMCPY(scratch, contents0+offset, n);
       // printf("[READ DEBUG Center3] \n");
         // memcpy(scratch+(n-offset), "\0", sizeof(char));
-        memcpy(scratch+n, "\0", sizeof(char));
+        // TMP
+        // memcpy(scratch+n, "\0", sizeof(char));
       // printf("[READ DEBUG Center4] \n");
       }
       
-    } else if (1000000 <= offset && offset < 1999999) {
+    } else if (1000000 <= offset && offset <= 1999999) {
       unsigned long size = contents_size1.get_ro();
       unsigned long offset_size = size + (MAX_ARRAY_SIZE * 1);
       // 2) Check exceptions
@@ -145,20 +145,20 @@ namespace leveldb
         // contents1[offset, remained_space-offset) (remained_space size)
         // printf("11\n");
         memcpy(scratch, contents1.get() + contents_offset, remained_space);
+        // TX_MEMCPY(scratch, contents1 + contents_offset, remained_space);
         
         // 4) recursively read next contents
         Read(MAX_ARRAY_SIZE * 2, required_space, scratch + remained_space);
 
       } else { // just read one contents
-        // printf("22 %d %d\n",contents_offset, n);
         // contents1[offset, n-offset) (n size)
         memcpy(scratch, contents1.get()+contents_offset, n);
-        // printf("33\n");
-        memcpy(scratch + n, "\0", sizeof(char));
-        // printf("44\n");
+        // TX_MEMCPY(scratch, contents1+contents_offset, n);
+        // TMP
+        // memcpy(scratch + n, "\0", sizeof(char));
       }
 
-    } else if (2000000 <= offset && offset < 2999999) {
+    } else if (2000000 <= offset && offset <= 2999999) {
       unsigned long size = contents_size2.get_ro();
       unsigned long offset_size = size + (MAX_ARRAY_SIZE * 2);
       // 2) Check exceptions
@@ -180,6 +180,7 @@ namespace leveldb
       if (required_space > 0) { // need next contents
         // contents2[offset, remained_space-offset) (remained_space size)
         memcpy(scratch, contents2.get() + contents_offset, remained_space);
+        // TX_MEMCPY(scratch, contents2 + contents_offset, remained_space);
         
         // 4) recursively read next contents
         Read(MAX_ARRAY_SIZE * 3, required_space, scratch + remained_space);
@@ -187,9 +188,11 @@ namespace leveldb
       } else { // just read one contents
         // contents2[offset, n-offset) (n size)
         memcpy(scratch, contents2.get()+contents_offset, n);
-        memcpy(scratch + n, "\0", sizeof(char));
+        // TX_MEMCPY(scratch, contents2+contents_offset, n);
+        // TMP
+        // memcpy(scratch + n, "\0", sizeof(char));
       }
-    } else if (3000000 <= offset && offset < 3999999) {
+    } else if (3000000 <= offset && offset <= 3999999) {
       unsigned long size = contents_size3.get_ro();
       unsigned long offset_size = size + (MAX_ARRAY_SIZE * 3);
       // 2) Check exceptions
@@ -215,37 +218,48 @@ namespace leveldb
       } else { // just read one contents
         // contents3[offset, n-offset) (n size)
         memcpy(scratch, contents3.get()+contents_offset, n);
-        memcpy(scratch + n, "\0", sizeof(char));
+        // TX_MEMCPY(scratch, contents3+contents_offset, n);
+        // TMP
+        // memcpy(scratch + n, "\0", sizeof(char));
       }
 
     } else {
-      printf("[ERROR] Read] offset is out of range \n");
+      printf("[ERROR] Read] offset is out of range %d\n", offset);
       // throw exception
-
     }
-
-    // strcpy(scratch, str.substr(offset, n).c_str());
-    // printf("res: %d\n", n-offset);
     return n;
   };
+
+///////////////////////////////////////////////////////////////////////////////////
+
   ssize_t PmemFile::Append(const char* data, size_t n) {
     if (contents_size0 == 0) {
       // printf("[START1] %d \n", n);
       pobj::transaction::exec_tx(pool, [&] {
         // 1) Make array
         contents0 = pobj::make_persistent<char[]>(MAX_ARRAY_SIZE);
-        // TO DO, Only make contents0 ?
+        // contents0 = pobj::make_persistent<char[]>(n);
+        // // TO DO, Only make contents0 ?
         contents1 = pobj::make_persistent<char[]>(MAX_ARRAY_SIZE);
         contents2 = pobj::make_persistent<char[]>(MAX_ARRAY_SIZE);
         contents3 = pobj::make_persistent<char[]>(MAX_ARRAY_SIZE);
+        // printf("1 \n");
+        // int a = pmemobj_tx_add_range_direct(contents0, MAX_ARRAY_SIZE);
+        // printf("2 %d\n", a);
+        // pmemobj_tx_add_range_direct(contents1, MAX_ARRAY_SIZE);
+        // pmemobj_tx_add_range_direct(contents2, MAX_ARRAY_SIZE);
+        // pmemobj_tx_add_range_direct(contents3, MAX_ARRAY_SIZE);
+
         // 2) Copy data to contents
         //    Since buffer-size < 1MB, do not check contents_flag
-        // contents0 = pobj::make_persistent<char[]>(n);
-      // printf("22\n");
         memcpy(contents0.get(), data, n);
+        // TX_MEMCPY(contents0, data, n);
+        // strcpy(contents0.get(), data);
+
         // For DEBUG. Have to remove
         // memcpy(contents0.get()+n,"\n" ,sizeof(char));
         contents_size0 = n;
+        pool.persist(contents0);
       }, mutex);
     }
     // Append = need recursive method 
@@ -280,10 +294,23 @@ namespace leveldb
             // if (n > remained_space) { // required_space > 0
             if (required_space > 0) { // required_space > 0
               memcpy(contents0.get()+original_length, data, remained_space);
+              // TX_MEMCPY(contents0+original_length, data, remained_space);
               contents_size0 = MAX_ARRAY_SIZE;
               // printf("[DEBUG Center1 %d] %d \n",contents_flag, contents_size0.get_ro());
             } else { 
+            // char original_contents[original_length];
+            // memcpy(original_contents, contents0.get(), original_length);
+            
+            // pobj::transaction::exec_tx(pool, [&] {
+            // pobj::delete_persistent<char[]>(contents0, original_length);
+            
+            // contents0 = pobj::make_persistent<char[]>(new_length);
+            // pool.persist(contents0);
+            // }, mutex);
+            // memcpy(contents0.get(), original_contents, original_length);
+            
               memcpy(contents0.get()+original_length, data, n);
+              // TX_MEMCPY(contents0+original_length, data, n);
               contents_size0 = new_length;
               // printf("[DEBUG Center2 %d] %d \n",contents_flag, contents_size0.get_ro());
             }
@@ -295,6 +322,7 @@ namespace leveldb
             }
           // }, mutex);
           // printf("[DEBUG0 End %d] %d \n",contents_flag, contents_size0.get_ro());
+          pool.persist(contents0);
           break;
         }
         case 1:
@@ -322,10 +350,12 @@ namespace leveldb
             // if (n > remained_space) { // required_space > 0
             if (required_space > 0) { // required_space > 0
               memcpy(contents1.get()+original_length, data, remained_space);
+              // TX_MEMCPY(contents1+original_length, data, remained_space);
               contents_size1 = MAX_ARRAY_SIZE;
               // printf("[DEBUG Center1 %d] %d \n",contents_flag, contents_size1.get_ro());
             } else { 
               memcpy(contents1.get()+original_length, data, n);
+              // TX_MEMCPY(contents1+original_length, data, n);
               contents_size1 = new_length;
               // printf("[DEBUG Center2 %d] %d \n",contents_flag, contents_size1.get_ro());
             }
@@ -337,6 +367,7 @@ namespace leveldb
             }
           // printf("[DEBUG1 End %d] orig %d new %d remained %d required %d\n",contents_flag, original_length, new_length, remained_space, required_space);
           // }, mutex);
+          pool.persist(contents1);
           break;
         }
         case 2:
@@ -358,9 +389,11 @@ namespace leveldb
             // if (n > remained_space) { // required_space > 0
             if (required_space > 0) { // required_space > 0
               memcpy(contents2.get()+original_length, data, remained_space);
+              // TX_MEMCPY(contents2+original_length, data, remained_space);
               contents_size2 = MAX_ARRAY_SIZE;
             } else { 
               memcpy(contents2.get()+original_length, data, n);
+              // TX_MEMCPY(contents2+original_length, data, n);
               contents_size2 = new_length;
             }
             // Require appending to the next contents array
@@ -371,6 +404,7 @@ namespace leveldb
             }
           // }, mutex);
           // printf("[DEBUG2 End %d] %d \n",contents_flag, contents_size2.get_ro());
+          pool.persist(contents2);
           break;
         }
         case 3: 
@@ -381,13 +415,16 @@ namespace leveldb
             unsigned long original_length = contents_size3.get_ro();
             unsigned long new_length = n + contents_size3.get_ro();
 
-            char original_contents[original_length];
-            memcpy(original_contents, contents3.get(), original_length);
+            // char original_contents[original_length];
+            // memcpy(original_contents, contents3.get(), original_length);
 
-            memcpy(contents3.get(), original_contents, original_length);
+            // memcpy(contents3.get(), original_contents, original_length);
             memcpy(contents3.get() + original_length, data, n);
+            // TX_MEMCPY(contents3 + original_length, data, n);
             contents_size3 = new_length;
           // }, mutex);
+          pool.persist(contents3);
+
           break;
         }
         default:
@@ -425,34 +462,6 @@ namespace leveldb
     // return Status::OK();
     return n;
   }
-  // ssize_t PmemFile::Append(const Slice& data) {
-  //   // First append = just insert
-  //   if (contents_size0 == 0) {
-  //     // std::cout<<"[START1]\n";
-  //     pobj::transaction::exec_tx(pool, [&] {
-  //       unsigned long length = data.size();
-  //       contents0 = pobj::make_persistent<char[]>(length);
-  //       strcpy(contents0.get(), data.data());
-  //       // printf("DEBUG Append] %c\n", contents0.get()+6);
-  //       contents_size0 = length;
-  //     }, mutex);
-  //   }
-  //   // Append = need reallocation 
-  //   else {
-  //     // std::cout<<"[START2]\n";
-  //     pobj::transaction::exec_tx(pool, [&] {
-  //       unsigned long length = data.size() + contents_size0.get_ro();
-  //       char* original = contents0.get();
-  //       pobj::delete_persistent<char[]>(contents0, contents_size0.get_ro());
-  //       contents0 = pobj::make_persistent<char[]>(length);
-  //       strcpy(contents0.get(), original);
-  //       strcat(contents0.get(), data.data());
-  //       contents_size0 = length;
-  //     }, mutex);
-  //   }
-  //   // return Status::OK();
-  //   return data.size();
-  // };
   int PmemFile::getContentsSize() {
     return contents_size0.get_ro();
   };
