@@ -16,67 +16,30 @@
 #include <libpmemobj++/transaction.hpp>
 #include <libpmemobj++/mutex.hpp>
 
-// #include <string>
-
-// #define MAX_FILESIZE 100000 // 64MB
-// #define BUFFER_SIZE 4294967295
-#define MAX_ARRAY_SIZE 1000000 // 1MB
-#define AUX_ARRAY_SIZE 500000 // 0.5MB
+#define MAX_ARRAY_SIZE 4000000 // 4MB
+#define NUM_OF_FILE 500
 
 namespace pobj = pmem::obj;
 
 namespace leveldb {
 struct rootFile;
-class PmemFile {
- public:
-  PmemFile();
-  PmemFile(pobj::pool<rootFile> pool);
-  ~PmemFile();
+// Public function for PmemFile 
+// Readable
+//    Sequential
+// ssize_t PmemRead(PmemFile* pmemfile, size_t n, char* scratch);
+// Status PmemSkip(PmemFile* pmemfile,uint64_t n);
+//    RandomAccess
+// ssize_t PmemRead(PmemFile* pmemfile,uint64_t offset, size_t n, char* scratch);
+// Writable
+// ssize_t PmemAppend(PmemFile* pmemfile,const char* data, size_t n);
 
-  // Readable
-  //    Sequential
-  ssize_t Read(size_t n, char* scratch);
-  Status Skip(uint64_t n);
-  //    RandomAccess
-  ssize_t Read(uint64_t offset, size_t n, char* scratch);
-  // Writable
-  ssize_t Append(const char* data, size_t n);
-  // ssize_t Append(const Slice& data);
-
-  int getContentsSize();
-  
- private: 
-  pobj::pool<rootFile> pool;
-
-  pobj::persistent_ptr<char[]> contents0; // 1MB [      0 ~  999999]
-  pobj::persistent_ptr<char[]> contents1; // 1MB [1000000 ~ 1999999]
-  pobj::persistent_ptr<char[]> contents2; // 1MB [2000000 ~ 2999999]
-  pobj::persistent_ptr<char[]> contents3; // 1MB [3000000 ~ 3999999]
-
-  // char contents0[MAX_ARRAY_SIZE]; // 1MB [      0 ~  999999]
-  // char contents1[MAX_ARRAY_SIZE]; // 1MB [1000000 ~ 1999999]
-  // char contents2[MAX_ARRAY_SIZE]; // 1MB [2000000 ~ 2999999]
-  // char contents3[MAX_ARRAY_SIZE]; // 1MB [3000000 ~ 3999999]
-
-  pobj::p<ssize_t> contents_size0; // 1MB [      0 ~  999999]
-  pobj::p<ssize_t> contents_size1; // 1MB [1000000 ~ 1999999]
-  pobj::p<ssize_t> contents_size2; // 1MB [2000000 ~ 2999999]
-  pobj::p<ssize_t> contents_size3; // 1MB [3000000 ~ 3999999]
-
-  pobj::mutex mutex;
-
-  // For sequentialFile's Skip()
-  unsigned long current_start_index;         // 4MB [      0 ~ 3999999]
-
-  // For appending, Set Contents-Flag
-  //  0 := contents0 (default)
-  //  1 := contents1 
-  //  2 := contents2 
-  //  3 := contents3 
-  unsigned int contents_flag;
+struct rootFile {
+  pobj::persistent_ptr<char[]> contents;                   // Total 1.65GB, each 4MB
+  pobj::persistent_ptr<uint32_t[]> contents_size;          // 400 Files
+  pobj::persistent_ptr<uint32_t[]> current_index;    // 400 Files
 };
-
-struct rootFile{
-  pobj::persistent_ptr<PmemFile> file;
+struct rootOffset {
+  pobj::persistent_ptr<uint32_t[]> fname;                  // 4000 Files
+  pobj::persistent_ptr<uint32_t[]> start_index;            // 4000 Files
 };
 } // namespace LEVELDB
