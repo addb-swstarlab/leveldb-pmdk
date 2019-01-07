@@ -48,7 +48,9 @@
 #define FILESIZE (1024 * 1024  * 1024 * 1.65) // About 1.65GB
 #define FILEID "file"
 #define CONTENTS 1600000000 // 1.6GB
-#define CONTENTS_SIZE 400   // 1.6GB / 4MB
+#define EACH_CONTENT 4000000
+#define CONTENTS_SIZE (CONTENTS/EACH_CONTENT)   // 1.6GB / 4MB
+// #define CONTENTS_SIZE 400   // 1.6GB / 4MB
 
 #define OFFSET "/home/hwan/pmem_dir/offset"
 #define OFFSETID "offset"
@@ -58,8 +60,10 @@
 #define EXFILE "/home/hwan/pmem_dir/exfile"
 #define EXFILEID "exfile"
 #define EXFILE_SIZE (1024 * 1024 * 40)
-#define EXFILE_CONTENTS 8000000 // 8MB
-#define EXFILE_CONTENTS_SIZE 4  // 8MB / 2MB
+#define EXFILE_CONTENTS 10000000 // 10MB
+#define EACH_EXFILE_CONTENT 2000000
+#define EXFILE_CONTENTS_SIZE (EXFILE_CONTENTS/EACH_EXFILE_CONTENT)  // 10MB / 2MB
+// #define EXFILE_CONTENTS_SIZE 5  // 10MB / 2MB
 
 
 // #define FILE_SIZE (1024 * 1024 * 12) // @ MB
@@ -72,7 +76,7 @@
 #endif  // !HAVE_FDATASYNC
 
 namespace leveldb {
-
+ 
 namespace {
 
 // [pmem] JH
@@ -354,7 +358,7 @@ class PmemEnv : public Env {
                                    SequentialFile** result) {
     std::cout<< "NewSequentialFile "<<fname<<" \n";
     Status s;
-    int num = GetFileName(fname);
+    uint32_t num = GetFileNumber(fname);
     
     // *result = new PmemSequentialFile(fname, &ptr->files[num]);
 
@@ -366,7 +370,7 @@ class PmemEnv : public Env {
                                      RandomAccessFile** result) {
     std::cout<< "NewRandomAccessFile "<<fname<<" \n";
     Status s;
-    int num = GetFileName(fname);
+    uint32_t num = GetFileNumber(fname);
     
     // *result = new PmemRandomAccessFile(fname, &ptr->files[num]);
     return s;
@@ -376,60 +380,20 @@ class PmemEnv : public Env {
                                  WritableFile** result) {
     std::cout<< "NewWritableFile "<<fname<<" \n";
     Status s;
-    int num = GetFileName(fname);
+    // 1) Get number
+    uint32_t num = GetFileNumber(fname);
+
+    // 2) Get proper pool
     pobj::pool<rootFile>* pool;
-    switch (num % 10) {
-      case 0: {
-        pool = &filePool0;
-        break;
-      }
-      case 1: {
-        pool = &filePool1;
-        break;
-      }
-      case 2: {
-        pool = &filePool2;
-        break;
-      }
-      case 3: {
-        pool = &filePool3;
-        break;
-      }
-      case 4: {
-        pool = &filePool4;
-        break;
-      }
-      case 5: {
-        pool = &filePool5;
-        break;
-      }
-      case 6: {
-        pool = &filePool6;
-        break;
-      }
-      case 7: {
-        pool = &filePool7;
-        break;
-      }
-      case 8: {
-        pool = &filePool8;
-        break;
-      }
-      case 9: {
-        pool = &filePool9;
-        break;
-      }
-      case -1: {
-        pool = &filePool0;
-        break;
-      }
-      default: {
-        break;
-      }
+    pool = GetPool(num);
+
+    // 3) Get start offset
+    uint32_t offset = GetOffset(fname, num);
+    if (offset == -1) {
+      printf("[ERROR] Invalid offset ( The number of files >= 4000(Limit)) \n");
     }
 
-    // *result = new PmemWritableFile(fname, pool);
-    
+    *result = new PmemWritableFile(fname, pool, offset);
 
     return s;
   }
@@ -438,7 +402,7 @@ class PmemEnv : public Env {
                                    WritableFile** result) {
     std::cout<< "NewAppendableFile \n";
     Status s;
-    int num = GetFileName(fname);
+    uint32_t num = GetFileNumber(fname);
 
     // *result = new PmemWritableFile(fname, &ptr->files[num]);
 
@@ -449,10 +413,8 @@ class PmemEnv : public Env {
     return access(fname.c_str(), F_OK) == 0;
   }
   // JH
-  virtual int GetFileName(const std::string& fname) {
+  virtual uint32_t GetFileNumber(const std::string& fname) {
     std::string slash = "/";
-    // std::string extension = ".";
-    // std::string fileNumber = fname.substr( fname.rfind(slash), fname.find(extension) );
     std::string fileNumber = fname.substr( fname.rfind(slash)+1, fname.size() );
 
     // Filter tmp file and MANIFEST file
@@ -461,6 +423,45 @@ class PmemEnv : public Env {
       return -1;
     }
     return std::atoi(fileNumber.c_str());
+  }
+  // For MANIFEST, dbtmp, CURRENT file
+  virtual uint32_t GetSpecialFileNumber(const std::string& fname) {
+    std::string slash = "/"; std::string dash = "-";
+    std::string fileNumber = fname.substr( fname.rfind(slash)+1, fname.size() );
+
+    uint32_t res = -1;
+    // Filter tmp file and MANIFEST file
+    if (fileNumber.find("dbtmp") != std::string::npos) {
+      switch (std::atoi(fileNumber.c_str())) {
+        case 1:
+          res = 3;
+          break;
+        case 2:
+          res = 4;
+          break;
+        default:
+          printf("[ERROR] Invalid dbtmp number... \n");
+          // throw exception
+          break;
+      }
+    } else if (fileNumber.find("MANIFEST") != std::string::npos) {
+      std::string tmp = fileNumber.substr(fileNumber.find(dash)+1, fileNumber.size());
+      switch (std::atoi(tmp.c_str())) {
+        case 1:
+          res = 1;
+          break;
+        case 2:
+          res = 2;
+          break;
+        default:
+          printf("[ERROR] Invalid MANIFEST number... \n");
+          // throw exception
+          break;
+      }
+    } else if (fileNumber.find("CURRENT") != std::string::npos) {
+      res = 0;
+    }
+    return res;
   }
 
   virtual Status GetChildren(const std::string& dir,
@@ -477,12 +478,14 @@ class PmemEnv : public Env {
     closedir(d);
     return Status::OK();
   }
-
+  // Customized by JH
   virtual Status DeleteFile(const std::string& fname) {
     Status result;
-    if (unlink(fname.c_str()) != 0) {
-      result = PosixError(fname, errno);
-    }
+    // if (unlink(fname.c_str()) != 0) {
+    //   result = PosixError(fname, errno);
+    // }
+    printf("[DELETE] %s\n", fname.c_str());
+    
     return result;
   }
 
@@ -494,6 +497,7 @@ class PmemEnv : public Env {
     return result;
   }
 
+  // Customized by JH
   virtual Status DeleteDir(const std::string& name) {
     Status result;
     if (rmdir(name.c_str()) != 0) {
@@ -516,9 +520,12 @@ class PmemEnv : public Env {
 
   virtual Status RenameFile(const std::string& src, const std::string& target) {
     Status result;
-    if (rename(src.c_str(), target.c_str()) != 0) {
-      result = PosixError(src, errno);
-    }
+    // if (rename(src.c_str(), target.c_str()) != 0) {
+    //   result = PosixError(src, errno);
+    // }
+    printf("[RENAME] %s->%s\n", src.c_str(), target.c_str());
+    
+
     return result;
   }
 
@@ -600,6 +607,69 @@ class PmemEnv : public Env {
 
   virtual void SleepForMicroseconds(int micros) {
     usleep(micros);
+  }
+  // JH
+  virtual pobj::pool<rootFile>* GetPool(const uint32_t num) {
+    pobj::pool<rootFile> *pool;
+    switch (num % 10) {
+      case 0:
+        pool = &filePool0;
+        break;
+      case 1:
+        pool = &filePool1;
+        break;
+      case 2: 
+        pool = &filePool2;
+        break;
+      case 3: 
+        pool = &filePool3;
+        break;
+      case 4: 
+        pool = &filePool4;
+        break;
+      case 5: 
+        pool = &filePool5;
+        break;
+      case 6: 
+        pool = &filePool6;
+        break;
+      case 7: 
+        pool = &filePool7;
+        break;
+      case 8: 
+        pool = &filePool8;
+        break;
+      case 9: 
+        pool = &filePool9;
+        break;
+      case -1: 
+        pool = &exfilePool;
+        break;
+      default: 
+        printf("[ERROR] Invalid File name type...\n");
+        // Throw exception
+        break;
+    }
+    return pool;
+  }
+  virtual uint32_t GetOffset(const std::string& fname, const uint32_t num) {
+    uint32_t offset;
+    // Check num range
+    if (num < 0) {
+      // dbtmp, MANIFEST
+      offset = GetSpecialFileNumber(fname) * 2000000;
+    } else if (num <= 4000) {
+      // Pre-allocated area
+      offset = (num / 10) * 4000000; // based on 10-pools
+      memcpy(offsets->fname.get(), &num, sizeof(uint32_t));
+      memcpy(offsets->start_offset.get(), &offset, sizeof(uint32_t));
+    } 
+    // TO DO, extend all range with dynamic-allocation
+    else {
+      offset = -1;
+      // Temp, throw exception
+    }
+    return offset;
   }
 
  private:
@@ -684,8 +754,8 @@ PmemEnv::PmemEnv()
         // 2GB cause error
         // About 1.65GB
         FILESIZE , S_IRUSR | S_IWUSR | S_IRGRP | S_IWGRP | S_IROTH);
-    filePool2 = pobj::pool<rootFile>::create (FILE2, FILEID, FILESIZE , S_IRUSR | S_IWUSR | S_IRGRP | S_IWGRP | S_IROTH);
     filePool1 = pobj::pool<rootFile>::create (FILE1, FILEID, FILESIZE , S_IRUSR | S_IWUSR | S_IRGRP | S_IWGRP | S_IROTH);
+    filePool2 = pobj::pool<rootFile>::create (FILE2, FILEID, FILESIZE , S_IRUSR | S_IWUSR | S_IRGRP | S_IWGRP | S_IROTH);
     filePool3 = pobj::pool<rootFile>::create (FILE3, FILEID, FILESIZE , S_IRUSR | S_IWUSR | S_IRGRP | S_IWGRP | S_IROTH);
     filePool4 = pobj::pool<rootFile>::create (FILE4, FILEID, FILESIZE , S_IRUSR | S_IWUSR | S_IRGRP | S_IWGRP | S_IROTH);
     filePool5 = pobj::pool<rootFile>::create (FILE5, FILEID, FILESIZE , S_IRUSR | S_IWUSR | S_IRGRP | S_IWGRP | S_IROTH);
@@ -786,14 +856,15 @@ PmemEnv::PmemEnv()
     // 4000Files
     pobj::transaction::exec_tx(offsetPool, [&] {
       offsets->fname       = pobj::make_persistent<uint32_t[]>(OFFSETS_SIZE);  
-      offsets->start_index = pobj::make_persistent<uint32_t[]>(OFFSETS_SIZE);
+      offsets->start_offset = pobj::make_persistent<uint32_t[]>(OFFSETS_SIZE);
     });
+
   } else {
     // std::cout<< "Reuse OffsetFile "<<FILE0<<" \n";
     offsetPool = pobj::pool<rootOffset>::open (OFFSET, OFFSETID);
     offsets = offsetPool.get_root();
   }
-  // EXTRA CONTENS & OFFSET BUFFER
+  // EXTRA CONTENS BUFFER
   if (!FileExists(EXFILE)) {
     exfilePool = pobj::pool<rootFile>::create (EXFILE, EXFILEID, 
         EXFILE_SIZE, S_IRUSR | S_IWUSR | S_IRGRP | S_IWGRP | S_IROTH);

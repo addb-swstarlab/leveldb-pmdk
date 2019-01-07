@@ -36,10 +36,10 @@ struct rootFile;
 struct rootFile {
   pobj::persistent_ptr<char[]> contents;                   // Total 1.65GB, each 4MB
   pobj::persistent_ptr<uint32_t[]> contents_size;          // 400 Files
-  pobj::persistent_ptr<uint32_t[]> current_index;    // 400 Files
+  pobj::persistent_ptr<uint32_t[]> current_index;          // 400 Files
 };
 struct rootOffset {
   pobj::persistent_ptr<uint32_t[]> fname;                  // 4000 Files
-  pobj::persistent_ptr<uint32_t[]> start_index;            // 4000 Files
+  pobj::persistent_ptr<uint32_t[]> start_offset;            // 4000 Files
 };
 } // namespace LEVELDB
