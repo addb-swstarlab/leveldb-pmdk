@@ -65,6 +65,11 @@
 #define EXFILE_CONTENTS_SIZE (EXFILE_CONTENTS/EACH_EXFILE_CONTENT)  // 10MB / 2MB
 // #define EXFILE_CONTENTS_SIZE 5  // 10MB / 2MB
 
+#define EXOFFSET "/home/hwan/pmem_dir/exoffset"
+#define EXOFFSETID "exoffset"
+#define EXOFFSETS_POOL_SIZE (1024 * 1024 * 8) // 8MB (MIN)
+#define EXOFFSETS_SIZE 5 // CURRENT MANIFEST .dbtmp
+
 
 // #define FILE_SIZE (1024 * 1024 * 12) // @ MB
 // #define FILE_SIZE (1024 * 1024 * 1024 * 2) // @ GB
@@ -152,6 +157,7 @@ class PmemWritableFile : public WritableFile {
   std::string filename_;
   pobj::pool<rootFile>* pool;
   uint32_t start_offset;
+  uint32_t num;
 
   char buf_[kBufSize];
   size_t pos_;
@@ -168,6 +174,7 @@ class PmemWritableFile : public WritableFile {
   PmemWritableFile(const std::string& fname, pobj::pool<rootFile>* pool, uint32_t start_offset)
       : filename_(fname),  pos_(0), pool(pool), start_offset(start_offset) {
       // : filename_(fname), pool(pool), pos_(0), set_ptr_flag(0) { 
+        // num = GetFileNumber();
   }
 
   virtual ~PmemWritableFile() { }
@@ -186,6 +193,10 @@ class PmemWritableFile : public WritableFile {
     //   set_ptr_flag = 1;
     // }
     // printf("Append %d %s \n", data.size(), data.data());
+    
+    // pobj::persistent_ptr<rootFile> ptr = pool->get_root();
+    // uint32_t original_length;
+    // memcpy(&original_length, ptr->contents_size.get() + start_offset, sizeof(uint32_t));
     size_t n = data.size();
     const char* p = data.data();
 
@@ -203,17 +214,17 @@ class PmemWritableFile : public WritableFile {
     // Can't fit in buffer, so need to do at least one write.
     // Current buffer -> flush
     // allocate new buffer (pos_ = 0)
-    Status s = FlushBuffered();
-    if (!s.ok()) {
-      return s;
-    }
+    // Status s = FlushBuffered();
+    // if (!s.ok()) {
+    //   return s;
+    // }
 
     // Small writes go to buffer, large writes are written directly.
-    if (n < kBufSize) {
-      memcpy(buf_, p, n);
-      pos_ = n;
-      return Status::OK();
-    }
+    // if (n < kBufSize) {
+    //   memcpy(buf_, p, n);
+    //   pos_ = n;
+    //   return Status::OK();
+    // }
     // Without through buffer, write.
     return WriteRaw(p, n);
 
@@ -380,17 +391,21 @@ class PmemEnv : public Env {
                                  WritableFile** result) {
     std::cout<< "NewWritableFile "<<fname<<" \n";
     Status s;
-    // 1) Get number
+    // 1) Get info
     uint32_t num = GetFileNumber(fname);
-
-    // 2) Get proper pool
-    pobj::pool<rootFile>* pool;
-    pool = GetPool(num);
-
-    // 3) Get start offset
+    pobj::pool<rootFile>* pool = GetPool(num);
     uint32_t offset = GetOffset(fname, num);
-    if (offset == -1) {
-      printf("[ERROR] Invalid offset ( The number of files >= 4000(Limit)) \n");
+    // Special file
+    if (num == -1) {
+      SetExtraOffset(num, offset);
+    } 
+    // Normal file
+    else {
+      // Set offset
+      SetOffset(num, offset);
+      if (offset == -1) {
+        printf("[ERROR] Invalid offset ( The number of files >= 4000(Limit)) \n");
+      }
     }
 
     *result = new PmemWritableFile(fname, pool, offset);
@@ -419,13 +434,14 @@ class PmemEnv : public Env {
 
     // Filter tmp file and MANIFEST file
     if (fileNumber.find("dbtmp") != std::string::npos
-        || fileNumber.find("MANIFEST") != std::string::npos) {
+        || fileNumber.find("MANIFEST") != std::string::npos
+        || fileNumber.find("CURRENT") != std::string::npos) {
       return -1;
     }
     return std::atoi(fileNumber.c_str());
   }
   // For MANIFEST, dbtmp, CURRENT file
-  virtual uint32_t GetSpecialFileNumber(const std::string& fname) {
+  virtual uint32_t GetExtraFileNumber(const std::string& fname) {
     std::string slash = "/"; std::string dash = "-";
     std::string fileNumber = fname.substr( fname.rfind(slash)+1, fname.size() );
 
@@ -481,11 +497,37 @@ class PmemEnv : public Env {
   // Customized by JH
   virtual Status DeleteFile(const std::string& fname) {
     Status result;
-    // if (unlink(fname.c_str()) != 0) {
-    //   result = PosixError(fname, errno);
-    // }
-    printf("[DELETE] %s\n", fname.c_str());
-    
+    if (fname.find("MANIFEST") != std::string::npos
+        || fname.find(".log") != std::string::npos
+        || fname.find("CURRENT") != std::string::npos) {
+
+      printf("[DELETE] %s\n", fname.c_str());
+      uint32_t num = GetFileNumber(fname);
+      pobj::pool<rootFile> *pool = GetPool(num);
+      
+      // 1) Get info
+      uint32_t offset = GetExtraOffset(fname);
+      // 2) Reset file
+      ResetFile(pool, offset);
+      // Extra file
+      if (num == -1) {
+        // Do not touch exOffset
+      } 
+      // Normal file
+      else {
+      // TO DO, dynamic alloc (out of boundary)
+      // int index = (num / 10);
+        // Reset offset (for dynamic alloc) 
+        uint32_t offset_reset_value = -1;
+        SetOffset(num, offset_reset_value);
+      }
+    }
+    // Original path
+    else {
+      if (unlink(fname.c_str()) != 0) {
+        result = PosixError(fname, errno);
+      }
+    }
     return result;
   }
 
@@ -518,14 +560,27 @@ class PmemEnv : public Env {
     return s;
   }
 
+  // For special-file
   virtual Status RenameFile(const std::string& src, const std::string& target) {
     Status result;
-    // if (rename(src.c_str(), target.c_str()) != 0) {
-    //   result = PosixError(src, errno);
-    // }
-    printf("[RENAME] %s->%s\n", src.c_str(), target.c_str());
-    
 
+    // Just change offset's fname to 0
+    if (src.find("dbtmp") != std::string::npos
+        && target.find("CURRENT") != std::string::npos) {
+      uint32_t src_num = GetExtraFileNumber(src);
+      uint32_t src_offset = GetExtraOffset(src);
+
+      uint32_t zero = 0; // CURRENT index
+      memcpy(exOffsets->fname.get() + src_offset, &zero, sizeof(uint32_t));    
+
+      printf("[RENAME] %s->%s\n", src.c_str(), target.c_str());
+    } 
+    // Original path (LOG -> LOG.old)
+    else {
+      if (rename(src.c_str(), target.c_str()) != 0) {
+        result = PosixError(src, errno);
+      }
+    }
     return result;
   }
 
@@ -612,39 +667,17 @@ class PmemEnv : public Env {
   virtual pobj::pool<rootFile>* GetPool(const uint32_t num) {
     pobj::pool<rootFile> *pool;
     switch (num % 10) {
-      case 0:
-        pool = &filePool0;
-        break;
-      case 1:
-        pool = &filePool1;
-        break;
-      case 2: 
-        pool = &filePool2;
-        break;
-      case 3: 
-        pool = &filePool3;
-        break;
-      case 4: 
-        pool = &filePool4;
-        break;
-      case 5: 
-        pool = &filePool5;
-        break;
-      case 6: 
-        pool = &filePool6;
-        break;
-      case 7: 
-        pool = &filePool7;
-        break;
-      case 8: 
-        pool = &filePool8;
-        break;
-      case 9: 
-        pool = &filePool9;
-        break;
-      case -1: 
-        pool = &exfilePool;
-        break;
+      case 0: pool = &filePool0; break;
+      case 1: pool = &filePool1; break;
+      case 2: pool = &filePool2; break;
+      case 3: pool = &filePool3; break;
+      case 4: pool = &filePool4; break;
+      case 5: pool = &filePool5; break;
+      case 6: pool = &filePool6; break;
+      case 7: pool = &filePool7; break;
+      case 8: pool = &filePool8; break;
+      case 9: pool = &filePool9; break;
+      case -1: pool = &exfilePool; break;
       default: 
         printf("[ERROR] Invalid File name type...\n");
         // Throw exception
@@ -657,12 +690,10 @@ class PmemEnv : public Env {
     // Check num range
     if (num < 0) {
       // dbtmp, MANIFEST
-      offset = GetSpecialFileNumber(fname) * 2000000;
+      offset = GetExtraOffset(fname);
     } else if (num <= 4000) {
       // Pre-allocated area
       offset = (num / 10) * 4000000; // based on 10-pools
-      memcpy(offsets->fname.get(), &num, sizeof(uint32_t));
-      memcpy(offsets->start_offset.get(), &offset, sizeof(uint32_t));
     } 
     // TO DO, extend all range with dynamic-allocation
     else {
@@ -671,6 +702,38 @@ class PmemEnv : public Env {
     }
     return offset;
   }
+  virtual uint32_t GetExtraOffset(const std::string& fname) {
+    uint32_t num = GetExtraFileNumber(fname);
+    if (num == 0) {
+      // Seek CURRENT file (for renaming)
+      for (int i=0; i<5; i++) {
+        uint32_t tmp;
+        memcpy(&tmp, exOffsets->fname.get() + (i * sizeof(uint32_t)), sizeof(uint32_t));
+        if (tmp == 0) {
+          num = i;
+        }
+      }
+    }
+    return num * 2000000;
+  }
+  virtual void SetOffset(const uint32_t num, const uint32_t offset) {
+    memcpy(offsets->fname.get() + (num * sizeof(uint32_t)), 
+            &num, sizeof(uint32_t));
+    memcpy(offsets->start_offset.get() + (num * sizeof(uint32_t)), 
+            &offset, sizeof(uint32_t));
+  }
+  virtual void SetExtraOffset(const uint32_t num, const uint32_t offset) {
+    memcpy(exOffsets->fname.get() + (num * sizeof(uint32_t)), 
+            &num, sizeof(uint32_t));
+    memcpy(exOffsets->start_offset.get() + (num * sizeof(uint32_t)), 
+            &offset, sizeof(uint32_t));
+  }
+  virtual void ResetFile(pobj::pool<rootFile>* pool, const uint32_t offset) {
+    pobj::persistent_ptr<rootFile> ptr = pool->get_root();
+    uint32_t zero = 0;
+    memcpy(ptr->contents_size.get() + offset, &zero, sizeof(uint32_t));
+    memcpy(ptr->current_index.get() + offset, &zero, sizeof(uint32_t));
+  };
 
  private:
   void PthreadCall(const char* label, int result) {
@@ -713,20 +776,20 @@ class PmemEnv : public Env {
   pobj::pool<rootFile> filePool7;
   pobj::pool<rootFile> filePool8;
   pobj::pool<rootFile> filePool9;
-  pobj::persistent_ptr<rootFile> file0;
-  pobj::persistent_ptr<rootFile> file1;
-  pobj::persistent_ptr<rootFile> file2;
-  pobj::persistent_ptr<rootFile> file3;
-  pobj::persistent_ptr<rootFile> file4;
-  pobj::persistent_ptr<rootFile> file5;
-  pobj::persistent_ptr<rootFile> file6;
-  pobj::persistent_ptr<rootFile> file7;
-  pobj::persistent_ptr<rootFile> file8;
-  pobj::persistent_ptr<rootFile> file9;
+  // pobj::persistent_ptr<rootFile> file0;
+  // pobj::persistent_ptr<rootFile> file1;
+  // pobj::persistent_ptr<rootFile> file2;
+  // pobj::persistent_ptr<rootFile> file3;
+  // pobj::persistent_ptr<rootFile> file4;
+  // pobj::persistent_ptr<rootFile> file5;
+  // pobj::persistent_ptr<rootFile> file6;
+  // pobj::persistent_ptr<rootFile> file7;
+  // pobj::persistent_ptr<rootFile> file8;
+  // pobj::persistent_ptr<rootFile> file9;
 
   // 1-extra-filePool & ptr for MANIFEST, tmp file
   pobj::pool<rootFile> exfilePool;
-  pobj::persistent_ptr<rootFile> exfile;
+  // pobj::persistent_ptr<rootFile> exfile;
 
   // 1-offsetPool (contains 4000Files )
   pobj::pool<rootOffset> offsetPool;
@@ -746,6 +809,18 @@ PmemEnv::PmemEnv()
   PthreadCall("cvar_init", pthread_cond_init(&bgsignal_, nullptr));
 
   // JH
+  // tmp for initializing
+  pobj::persistent_ptr<rootFile> file0;
+  pobj::persistent_ptr<rootFile> file1;
+  pobj::persistent_ptr<rootFile> file2;
+  pobj::persistent_ptr<rootFile> file3;
+  pobj::persistent_ptr<rootFile> file4;
+  pobj::persistent_ptr<rootFile> file5;
+  pobj::persistent_ptr<rootFile> file6;
+  pobj::persistent_ptr<rootFile> file7;
+  pobj::persistent_ptr<rootFile> file8;
+  pobj::persistent_ptr<rootFile> file9;
+
   // Initialize all pools (10-files, 1-offset)
   // 1) FILE BUFFER
   if (!FileExists(FILE0)) {
@@ -764,6 +839,7 @@ PmemEnv::PmemEnv()
     filePool8 = pobj::pool<rootFile>::create (FILE8, FILEID, FILESIZE , S_IRUSR | S_IWUSR | S_IRGRP | S_IWGRP | S_IROTH);
     filePool9 = pobj::pool<rootFile>::create (FILE9, FILEID, FILESIZE , S_IRUSR | S_IWUSR | S_IRGRP | S_IWGRP | S_IROTH);
     // printf("After creating pool\n");
+
 
     file0 = filePool0.get_root(); file1 = filePool1.get_root();
     file2 = filePool2.get_root(); file3 = filePool3.get_root();
@@ -834,16 +910,16 @@ PmemEnv::PmemEnv()
     filePool7 = pobj::pool<rootFile>::open (FILE7, FILEID);
     filePool8 = pobj::pool<rootFile>::open (FILE8, FILEID);
     filePool9 = pobj::pool<rootFile>::open (FILE9, FILEID);
-    file0 = filePool0.get_root();
-    file1 = filePool1.get_root();
-    file2 = filePool2.get_root();
-    file3 = filePool3.get_root();
-    file4 = filePool4.get_root();
-    file5 = filePool5.get_root();
-    file6 = filePool6.get_root();
-    file7 = filePool7.get_root();
-    file8 = filePool8.get_root();
-    file9 = filePool9.get_root();
+    // file0 = filePool0.get_root();
+    // file1 = filePool1.get_root();
+    // file2 = filePool2.get_root();
+    // file3 = filePool3.get_root();
+    // file4 = filePool4.get_root();
+    // file5 = filePool5.get_root();
+    // file6 = filePool6.get_root();
+    // file7 = filePool7.get_root();
+    // file8 = filePool8.get_root();
+    // file9 = filePool9.get_root();
   } 
   // OFFSET BUFFER
   if (!FileExists(OFFSET)) {
@@ -864,7 +940,9 @@ PmemEnv::PmemEnv()
     offsetPool = pobj::pool<rootOffset>::open (OFFSET, OFFSETID);
     offsets = offsetPool.get_root();
   }
-  // EXTRA CONTENS BUFFER
+  // tmp for initializing
+  pobj::persistent_ptr<rootFile> exfile;
+  // EXTRA CONTENTS BUFFER
   if (!FileExists(EXFILE)) {
     exfilePool = pobj::pool<rootFile>::create (EXFILE, EXFILEID, 
         EXFILE_SIZE, S_IRUSR | S_IWUSR | S_IRGRP | S_IWGRP | S_IROTH);
@@ -876,7 +954,20 @@ PmemEnv::PmemEnv()
     });
   } else {
     exfilePool = pobj::pool<rootFile>::open (EXFILE, EXFILEID);
-    exfile = exfilePool.get_root();
+    // exfile = exfilePool.get_root();
+  }
+  // EXTRA OFFSET BUFFER
+  if (!FileExists(EXOFFSET)) {
+    exOffsetPool = pobj::pool<rootOffset>::create (EXOFFSET, EXOFFSETID, 
+        EXOFFSETS_POOL_SIZE, S_IRUSR | S_IWUSR | S_IRGRP | S_IWGRP | S_IROTH);
+    exOffsets = exOffsetPool.get_root();
+    pobj::transaction::exec_tx(exOffsetPool, [&] {
+      exOffsets->fname       = pobj::make_persistent<uint32_t[]>(EXOFFSETS_SIZE);  
+      exOffsets->start_offset = pobj::make_persistent<uint32_t[]>(EXOFFSETS_SIZE);
+    });
+  } else {
+    exOffsetPool = pobj::pool<rootOffset>::open (EXOFFSET, EXOFFSETID);
+    // exfile = exfilePool.get_root();
   }
 }
 
