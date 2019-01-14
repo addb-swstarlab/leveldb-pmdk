@@ -88,11 +88,14 @@ namespace {
 class PmemSequentialFile : public SequentialFile {
  private:
   std::string filename_;
-  // PmemFile* pmemfile;
+  pobj::pool<rootFile>* pool;
+  uint32_t start_offset;
+  uint32_t num;
 
  public:
-  PmemSequentialFile(const std::string& fname)
-      : filename_(fname) { 
+  PmemSequentialFile(const std::string& fname, pobj::pool<rootFile>* pool, 
+                    uint32_t start_offset, uint32_t num)
+      : filename_(fname), pool(pool), start_offset(start_offset), num(num) {
   }
   // PmemSequentialFile(const std::string& fname, PmemFile* pmemfile)
   //     : filename_(fname), pmemfile(pmemfile) { 
@@ -107,10 +110,43 @@ class PmemSequentialFile : public SequentialFile {
   virtual Status Read(size_t n, Slice* result, char* scratch) {
     // std::cout<<"############## Read Seq\n";
     Status s;
+    // Get info
+    pobj::persistent_ptr<rootFile> ptr = pool->get_root();
+    uint32_t contents_size, current_index;
+    memcpy(&contents_size, ptr->contents_size.get() + (num * sizeof(uint32_t)), 
+            sizeof(uint32_t));
+    memcpy(&current_index, ptr->current_index.get() + (num * sizeof(uint32_t)), 
+            sizeof(uint32_t));
+    // printf("[READ DEBUG %d] %d, %d\n",num, contents_size, current_index);
+    ssize_t r;
+
+    if (contents_size == current_index) r = 0;
+    else {
+      // TO DO, run memcpy without buffer-size limitation
+      uint32_t avaliable_indexspace = contents_size - current_index;
+      if (n > avaliable_indexspace) {
+        // printf("1] %d %d\n", start_offset, current_index);
+        memcpy(scratch, ptr->contents.get() + start_offset + current_index 
+            , avaliable_indexspace);
+        r = avaliable_indexspace;
+      } else {
+        // printf("2] %d %d\n", start_offset, current_index);
+        memcpy(scratch, ptr->contents.get() + start_offset + current_index 
+            , n);
+        r = n;
+      }
+
+      
+      // r = n;
+    }
+    *result = Slice(scratch, r);
+
     // ssize_t r = ptr->file->Read(n, scratch);
     // printf("Read %d \n", r);
-    // *result = Slice(scratch, r);
-    // printf("Read %d '%s' %c\n", result->size(), result->data(), scratch[4]);
+    // printf("Read %d] %d '%s' %c\n",r, result->size(), result->data(), scratch[4]);
+    
+    // Skip r
+    Skip(r);
     return s;
   }
 
@@ -118,6 +154,13 @@ class PmemSequentialFile : public SequentialFile {
     // std::cout<<"Skip \n";
     Status s;
     // Status s = ptr->file->Skip(n);
+    pobj::persistent_ptr<rootFile> ptr = pool->get_root();
+    uint32_t original_index;
+    memcpy(&original_index, ptr->current_index.get() + (num * sizeof(uint32_t)),
+            sizeof(uint32_t));
+    original_index += n;
+    memcpy(ptr->current_index.get() + (num * sizeof(uint32_t)), &original_index,
+            sizeof(uint32_t));
     return s;
   }
 };
@@ -126,12 +169,18 @@ class PmemSequentialFile : public SequentialFile {
 class PmemRandomAccessFile : public RandomAccessFile {
  private:
   std::string filename_;
-  // PmemFile* pmemfile;
+  pobj::pool<rootFile>* pool;
+  uint32_t start_offset;
+  uint32_t num;
 
  public:
-  PmemRandomAccessFile(const std::string& fname)
-      : filename_(fname) { 
+  PmemRandomAccessFile(const std::string& fname, pobj::pool<rootFile>* pool, 
+                    uint32_t start_offset, uint32_t num)
+      : filename_(fname), pool(pool), start_offset(start_offset), num(num) {
   }
+  // PmemRandomAccessFile(const std::string& fname)
+  //     : filename_(fname) { 
+  // }
   // PmemRandomAccessFile(const std::string& fname, PmemFile* pmemfile)
   //     : filename_(fname), pmemfile(pmemfile) { 
   // }
@@ -143,10 +192,36 @@ class PmemRandomAccessFile : public RandomAccessFile {
   virtual Status Read(uint64_t offset, size_t n, Slice* result,
                       char* scratch) const {
     // printf("############# %s Read %lld %lld \n", filename_.c_str(), offset, n);
-    Status s;
     // ssize_t r = ptr->file->Read(offset, n, scratch);
     // *result = Slice(scratch, (r<0 ? 0 : r));
     // std::cout<<"Read End\n";
+    Status s;
+    // Get info
+    pobj::persistent_ptr<rootFile> ptr = pool->get_root();
+    uint32_t contents_size;
+    memcpy(&contents_size, ptr->contents_size.get() + (num * sizeof(uint32_t)), 
+            sizeof(uint32_t));
+    // printf("[READ DEBUG %d] %d, %d\n",num, contents_size, current_index);
+    ssize_t r;
+
+      // TO DO, run memcpy without buffer-size limitation
+      uint32_t avaliable_indexspace = contents_size - offset;
+      if (n > avaliable_indexspace) {
+        printf("[ERROR] Randomly readable size < n \n");
+        // Throw exception
+
+        // memcpy(scratch, ptr->contents.get() + start_offset + offset 
+        //     , avaliable_indexspace);
+        // r = avaliable_indexspace;
+      } else {
+        // printf("[RA DEBUG2]\n");
+        memcpy(scratch, ptr->contents.get() + start_offset + offset 
+            , n);
+        r = n;
+      // r = n;
+    }
+    *result = Slice(scratch, r);
+    // printf("Read %d %d %d] %d '%s' \n", offset, n, contents_size, result->size(), result->data());
     return s;
   }
 };
@@ -159,57 +234,51 @@ class PmemWritableFile : public WritableFile {
   uint32_t start_offset;
   uint32_t num;
 
-  char buf_[kBufSize];
-  size_t pos_;
-  
-  /*
-   * For preventing from inserting garbage values,
-   * rootFile ptr is set(made) when writablefile object is appended
-   * [Default] 0
-   * After Append function is called, set 1
-   */
-  // unsigned int set_ptr_flag;
-
  public:
-  PmemWritableFile(const std::string& fname, pobj::pool<rootFile>* pool, uint32_t start_offset)
-      : filename_(fname),  pos_(0), pool(pool), start_offset(start_offset) {
+  PmemWritableFile(const std::string& fname, pobj::pool<rootFile>* pool, 
+                    uint32_t start_offset, uint32_t num)
+      : filename_(fname), pool(pool), start_offset(start_offset), num(num) {
+    pobj::persistent_ptr<rootFile> ptr = pool->get_root();
+    uint32_t zero = 0;
+    memcpy(ptr->contents_size.get() + (num * sizeof(uint32_t)), &zero,
+            sizeof(uint32_t));
+    memcpy(ptr->current_index.get() + (num * sizeof(uint32_t)), &zero,
+            sizeof(uint32_t));
       // : filename_(fname), pool(pool), pos_(0), set_ptr_flag(0) { 
-        // num = GetFileNumber();
   }
 
   virtual ~PmemWritableFile() { }
 
   virtual Status Append(const Slice& data) {
+    // printf("Append %d] %d %s \n",num, data.size(), data.data());
+    
+    pobj::persistent_ptr<rootFile> ptr = pool->get_root();
+    uint32_t contents_size;
+    // uint32_t contents_size, current_index;
+    memcpy(&contents_size, ptr->contents_size.get() + (num * sizeof(uint32_t)), 
+            sizeof(uint32_t));
+    // memcpy(&current_index, ptr->current_index.get() + (num * sizeof(uint32_t)), 
+    //         sizeof(uint32_t));
+    // Append
+    memcpy(ptr->contents.get() + start_offset + contents_size, data.data(), 
+            data.size());
+    contents_size += data.size();
+    memcpy(ptr->contents_size.get() + (num * sizeof(uint32_t)), &contents_size,
+            sizeof(uint32_t));
+    // printf("Append Result] %d\n",contents_size);
     // size_t n = data.size();
     // const char* p = data.data();
-    // pobj::transaction::exec_tx(pool, [&] {
-    //   ptr->file = pobj::make_persistent<PmemFile> ();
-    // });
-    // if (!set_ptr_flag) {
-    //   ptr = pool.get_root();
-    //     pobj::transaction::exec_tx(pool, [&] {
-    //       ptr->file = pobj::make_persistent<PmemFile> (pool);
-    //     });
-    //   set_ptr_flag = 1;
-    // }
-    // printf("Append %d %s \n", data.size(), data.data());
-    
-    // pobj::persistent_ptr<rootFile> ptr = pool->get_root();
-    // uint32_t original_length;
-    // memcpy(&original_length, ptr->contents_size.get() + start_offset, sizeof(uint32_t));
-    size_t n = data.size();
-    const char* p = data.data();
 
     // Fit as much as possible into buffer.
-    size_t copy = std::min(n, kBufSize - pos_); // data size OR remaining buffer size
-    memcpy(buf_ + pos_, p, copy);
-    p += copy;
-    n -= copy;
-    pos_ += copy;
+    // size_t copy = std::min(n, kBufSize - pos_); // data size OR remaining buffer size
+    // memcpy(buf_ + pos_, p, copy);
+    // p += copy;
+    // n -= copy;
+    // pos_ += copy;
 
-    if (n == 0) {
-      return Status::OK();
-    }
+    // if (n == 0) {
+    return Status::OK();
+    // }
 
     // Can't fit in buffer, so need to do at least one write.
     // Current buffer -> flush
@@ -226,16 +295,15 @@ class PmemWritableFile : public WritableFile {
     //   return Status::OK();
     // }
     // Without through buffer, write.
-    return WriteRaw(p, n);
-
     // std::cout<< "After append "<< ptr->file->getContentsSize()<<"\n";
   }
 
   virtual Status Close() {
     // printf("############ Close %s\n", filename_.c_str());
-    Status result = FlushBuffered();
+    // Status result = FlushBuffered();
     // pool.close();
-    return result;
+    // return result;
+    return Status::OK();
   }
 
   virtual Status Flush() {
@@ -277,51 +345,51 @@ class PmemWritableFile : public WritableFile {
   virtual Status Sync() {
     // printf("############# Sync\n");
     // Ensure new files referred to by the manifest are in the filesystem.
-    Status s = SyncDirIfManifest();
+    // Status s = SyncDirIfManifest();
     // if (!s.ok()) {
     //   return s;
     // }
-    s = FlushBuffered();
+    // s = FlushBuffered();
     // if (s.ok()) {
     //   if (fdatasync(fd_) != 0) {
     //     s = PosixError(filename_, errno);
     //   }
     // }
-    return s;
-    // return Status::OK();
+    // return s;
+    return Status::OK();
   }
 
  private:
   Status FlushBuffered() {
-    Status s = WriteRaw(buf_, pos_);
-    pos_ = 0;
-    return s;
-    // return Status::OK();
+    // Status s = WriteRaw(buf_, pos_);
+    // pos_ = 0;
+    // return s;
+    return Status::OK();
   }
 
   Status WriteRaw(const char* p, size_t n) {
-    while (n > 0) {
-      // Slice data = Slice(p, n);
-      // printf("WriteRaw %d in %s\n", n, filename_.c_str());
-      ssize_t r;
-      // ssize_t r = ptr->file->Append(p, n);
-      // printf("WriteRaw %d %s %d\n", n, p, r);
-      // ssize_t r = ptr->file->Append(data);      
-      // printf("WriteRaw '%c' '%c' '%c' '%c' '%c' '%c' '%c'\n", p[0], p[1], p[2], p[3], p[4], p[5], p[6]);
-      // char buf;
-      // memcpy(&buf, p+6, sizeof(char));
-      // printf("WriteRaw %d '%d'\n", n, p[6]);
-      // printf("WriteRaw %d %s %d\n", data.size(), data.data(), r);
-      // ssize_t r = write(fd_, p, n);
-      if (r < 0) {
-        if (errno == EINTR) {
-          continue;  // Retry
-        }
-        return PosixError(filename_, errno);
-      }
-      p += r;
-      n -= r;
-    }
+    // while (n > 0) {
+    //   // Slice data = Slice(p, n);
+    //   // printf("WriteRaw %d in %s\n", n, filename_.c_str());
+    //   ssize_t r;
+    //   // ssize_t r = ptr->file->Append(p, n);
+    //   // printf("WriteRaw %d %s %d\n", n, p, r);
+    //   // ssize_t r = ptr->file->Append(data);      
+    //   // printf("WriteRaw '%c' '%c' '%c' '%c' '%c' '%c' '%c'\n", p[0], p[1], p[2], p[3], p[4], p[5], p[6]);
+    //   // char buf;
+    //   // memcpy(&buf, p+6, sizeof(char));
+    //   // printf("WriteRaw %d '%d'\n", n, p[6]);
+    //   // printf("WriteRaw %d %s %d\n", data.size(), data.data(), r);
+    //   // ssize_t r = write(fd_, p, n);
+    //   if (r < 0) {
+    //     if (errno == EINTR) {
+    //       continue;  // Retry
+    //     }
+    //     return PosixError(filename_, errno);
+    //   }
+    //   p += r;
+    //   n -= r;
+    // }
     return Status::OK();
   }
 };
@@ -369,10 +437,38 @@ class PmemEnv : public Env {
                                    SequentialFile** result) {
     std::cout<< "NewSequentialFile "<<fname<<" \n";
     Status s;
-    uint32_t num = GetFileNumber(fname);
-    
-    // *result = new PmemSequentialFile(fname, &ptr->files[num]);
+    // 1) Get info
+    int32_t num = GetFileNumber(fname);
+    pobj::pool<rootFile>* pool = GetPool(num);
+    uint32_t offset = GetOffset(fname, num);
+      // printf("num %d offset %d\n", num, offset);
+    // Special file
+    if (num == -1) {
+      num = GetExtraFileNumber(fname);
+      // Get renamed number
+      if (num == 0) num = offset / EACH_EXFILE_CONTENT;
+      // SetExtraOffset(num, offset);
+    } 
+    // Normal file
+    else {
+      // Set offset
+      // SetOffset(num, offset);
+      if (offset == -1) {
+        printf("[ERROR] Invalid offset ( The number of files >= 4000(Limit)) \n");
+      }
+    }
 
+    // *result = new PmemSequentialFile(fname, pool, offset, num);
+
+    // Add empty file
+    // int fd = open(fname.c_str(), O_TRUNC | O_WRONLY | O_CREAT, 0644);
+    int fd = open(fname.c_str(), O_RDONLY);
+    if (fd < 0) {
+      *result = nullptr;
+      s = PosixError(fname, errno);
+    } else {
+      *result = new PmemSequentialFile(fname, pool, offset, num);
+    }
     return s;
 
   }
@@ -381,9 +477,35 @@ class PmemEnv : public Env {
                                      RandomAccessFile** result) {
     std::cout<< "NewRandomAccessFile "<<fname<<" \n";
     Status s;
-    uint32_t num = GetFileNumber(fname);
-    
+    // 1) Get info
+    int32_t num = GetFileNumber(fname);
+    pobj::pool<rootFile>* pool = GetPool(num);
+    uint32_t offset = GetOffset(fname, num);
+      // printf("num %d offset %d\n", num, offset);
+    // Special file
+    if (num == -1) {
+      num = GetExtraFileNumber(fname);
+      // Get renamed number
+      if (num == 0) num = offset / EACH_EXFILE_CONTENT;
+      // SetExtraOffset(num, offset);
+    } 
+    // Normal file
+    else {
+      // Set offset
+      // SetOffset(num, offset);
+      if (offset == -1) {
+        printf("[ERROR] Invalid offset ( The number of files >= 4000(Limit)) \n");
+      }
+    }
     // *result = new PmemRandomAccessFile(fname, &ptr->files[num]);
+    // Add empty file
+    int fd = open(fname.c_str(), O_RDONLY);
+    if (fd < 0) {
+      *result = nullptr;
+      s = PosixError(fname, errno);
+    } else {
+      *result = new PmemRandomAccessFile(fname, pool, offset, num);
+    }
     return s;
   }
 
@@ -392,11 +514,14 @@ class PmemEnv : public Env {
     std::cout<< "NewWritableFile "<<fname<<" \n";
     Status s;
     // 1) Get info
-    uint32_t num = GetFileNumber(fname);
+    int32_t num = GetFileNumber(fname);
     pobj::pool<rootFile>* pool = GetPool(num);
+    // printf("NewWritable Debug1\n");
     uint32_t offset = GetOffset(fname, num);
+    // printf("num: %d offset: %d\n",num, offset);
     // Special file
     if (num == -1) {
+      num = GetExtraFileNumber(fname);
       SetExtraOffset(num, offset);
     } 
     // Normal file
@@ -407,9 +532,18 @@ class PmemEnv : public Env {
         printf("[ERROR] Invalid offset ( The number of files >= 4000(Limit)) \n");
       }
     }
+    // printf("NewWritable Debug3\n");
 
-    *result = new PmemWritableFile(fname, pool, offset);
+    // *result = new PmemWritableFile(fname, pool, offset, num);
 
+    // Add empty file
+    int fd = open(fname.c_str(), O_TRUNC | O_WRONLY | O_CREAT, 0644);
+    if (fd < 0) {
+      *result = nullptr;
+      s = PosixError(fname, errno);
+    } else {
+      *result = new PmemWritableFile(fname, pool, offset, num);
+    }
     return s;
   }
 
@@ -417,7 +551,7 @@ class PmemEnv : public Env {
                                    WritableFile** result) {
     std::cout<< "NewAppendableFile \n";
     Status s;
-    uint32_t num = GetFileNumber(fname);
+    int32_t num = GetFileNumber(fname);
 
     // *result = new PmemWritableFile(fname, &ptr->files[num]);
 
@@ -425,10 +559,11 @@ class PmemEnv : public Env {
   }
 
   virtual bool FileExists(const std::string& fname) {
+    // printf("Exists %s\n", fname.c_str());
     return access(fname.c_str(), F_OK) == 0;
   }
   // JH
-  virtual uint32_t GetFileNumber(const std::string& fname) {
+  virtual int32_t GetFileNumber(const std::string& fname) {
     std::string slash = "/";
     std::string fileNumber = fname.substr( fname.rfind(slash)+1, fname.size() );
 
@@ -441,19 +576,19 @@ class PmemEnv : public Env {
     return std::atoi(fileNumber.c_str());
   }
   // For MANIFEST, dbtmp, CURRENT file
-  virtual uint32_t GetExtraFileNumber(const std::string& fname) {
+  virtual int32_t GetExtraFileNumber(const std::string& fname) {
     std::string slash = "/"; std::string dash = "-";
     std::string fileNumber = fname.substr( fname.rfind(slash)+1, fname.size() );
 
-    uint32_t res = -1;
+    int32_t res;
     // Filter tmp file and MANIFEST file
     if (fileNumber.find("dbtmp") != std::string::npos) {
       switch (std::atoi(fileNumber.c_str())) {
         case 1:
-          res = 3;
+          res = 1;
           break;
         case 2:
-          res = 4;
+          res = 2;
           break;
         default:
           printf("[ERROR] Invalid dbtmp number... \n");
@@ -464,10 +599,10 @@ class PmemEnv : public Env {
       std::string tmp = fileNumber.substr(fileNumber.find(dash)+1, fileNumber.size());
       switch (std::atoi(tmp.c_str())) {
         case 1:
-          res = 1;
+          res = 3;
           break;
         case 2:
-          res = 2;
+          res = 4;
           break;
         default:
           printf("[ERROR] Invalid MANIFEST number... \n");
@@ -501,26 +636,48 @@ class PmemEnv : public Env {
         || fname.find(".log") != std::string::npos
         || fname.find("CURRENT") != std::string::npos) {
 
-      printf("[DELETE] %s\n", fname.c_str());
-      uint32_t num = GetFileNumber(fname);
+      // printf("[DELETE] %s\n", fname.c_str());
+      int32_t num = GetFileNumber(fname);
       pobj::pool<rootFile> *pool = GetPool(num);
       
       // 1) Get info
-      uint32_t offset = GetExtraOffset(fname);
+      uint32_t offset = GetOffset(fname, num);
+  // printf("111 %d %d\n",num,  offset);
       // 2) Reset file
-      ResetFile(pool, offset);
       // Extra file
       if (num == -1) {
-        // Do not touch exOffset
+        num = GetExtraFileNumber(fname);
+        ResetFile(pool, num);
+        // Reset .dbtmp fname(num)&offset
+        if (fname.find("CURRENT") != std::string::npos) {
+          // printf("%d %d\n", num, offset);
+          SetExtraOffset(1, offset);
+          SetExtraOffset(2, offset);
+          // for (int i=0; i<5; i++) {
+          //   printf("[i %d]\n", i);
+          //   int32_t tmp;
+          //   memcpy(&tmp, exOffsets->fname.get() + (i * sizeof(uint32_t)), 
+          //           sizeof(uint32_t));
+          //   printf("tmp: %d\n",tmp);
+          // }
+        }
       } 
       // Normal file
       else {
+        ResetFile(pool, num);
       // TO DO, dynamic alloc (out of boundary)
       // int index = (num / 10);
         // Reset offset (for dynamic alloc) 
-        uint32_t offset_reset_value = -1;
+        uint32_t offset_reset_value = 0;
         SetOffset(num, offset_reset_value);
       }
+      if (unlink(fname.c_str()) != 0) {
+        result = PosixError(fname, errno);
+      }
+    }
+    else if (fname.find("file") != std::string::npos
+              || fname.find("offset") != std::string::npos) {
+      printf("[INFO] Do not delete file, offset\n");
     }
     // Original path
     else {
@@ -567,20 +724,33 @@ class PmemEnv : public Env {
     // Just change offset's fname to 0
     if (src.find("dbtmp") != std::string::npos
         && target.find("CURRENT") != std::string::npos) {
-      uint32_t src_num = GetExtraFileNumber(src);
+      int32_t src_num = GetExtraFileNumber(src);
       uint32_t src_offset = GetExtraOffset(src);
-
-      uint32_t zero = 0; // CURRENT index
-      memcpy(exOffsets->fname.get() + src_offset, &zero, sizeof(uint32_t));    
-
-      printf("[RENAME] %s->%s\n", src.c_str(), target.c_str());
+      // for (int i=0; i<5; i++) {
+      //   printf("[i %d]\n", i);
+      //   int32_t tmp;
+      //   memcpy(&tmp, exOffsets->fname.get() + (i * sizeof(uint32_t)), 
+      //           sizeof(uint32_t));
+      //   printf("tmp: %d\n",tmp);
+      // }
+      int32_t zero = 0; // CURRENT index
+      memcpy(exOffsets->fname.get() + (src_num * sizeof(uint32_t)), &zero, 
+              sizeof(int32_t));    
+      // for (int i=0; i<5; i++) {
+      //   printf("[i %d]\n", i);
+      //   int32_t tmp;
+      //   memcpy(&tmp, exOffsets->fname.get() + (i * sizeof(uint32_t)), 
+      //           sizeof(uint32_t));
+      //   printf("tmp: %d\n",tmp);
+      // }
+      // printf("[RENAME] %s->%s\n", src.c_str(), target.c_str());
     } 
     // Original path (LOG -> LOG.old)
-    else {
+    // else {
       if (rename(src.c_str(), target.c_str()) != 0) {
         result = PosixError(src, errno);
       }
-    }
+    // }
     return result;
   }
 
@@ -685,36 +855,41 @@ class PmemEnv : public Env {
     }
     return pool;
   }
-  virtual uint32_t GetOffset(const std::string& fname, const uint32_t num) {
+  virtual uint32_t GetOffset(const std::string& fname, const int32_t num) {
     uint32_t offset;
     // Check num range
     if (num < 0) {
       // dbtmp, MANIFEST
       offset = GetExtraOffset(fname);
-    } else if (num <= 4000) {
+    } else if (num <= OFFSETS_SIZE) {
       // Pre-allocated area
-      offset = (num / 10) * 4000000; // based on 10-pools
+      offset = (num / 10) * EACH_CONTENT; // based on 10-pools
     } 
     // TO DO, extend all range with dynamic-allocation
     else {
       offset = -1;
       // Temp, throw exception
+      printf("[ERROR] need more offset..\n");
     }
     return offset;
   }
   virtual uint32_t GetExtraOffset(const std::string& fname) {
-    uint32_t num = GetExtraFileNumber(fname);
+    int32_t num = GetExtraFileNumber(fname);
     if (num == 0) {
       // Seek CURRENT file (for renaming)
       for (int i=0; i<5; i++) {
-        uint32_t tmp;
-        memcpy(&tmp, exOffsets->fname.get() + (i * sizeof(uint32_t)), sizeof(uint32_t));
+        // printf("[i %d]\n", i);
+        int32_t tmp;
+        memcpy(&tmp, exOffsets->fname.get() + (i * sizeof(uint32_t)), 
+                sizeof(uint32_t));
+        // printf("tmp: %d\n",tmp);
         if (tmp == 0) {
           num = i;
+          // printf("num %d\n",num);
         }
       }
     }
-    return num * 2000000;
+    return num * EACH_EXFILE_CONTENT;
   }
   virtual void SetOffset(const uint32_t num, const uint32_t offset) {
     memcpy(offsets->fname.get() + (num * sizeof(uint32_t)), 
@@ -728,11 +903,11 @@ class PmemEnv : public Env {
     memcpy(exOffsets->start_offset.get() + (num * sizeof(uint32_t)), 
             &offset, sizeof(uint32_t));
   }
-  virtual void ResetFile(pobj::pool<rootFile>* pool, const uint32_t offset) {
+  virtual void ResetFile(pobj::pool<rootFile>* pool, const uint32_t num) {
     pobj::persistent_ptr<rootFile> ptr = pool->get_root();
     uint32_t zero = 0;
-    memcpy(ptr->contents_size.get() + offset, &zero, sizeof(uint32_t));
-    memcpy(ptr->current_index.get() + offset, &zero, sizeof(uint32_t));
+    memcpy(ptr->contents_size.get() + (num * sizeof(uint32_t)), &zero, sizeof(uint32_t));
+    memcpy(ptr->current_index.get() + (num * sizeof(uint32_t)), &zero, sizeof(uint32_t));
   };
 
  private:
@@ -807,7 +982,7 @@ PmemEnv::PmemEnv()
       fd_limit_(MaxOpenFiles()) {
   PthreadCall("mutex_init", pthread_mutex_init(&mu_, nullptr));
   PthreadCall("cvar_init", pthread_cond_init(&bgsignal_, nullptr));
-
+  printf("PmemEnv start\n");
   // JH
   // tmp for initializing
   pobj::persistent_ptr<rootFile> file0;
@@ -953,6 +1128,7 @@ PmemEnv::PmemEnv()
       exfile->current_index = pobj::make_persistent<uint32_t[]>(EXFILE_CONTENTS_SIZE);
     });
   } else {
+    // printf("exfile pool\n");
     exfilePool = pobj::pool<rootFile>::open (EXFILE, EXFILEID);
     // exfile = exfilePool.get_root();
   }
@@ -966,9 +1142,16 @@ PmemEnv::PmemEnv()
       exOffsets->start_offset = pobj::make_persistent<uint32_t[]>(EXOFFSETS_SIZE);
     });
   } else {
+    // printf("exoffset pool\n");
     exOffsetPool = pobj::pool<rootOffset>::open (EXOFFSET, EXOFFSETID);
-    // exfile = exfilePool.get_root();
+    exOffsets = exOffsetPool.get_root();
   }
+    // printf("set extraoffset\n");
+  // Initialize for preventing from renaming confusion
+  for (int i=0; i<5; i++) {
+    SetExtraOffset(i, i*EACH_EXFILE_CONTENT);
+  }
+    printf("End all setting\n");
 }
 
 void PmemEnv::Schedule(void (*function)(void*), void* arg) {
