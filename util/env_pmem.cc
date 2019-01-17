@@ -91,11 +91,12 @@ class PmemSequentialFile : public SequentialFile {
   pobj::pool<rootFile>* pool;
   uint32_t start_offset;
   uint32_t num;
+  int fd;
 
  public:
   PmemSequentialFile(const std::string& fname, pobj::pool<rootFile>* pool, 
-                    uint32_t start_offset, uint32_t num)
-      : filename_(fname), pool(pool), start_offset(start_offset), num(num) {
+                    uint32_t start_offset, uint32_t num, int fd)
+      : filename_(fname), pool(pool), start_offset(start_offset), num(num), fd(fd) {
   }
   // PmemSequentialFile(const std::string& fname, PmemFile* pmemfile)
   //     : filename_(fname), pmemfile(pmemfile) { 
@@ -105,6 +106,7 @@ class PmemSequentialFile : public SequentialFile {
   virtual ~PmemSequentialFile() {
     // pool.close();
     // printf("Delete [S]%s\n", filename_.c_str());
+    close(fd);
   }
 
   virtual Status Read(size_t n, Slice* result, char* scratch) {
@@ -172,11 +174,12 @@ class PmemRandomAccessFile : public RandomAccessFile {
   pobj::pool<rootFile>* pool;
   uint32_t start_offset;
   uint32_t num;
+  int fd;
 
  public:
   PmemRandomAccessFile(const std::string& fname, pobj::pool<rootFile>* pool, 
-                    uint32_t start_offset, uint32_t num)
-      : filename_(fname), pool(pool), start_offset(start_offset), num(num) {
+                    uint32_t start_offset, uint32_t num, int fd)
+      : filename_(fname), pool(pool), start_offset(start_offset), num(num), fd(fd) {
   }
   // PmemRandomAccessFile(const std::string& fname)
   //     : filename_(fname) { 
@@ -187,6 +190,7 @@ class PmemRandomAccessFile : public RandomAccessFile {
 
   virtual ~PmemRandomAccessFile() {
     // pool.close();
+    close(fd);
   }
 
   virtual Status Read(uint64_t offset, size_t n, Slice* result,
@@ -233,11 +237,12 @@ class PmemWritableFile : public WritableFile {
   pobj::pool<rootFile>* pool;
   uint32_t start_offset;
   uint32_t num;
+  int fd;
 
  public:
   PmemWritableFile(const std::string& fname, pobj::pool<rootFile>* pool, 
-                    uint32_t start_offset, uint32_t num)
-      : filename_(fname), pool(pool), start_offset(start_offset), num(num) {
+                    uint32_t start_offset, uint32_t num, int fd)
+      : filename_(fname), pool(pool), start_offset(start_offset), num(num), fd(fd) {
     pobj::persistent_ptr<rootFile> ptr = pool->get_root();
     uint32_t zero = 0;
     memcpy(ptr->contents_size.get() + (num * sizeof(uint32_t)), &zero,
@@ -247,7 +252,7 @@ class PmemWritableFile : public WritableFile {
       // : filename_(fname), pool(pool), pos_(0), set_ptr_flag(0) { 
   }
 
-  virtual ~PmemWritableFile() { }
+  virtual ~PmemWritableFile() { Close(); }
 
   virtual Status Append(const Slice& data) {
     // printf("Append %d] %d %s \n",num, data.size(), data.data());
@@ -303,6 +308,7 @@ class PmemWritableFile : public WritableFile {
     // Status result = FlushBuffered();
     // pool.close();
     // return result;
+    close(fd);
     return Status::OK();
   }
 
@@ -467,7 +473,7 @@ class PmemEnv : public Env {
       *result = nullptr;
       s = PosixError(fname, errno);
     } else {
-      *result = new PmemSequentialFile(fname, pool, offset, num);
+      *result = new PmemSequentialFile(fname, pool, offset, num, fd);
     }
     return s;
 
@@ -504,7 +510,7 @@ class PmemEnv : public Env {
       *result = nullptr;
       s = PosixError(fname, errno);
     } else {
-      *result = new PmemRandomAccessFile(fname, pool, offset, num);
+      *result = new PmemRandomAccessFile(fname, pool, offset, num, fd);
     }
     return s;
   }
@@ -542,7 +548,7 @@ class PmemEnv : public Env {
       *result = nullptr;
       s = PosixError(fname, errno);
     } else {
-      *result = new PmemWritableFile(fname, pool, offset, num);
+      *result = new PmemWritableFile(fname, pool, offset, num, fd);
     }
     return s;
   }
