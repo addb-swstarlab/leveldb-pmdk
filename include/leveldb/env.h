@@ -101,7 +101,8 @@ class LEVELDB_EXPORT Env {
                              std::vector<std::string>* result) = 0;
 
   // Delete the named file.
-  virtual Status DeleteFile(const std::string& fname) = 0;
+  // Customized by JH
+  virtual Status DeleteFile(const std::string& fname, bool benchmark_flag=false) = 0;
 
   // Create the specified directory.
   virtual Status CreateDir(const std::string& dirname) = 0;
@@ -312,8 +313,8 @@ class LEVELDB_EXPORT EnvWrapper : public Env {
                      std::vector<std::string>* r) override {
     return target_->GetChildren(dir, r);
   }
-  Status DeleteFile(const std::string& f) override {
-    return target_->DeleteFile(f);
+  Status DeleteFile(const std::string& f, bool benchmark_flag=false) override {
+    return target_->DeleteFile(f, benchmark_flag);
   }
   Status CreateDir(const std::string& d) override {
     return target_->CreateDir(d);
@@ -353,7 +354,15 @@ class LEVELDB_EXPORT EnvWrapper : public Env {
  private:
   Env* target_;
 };
-
+// JH for AllocList
+struct IndexNumPair {
+  IndexNumPair(uint16_t i, uint16_t n) {
+    index = i;
+    num = n;
+  }
+  uint16_t index;
+  uint16_t num;
+};
 }  // namespace leveldb
 
 #endif  // STORAGE_LEVELDB_INCLUDE_ENV_H_
