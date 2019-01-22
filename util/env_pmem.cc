@@ -47,7 +47,7 @@
 #define FILE8 "/home/hwan/pmem_dir/file8"
 #define FILE9 "/home/hwan/pmem_dir/file9"
 #define NUM_OF_FILES 10
-#define FILESIZE (1024 * 1024  * 1024 * 1.65) // About 1.65GB
+#define FILESIZE (1024 * 1024  * 1024 * 1.9) // About 1.65GB
 #define FILEID "file"
 #define CONTENTS 1600000000 // 1.6GB
 #define EACH_CONTENT 4000000
@@ -91,12 +91,14 @@ class PmemSequentialFile : public SequentialFile {
   pobj::pool<rootFile>* pool;
   uint32_t start_offset;
   uint32_t index;
+  uint32_t current_offset;
   int fd;
 
  public:
   PmemSequentialFile(const std::string& fname, pobj::pool<rootFile>* pool, 
                     uint32_t start_offset, uint32_t index, int fd)
-      : filename_(fname), pool(pool), start_offset(start_offset), index(index), fd(fd) {
+      : filename_(fname), pool(pool), start_offset(start_offset), index(index), fd(fd),
+      current_offset(0) {
   }
 
   virtual ~PmemSequentialFile() {
@@ -110,11 +112,13 @@ class PmemSequentialFile : public SequentialFile {
     Status s;
     // Get info
     pobj::persistent_ptr<rootFile> ptr = pool->get_root();
-    uint32_t contents_size, current_index;
+    uint32_t contents_size;
+    // uint32_t contents_size, current_index;
     memcpy(&contents_size, ptr->contents_size.get() + (index * sizeof(uint32_t)), 
             sizeof(uint32_t));
-    memcpy(&current_index, ptr->current_offset.get() + (index * sizeof(uint32_t)), 
-            sizeof(uint32_t));
+
+    // memcpy(&current_index, ptr->current_offset.get() + (index * sizeof(uint32_t)), 
+    //         sizeof(uint32_t));
     // printf("[READ DEBUG %d] %d, %d\n",num, contents_size, current_index);
     ssize_t r;
 
@@ -123,25 +127,38 @@ class PmemSequentialFile : public SequentialFile {
     }
 
 
-    if (contents_size == current_index) r = 0;
+    if (contents_size == current_offset) r = 0;
     else {
       // TO DO, run memcpy without buffer-size limitation
-      uint32_t avaliable_indexspace = contents_size - current_index;
+      uint32_t avaliable_indexspace = contents_size - current_offset;
       if (n > avaliable_indexspace) {
         // printf("1] %d %d\n", start_offset, current_index);
-        memcpy(scratch, ptr->contents.get() + start_offset + current_index 
+        memcpy(scratch, ptr->contents.get() + start_offset + current_offset 
             , avaliable_indexspace);
         r = avaliable_indexspace;
       } else {
         // printf("2] %d %d\n", start_offset, current_index);
-        memcpy(scratch, ptr->contents.get() + start_offset + current_index 
+        memcpy(scratch, ptr->contents.get() + start_offset + current_offset 
             , n);
         r = n;
       }
-
-      
-      // r = n;
     }
+    // if (contents_size == current_index) r = 0;
+    // else {
+    //   // TO DO, run memcpy without buffer-size limitation
+    //   uint32_t avaliable_indexspace = contents_size - current_index;
+    //   if (n > avaliable_indexspace) {
+    //     // printf("1] %d %d\n", start_offset, current_index);
+    //     memcpy(scratch, ptr->contents.get() + start_offset + current_index 
+    //         , avaliable_indexspace);
+    //     r = avaliable_indexspace;
+    //   } else {
+    //     // printf("2] %d %d\n", start_offset, current_index);
+    //     memcpy(scratch, ptr->contents.get() + start_offset + current_index 
+    //         , n);
+    //     r = n;
+    //   }
+    // }
     *result = Slice(scratch, r);
 
     // ssize_t r = ptr->file->Read(n, scratch);
@@ -150,6 +167,7 @@ class PmemSequentialFile : public SequentialFile {
     
     // Skip r
     Skip(r);
+    // printf("[Sequential][Skip]r %d\n", r);
     return s;
   }
 
@@ -157,14 +175,15 @@ class PmemSequentialFile : public SequentialFile {
     // std::cout<<"Skip \n";
     Status s;
     // Status s = ptr->file->Skip(n);
-    pobj::persistent_ptr<rootFile> ptr = pool->get_root();
     // update offset
-    uint32_t original_offset;
-    memcpy(&original_offset, ptr->current_offset.get() + (index * sizeof(uint32_t)),
-            sizeof(uint32_t));
-    original_offset += n;
-    memcpy(ptr->current_offset.get() + (index * sizeof(uint32_t)), &original_offset,
-            sizeof(uint32_t));
+    current_offset += n;
+    // pobj::persistent_ptr<rootFile> ptr = pool->get_root();
+    // uint32_t original_offset;
+    // memcpy(&original_offset, ptr->current_offset.get() + (index * sizeof(uint32_t)),
+    //         sizeof(uint32_t));
+    // original_offset += n;
+    // memcpy(ptr->current_offset.get() + (index * sizeof(uint32_t)), &original_offset,
+    //         sizeof(uint32_t));
     return s;
   }
 };
@@ -199,13 +218,22 @@ class PmemRandomAccessFile : public RandomAccessFile {
     // Get info
     pobj::persistent_ptr<rootFile> ptr = pool->get_root();
     uint32_t contents_size;
+
+    // pool->memcpy_persist(&contents_size, ptr->contents_size.get() + (index * sizeof(uint32_t)),
+    //         sizeof(uint32_t));
     memcpy(&contents_size, ptr->contents_size.get() + (index * sizeof(uint32_t)), 
             sizeof(uint32_t));
-    // printf("[READ DEBUG %s] %d %d %d\n",filename_.c_str(), contents_size, offset, n );
+
+    // if (filename_.find("025") != std::string::npos)
+    //   printf("sizeof uint32_t %d\n", sizeof(uint32_t));
+    //   printf("[READ DEBUG %s] %d %d %d\n",filename_.c_str(), contents_size, offset, n );
     ssize_t r;
 
     if (contents_size >= EACH_CONTENT) {
       printf("[WARN][RA-Read] contens_size is out of boundary\n");
+    }
+    if (contents_size == 0) {
+      printf("[WARN][%s] contents_size is 0.. Maybe lost some data..\n", filename_.c_str());
     }
 
     // TO DO, run memcpy without buffer-size limitation
@@ -223,15 +251,20 @@ class PmemRandomAccessFile : public RandomAccessFile {
 
 
       // Check, read n
-
+      r = 0;
     } else {
       // printf("[RA DEBUG2]\n");
+
+      // pool->memcpy_persist(scratch, ptr->contents.get() + start_offset + offset 
+      //     , n);
       memcpy(scratch, ptr->contents.get() + start_offset + offset 
           , n);
       r = n;
-    // r = n;
     }
     *result = Slice(scratch, r);
+    // if (filename_.find("041") != std::string::npos) {
+    //   printf("Read %d] %d %d %s \n",index,contents_size, result->size(), result->data());
+    // }
     // printf("Read %d %d %d] %d '%s' \n", offset, n, contents_size, result->size(), result->data());
     return s;
   }
@@ -246,46 +279,63 @@ class PmemWritableFile : public WritableFile {
   uint32_t index;
   int fd;
 
+
+  char buf_[kBufSize];
+  size_t pos_;
+
  public:
   PmemWritableFile(const std::string& fname, pobj::pool<rootFile>* pool, 
                     uint32_t start_offset, uint32_t index, int fd)
       : filename_(fname), pool(pool), start_offset(start_offset), index(index), fd(fd) {
-    // pobj::persistent_ptr<rootFile> ptr = pool->get_root();
-    // uint32_t zero = 0;
-    // memcpy(ptr->contents_size.get() + (index * sizeof(uint32_t)), &zero,
-    //         sizeof(uint32_t));
-    // memcpy(ptr->current_offset.get() + (index * sizeof(uint32_t)), &zero,
-    //         sizeof(uint32_t));
   }
 
-  virtual ~PmemWritableFile() { Close(); }
+  virtual ~PmemWritableFile() { 
+    if (fd >= 0) {
+      Close(); 
+    }
+  }
 
   virtual Status Append(const Slice& data) {
-    // printf("Append %d] %d %s \n",num, data.size(), data.data());
+    // if (filename_.find("025") != std::string::npos)
+      // if (filename_.find("018") != std::string::npos)
+        // printf("Append %s] %d \n",filename_.c_str(), data.size());
     
-    pobj::persistent_ptr<rootFile> ptr = pool->get_root();
-    uint32_t contents_size;
-    memcpy(&contents_size, ptr->contents_size.get() + (index * sizeof(uint32_t)), 
-            sizeof(uint32_t));
-    // Append
-    memcpy(ptr->contents.get() + start_offset + contents_size, data.data(), 
-            data.size());
-    contents_size += data.size();
-    memcpy(ptr->contents_size.get() + (index * sizeof(uint32_t)), &contents_size,
-            sizeof(uint32_t));
-    // printf("Append Result] %d\n",contents_size);
     // size_t n = data.size();
     // const char* p = data.data();
 
-    // Fit as much as possible into buffer.
-    // size_t copy = std::min(n, kBufSize - pos_); // data size OR remaining buffer size
+    // // Fit as much as possible into buffer.
+    // size_t copy = std::min(n, kBufSize - pos_);
     // memcpy(buf_ + pos_, p, copy);
     // p += copy;
     // n -= copy;
     // pos_ += copy;
+    // if (n == 0) {
+    //   return Status::OK();
+    // }
+
+
+    // Append
+    // pobj::transaction::exec_tx(*pool, [&] {
+    pobj::persistent_ptr<rootFile> ptr = pool->get_root();
+    uint32_t contents_size;
+    // pool->memcpy_persist(&contents_size, ptr->contents_size.get() + (index * sizeof(uint32_t)),
+    //         sizeof(uint32_t));
+    // pool->memcpy_persist(ptr->contents.get() + start_offset + contents_size, data.data(), 
+    //         data.size());
+    memcpy(&contents_size, ptr->contents_size.get() + (index * sizeof(uint32_t)), 
+            sizeof(uint32_t));
+    memcpy(ptr->contents.get() + start_offset + contents_size, data.data(), 
+            data.size());
+    contents_size += data.size();
+
+    memcpy(ptr->contents_size.get() + (index * sizeof(uint32_t)), &contents_size,
+            sizeof(uint32_t));
+    // pool->memcpy_persist(ptr->contents_size.get() + (index * sizeof(uint32_t)), &contents_size,
+    //         sizeof(uint32_t));
+    // });
+    return Status::OK();
 
     // if (n == 0) {
-    return Status::OK();
     // }
 
     // Can't fit in buffer, so need to do at least one write.
@@ -302,17 +352,29 @@ class PmemWritableFile : public WritableFile {
     //   pos_ = n;
     //   return Status::OK();
     // }
+    // return WriteRaw(p, n);
     // Without through buffer, write.
     // std::cout<< "After append "<< ptr->file->getContentsSize()<<"\n";
   }
 
   virtual Status Close() {
-    // printf("############ Close %s\n", filename_.c_str());
-    // Status result = FlushBuffered();
-    // pool.close();
-    // return result;
-    close(fd);
-    return Status::OK();
+    Status result;
+    // pobj::persistent_ptr<rootFile> ptr = pool->get_root();
+    // uint32_t contents_size;
+    // memcpy(&contents_size, ptr->contents_size.get() + (index * sizeof(uint32_t)), 
+    //         sizeof(uint32_t));
+    // if (filename_.find("018") != std::string::npos)
+    //   printf("############ Close %s %d\n", filename_.c_str(), contents_size);
+
+    const int r = close(fd);
+    if (r < 0) {
+      result = PosixError(filename_, errno);
+    }
+    pobj::persistent_ptr<rootFile> ptr = pool->get_root();
+    pool->persist(ptr->contents);
+    pool->persist(ptr->contents_size);
+    fd = -1;
+    return result;
   }
 
   virtual Status Flush() {
@@ -403,31 +465,6 @@ class PmemWritableFile : public WritableFile {
   }
 };
 
-
-// class PosixFileLock : public FileLock {
-//  public:
-//   int fd_;
-//   std::string name_;
-// };
-
-// Set of locked files.  We keep a separate set instead of just
-// relying on fcntrl(F_SETLK) since fcntl(F_SETLK) does not provide
-// any protection against multiple uses from the same process.
-// class PosixLockTable {
-//  private:
-//   port::Mutex mu_;
-//   std::set<std::string> locked_files_ GUARDED_BY(mu_);
-//  public:
-//   bool Insert(const std::string& fname) LOCKS_EXCLUDED(mu_) {
-//     MutexLock l(&mu_);
-//     return locked_files_.insert(fname).second;
-//   }
-//   void Remove(const std::string& fname) LOCKS_EXCLUDED(mu_) {
-//     MutexLock l(&mu_);
-//     locked_files_.erase(fname);
-//   }
-// };
-
 class PmemEnv : public Env {
  public:
   PmemEnv();
@@ -448,7 +485,8 @@ class PmemEnv : public Env {
     Status s;
     // 1) Get info
     int32_t num = GetFileNumber(fname);
-    uint32_t index = num;
+    // uint32_t index = (uint32_t)num;
+    uint32_t index = (uint32_t)num / NUM_OF_FILES;
     pobj::pool<rootFile>* pool = GetPool(num);
     uint32_t offset = GetOffset(fname, num);
       // printf("num %d offset %d\n", num, offset);
@@ -467,9 +505,6 @@ class PmemEnv : public Env {
         index = GetIndexFromAllocList(allocList , (uint16_t)num);
         offset = ((uint16_t)index * EACH_CONTENT);
         // printf("[DEBUG][Sequential] %d %d %d\n", num, index, offset);
-      }
-      if (offset < 0) {
-        printf("[ERROR] Invalid offset ( The number of files >= 4000(Limit)) \n");
       }
     }
 
@@ -492,7 +527,8 @@ class PmemEnv : public Env {
     Status s;
     // 1) Get info
     int32_t num = GetFileNumber(fname);
-    uint32_t index = num;
+    // uint32_t index = (uint32_t)num;
+    uint32_t index = (uint32_t)num / NUM_OF_FILES;
     pobj::pool<rootFile>* pool = GetPool(num);
     uint32_t offset = GetOffset(fname, num);
       // printf("num %d offset %d\n", num, offset);
@@ -511,10 +547,6 @@ class PmemEnv : public Env {
         offset = ((uint16_t)index * EACH_CONTENT);
         // printf("[DEBUG][RandomAccess] %d %d %d\n", num, index, offset);
       }
-      
-      if (offset < 0) {
-        printf("[ERROR] Invalid offset ( The number of files >= 4000(Limit)) \n");
-      }
     }
     // Add empty file
     int fd = open(fname.c_str(), O_RDONLY);
@@ -529,20 +561,26 @@ class PmemEnv : public Env {
 
   virtual Status NewWritableFile(const std::string& fname,
                                  WritableFile** result) {
-    // std::cout<< "NewWritableFile "<<fname<<" \n";
+      // if (fname.find("018") != std::string::npos)
+
+      //   std::cout<< "NewWritableFile "<<fname<<" \n";
     Status s;
     // 1) Get info
     int32_t num = GetFileNumber(fname);
-    uint32_t index = num;
+    // uint32_t index = (uint32_t)num;
+    uint32_t index = (uint32_t)num / NUM_OF_FILES;
     pobj::pool<rootFile>* pool = GetPool(num);
     uint32_t offset = GetOffset(fname, num);
     // printf("num: %d offset: %d\n",num, offset);
+    // if (num == 25) {
+    //   printf("num: %d index: %d offset: %d\n",num, index, offset);
+    // }
 
     // Special file
     if (num == -1) {
       index = GetExtraFileNumber(fname);
       ResetFile(pool, index);
-      SetExtraOffset(index, offset);
+      SetExtraOffset(index, index, offset);
     } 
     // Normal file
     else {
@@ -558,6 +596,14 @@ class PmemEnv : public Env {
         //   for (iter = freeList->begin(); iter != freeList->end(); iter++) {
         //     printf("[iter1] '%d' ", *iter);  
         //   }
+          
+        // if ( 4000 <= num && num <= 4009) {
+        //   printf("##[%d]\n", num);
+        //   PrintFile(pool);
+        // }
+        // if ( 4200 <= num && num <= 4209) {
+        //   printf("##[%d]\n", num);
+        //   PrintFile(pool);
         // }
         // Set offset
         index = PopList(freeList);
@@ -569,12 +615,23 @@ class PmemEnv : public Env {
         std::list<IndexNumPair*> *allocList = GetAllocList(num);
         PushList(allocList, index, (uint16_t)num);
       }
+      // if ( 10 <= num && num <= 19) {
+      //     printf("##[%d]\n", num);
+      //     PrintFile(pool);
+      //   }
+      //   if ( 1000 <= num && num <= 1009) {
+      //     printf("##[%d]\n", num);
+      //     PrintFile(pool);
+      //   }
+      //   if ( num == 1001) {
+      //     ResetFile(pool, 1);
+      //     PrintFile(pool);
+      //   }
       ResetFile(pool, index);
+
       SetOffset(index, (uint32_t)num, offset);
       
     }
-    // printf("NewWritable Debug3\n");
-
     // Add empty file
     int fd = open(fname.c_str(), O_TRUNC | O_WRONLY | O_CREAT, 0644);
     if (fd < 0) {
@@ -702,57 +759,54 @@ class PmemEnv : public Env {
   virtual Status DeleteFile(const std::string& fname, bool benchmark_flag) {
     // if (benchmark_flag) printf("[DeleteFile] flag is true\n");
     Status result;
+    // Extra file
     if (fname.find("MANIFEST") != std::string::npos
-        || fname.find(".log") != std::string::npos
-        || fname.find("CURRENT") != std::string::npos
-        || fname.find(".ldb") != std::string::npos) {
-
-      // printf("[DELETE] %s\n", fname.c_str());
+        || fname.find("CURRENT") != std::string::npos ) {
       int32_t num = GetFileNumber(fname);
       pobj::pool<rootFile> *pool = GetPool(num);
-      
-  // printf("111 %d %d\n",num,  offset);
-      // Extra file
-      if (num == -1) {
-        num = GetExtraFileNumber(fname);
-        // ResetFile(pool, num);
-        // Reset .dbtmp fname(num)&offset
-        if (fname.find("CURRENT") != std::string::npos) {
-          // printf("%d %d\n", num, offset);
-          uint32_t offset = GetOffset(fname, num);
-          SetExtraOffset(1, offset);
-          SetExtraOffset(2, offset);
-          // for (int i=0; i<5; i++) {
-          //   printf("[i %d]\n", i);
-          //   int32_t tmp;
-          //   memcpy(&tmp, exOffsets->fname.get() + (i * sizeof(uint32_t)), 
-          //           sizeof(uint32_t));
-          //   printf("tmp: %d\n",tmp);
-          // }
-        }
-      } 
-      // Normal file
-      else {
-        if (!benchmark_flag) {
-          uint32_t offset_reset_value = 0;
-          std::list<uint16_t> *freeList = GetFreeList(num);
+      num = GetExtraFileNumber(fname);
+      // ResetFile(pool, num);
 
-          // DA case (index-based)
-          if (num >= OFFSETS_SIZE) {
-            std::list<IndexNumPair*> *allocList = GetAllocList(num);
-            uint16_t index = GetIndexFromAllocList(allocList, (uint16_t)num);
-            // TO DO, Check ordering
-            PopList(allocList, index);
-            // ResetFile(pool, index);
-            SetOffset(index, num, offset_reset_value);
-            PushList(freeList, index);
-          } 
-          // Normal case (num-based)
-          else {
-            // ResetFile(pool, num);
-            SetOffset(num, num, offset_reset_value);
-            PushList(freeList, num / NUM_OF_FILES);
-          }
+      // Reset .dbtmp fname(num)&offset
+      if (fname.find("CURRENT") != std::string::npos) {
+        // printf("%d %d\n", num, offset);
+        uint32_t offset = GetOffset(fname, num);
+        SetExtraOffset(1, 1, offset);
+        SetExtraOffset(2, 2, offset);
+      }
+      if (unlink(fname.c_str()) != 0) {
+        result = PosixError(fname, errno);
+      }
+    }
+    // Normal file
+    else if (fname.find(".log") != std::string::npos
+              || fname.find(".ldb") != std::string::npos) {
+
+      // if (fname.find("018") != std::string::npos)
+      //   printf("[DELETE] %s\n", fname.c_str());
+      if (!benchmark_flag) {
+        int32_t num = GetFileNumber(fname);
+        uint16_t index = num / NUM_OF_FILES;
+        pobj::pool<rootFile> *pool = GetPool(num);
+        uint32_t offset_reset_value = 0;
+        std::list<uint16_t> *freeList = GetFreeList(num);
+
+        // DA case (index-based)
+        if (num >= OFFSETS_SIZE) {
+          std::list<IndexNumPair*> *allocList = GetAllocList(num);
+          index = GetIndexFromAllocList(allocList, (uint16_t)num);
+          // TO DO, Check ordering
+          PopList(allocList, index);
+          // ResetFile(pool, index);
+          SetOffset(index, num, offset_reset_value);
+          PushList(freeList, index);
+        } 
+        // Normal case (num-based)
+        else {
+          // ResetFile(pool, index);
+          SetOffset(index, num, offset_reset_value);
+          
+          PushList(freeList, index);
         }
       }
       if (unlink(fname.c_str()) != 0) {
@@ -762,12 +816,6 @@ class PmemEnv : public Env {
     else if (fname.find("file") != std::string::npos
               || fname.find("offset") != std::string::npos) {
       // printf("[INFO] Do not delete file, offset\n");
-    }
-    // Original path
-    else {
-      if (unlink(fname.c_str()) != 0) {
-        result = PosixError(fname, errno);
-      }
     }
     return result;
   }
@@ -781,7 +829,6 @@ class PmemEnv : public Env {
     return result;
   }
 
-  // Customized by JH
   virtual Status DeleteDir(const std::string& name) {
     Status result;
     if (rmdir(name.c_str()) != 0) {
@@ -921,7 +968,7 @@ class PmemEnv : public Env {
   // JH
   virtual pobj::pool<rootFile>* GetPool(const uint32_t num) {
     pobj::pool<rootFile> *pool;
-    switch (num % 10) {
+    switch (num % 10) { 
       case 0: pool = &filePool0; break;
       case 1: pool = &filePool1; break;
       case 2: pool = &filePool2; break;
@@ -951,22 +998,6 @@ class PmemEnv : public Env {
       offset = (num / NUM_OF_FILES) * EACH_CONTENT; // based on 10-pools
     } 
     else {
-      // Pop from freeList
-      // std::list<uint16_t> *freeList = GetFreeList(num);
-      // std::list<uint16_t>::iterator iter;
-      // for (iter = freeList->begin(); iter != freeList->end(); iter++) {
-      //   printf("[iter1] %d\n", *iter);  
-      // }
-      // uint16_t index = PopList(freeList);
-      // for (iter = freeList->begin(); iter != freeList->end(); iter++) {
-      //   printf("[iter2] %d\n", *iter);  
-      // }
-      // Set offset
-      // offset = index * EACH_CONTENT;
-      // printf("[DEBUG][GetOffset] %d %d %d\n", num, index, offset);
-      // Push into allocList
-      // std::list<IndexNumPair*> *allocList = GetAllocList(num);
-      // PushList(allocList, index, num);
       offset = 0;
     }
     return offset;
@@ -990,22 +1021,42 @@ class PmemEnv : public Env {
     return num * EACH_EXFILE_CONTENT;
   }
   virtual void SetOffset(const uint32_t index, const uint32_t num, const uint32_t offset) {
+    // offsetPool.memcpy_persist(offsets->fname.get() + (index * sizeof(uint32_t)), 
+    //         &num, sizeof(uint32_t));
+    // offsetPool.memcpy_persist(offsets->start_offset.get() + (index * sizeof(uint32_t)), 
+    //         &offset, sizeof(uint32_t));
     memcpy(offsets->fname.get() + (index * sizeof(uint32_t)), 
             &num, sizeof(uint32_t));
     memcpy(offsets->start_offset.get() + (index * sizeof(uint32_t)), 
             &offset, sizeof(uint32_t));
   }
-  virtual void SetExtraOffset(const uint32_t num, const uint32_t offset) {
-    memcpy(exOffsets->fname.get() + (num * sizeof(uint32_t)), 
+  virtual void SetExtraOffset(const uint32_t index, const uint32_t num, const uint32_t offset) {
+    // exOffsetPool.memcpy_persist(exOffsets->fname.get() + (num * sizeof(uint32_t)), 
+    //         &num, sizeof(uint32_t));
+    // exOffsetPool.memcpy_persist(exOffsets->start_offset.get() + (num * sizeof(uint32_t)), 
+    //         &offset, sizeof(uint32_t));
+    memcpy(exOffsets->fname.get() + (index * sizeof(uint32_t)), 
             &num, sizeof(uint32_t));
-    memcpy(exOffsets->start_offset.get() + (num * sizeof(uint32_t)), 
+    memcpy(exOffsets->start_offset.get() + (index * sizeof(uint32_t)), 
             &offset, sizeof(uint32_t));
   }
   virtual void ResetFile(pobj::pool<rootFile>* pool, const uint32_t index) {
     pobj::persistent_ptr<rootFile> ptr = pool->get_root();
     uint32_t zero = 0;
+    // pool->memcpy_persist(ptr->contents_size.get() + (index * sizeof(uint32_t)), &zero, sizeof(uint32_t));
+    // pool->memcpy_persist(ptr->current_offset.get() + (index * sizeof(uint32_t)), &zero, sizeof(uint32_t));
     memcpy(ptr->contents_size.get() + (index * sizeof(uint32_t)), &zero, sizeof(uint32_t));
-    memcpy(ptr->current_offset.get() + (index * sizeof(uint32_t)), &zero, sizeof(uint32_t));
+    // memcpy(ptr->current_offset.get() + (index * sizeof(uint32_t)), &zero, sizeof(uint32_t));
+  }
+  // For debugging
+  virtual void PrintFile(pobj::pool<rootFile>* pool) {
+    pobj::persistent_ptr<rootFile> ptr = pool->get_root();
+    for (int i=0; i< CONTENTS_SIZE; i++) {
+      uint32_t contents_size, current_offset;
+      memcpy(&contents_size, ptr->contents_size.get() + (i * sizeof(uint32_t)),  sizeof(uint32_t));
+      // memcpy(&current_offset, ptr->current_offset.get() + (i * sizeof(uint32_t)),  sizeof(uint32_t));
+      printf("[%d] size: %d , offset: %d\n",i, contents_size, current_offset);
+    }
   }
   // For Linked-listsxv
   virtual std::list<uint16_t>* GetFreeList(const int32_t num) {
@@ -1066,17 +1117,19 @@ class PmemEnv : public Env {
   virtual void PopList(std::list<IndexNumPair*> *list, uint16_t index) {
     std::list<IndexNumPair*>::iterator iter;
     IndexNumPair* indexNumPair;
-    uint16_t res = 0;
+    bool res = false;
     for (iter = list->begin(); iter != list->end(); iter++) {
       indexNumPair = *iter;
       if (indexNumPair->index == index) {
         list->remove(indexNumPair);
-        res = 1;
+        res = true;
         break;
       }
     }
     if (!res) {
       printf("[ERROR][PopAllocList] Cannot pop..\n");
+    } else {
+      delete indexNumPair;
     }
   }
   virtual uint16_t GetIndexFromAllocList(std::list<IndexNumPair*> *list, 
@@ -1189,7 +1242,6 @@ PmemEnv::PmemEnv()
   // Initialize all pools (10-files, 1-offset)
   // 1) FILE BUFFER
   if (!FileExists(FILE0)) {
-    // std::cout<< "New PmemFile "<<FILE0<<" \n";
     filePool0 = pobj::pool<rootFile>::create (FILE0, FILEID,
         // 2GB cause error
         // About 1.65GB
@@ -1203,7 +1255,6 @@ PmemEnv::PmemEnv()
     filePool7 = pobj::pool<rootFile>::create (FILE7, FILEID, FILESIZE , S_IRUSR | S_IWUSR | S_IRGRP | S_IWGRP | S_IROTH);
     filePool8 = pobj::pool<rootFile>::create (FILE8, FILEID, FILESIZE , S_IRUSR | S_IWUSR | S_IRGRP | S_IWGRP | S_IROTH);
     filePool9 = pobj::pool<rootFile>::create (FILE9, FILEID, FILESIZE , S_IRUSR | S_IWUSR | S_IRGRP | S_IWGRP | S_IROTH);
-    // printf("After creating pool\n");
 
 
     file0 = filePool0.get_root(); file1 = filePool1.get_root();
@@ -1215,56 +1266,54 @@ PmemEnv::PmemEnv()
     pobj::transaction::exec_tx(filePool0, [&] {
       file0->contents = pobj::make_persistent<char[]>(CONTENTS);
       file0->contents_size = pobj::make_persistent<uint32_t[]>(CONTENTS_SIZE);  
-      file0->current_offset = pobj::make_persistent<uint32_t[]>(CONTENTS_SIZE);
+      // file0->current_offset = pobj::make_persistent<uint32_t[]>(CONTENTS_SIZE);
     });
     pobj::transaction::exec_tx(filePool1, [&] {
       file1->contents = pobj::make_persistent<char[]>(CONTENTS);
       file1->contents_size = pobj::make_persistent<uint32_t[]>(CONTENTS_SIZE);  
-      file1->current_offset = pobj::make_persistent<uint32_t[]>(CONTENTS_SIZE);
+      // file1->current_offset = pobj::make_persistent<uint32_t[]>(CONTENTS_SIZE);
     });
     pobj::transaction::exec_tx(filePool2, [&] {
       file2->contents = pobj::make_persistent<char[]>(CONTENTS);
       file2->contents_size = pobj::make_persistent<uint32_t[]>(CONTENTS_SIZE);  
-      file2->current_offset = pobj::make_persistent<uint32_t[]>(CONTENTS_SIZE);
+      // file2->current_offset = pobj::make_persistent<uint32_t[]>(CONTENTS_SIZE);
     });
     pobj::transaction::exec_tx(filePool3, [&] {
       file3->contents = pobj::make_persistent<char[]>(CONTENTS);
       file3->contents_size = pobj::make_persistent<uint32_t[]>(CONTENTS_SIZE);  
-      file3->current_offset = pobj::make_persistent<uint32_t[]>(CONTENTS_SIZE);
+      // file3->current_offset = pobj::make_persistent<uint32_t[]>(CONTENTS_SIZE);
     });
     pobj::transaction::exec_tx(filePool4, [&] {
       file4->contents = pobj::make_persistent<char[]>(CONTENTS);
       file4->contents_size = pobj::make_persistent<uint32_t[]>(CONTENTS_SIZE);  
-      file4->current_offset = pobj::make_persistent<uint32_t[]>(CONTENTS_SIZE);
+      // file4->current_offset = pobj::make_persistent<uint32_t[]>(CONTENTS_SIZE);
     });
     pobj::transaction::exec_tx(filePool5, [&] {
       file5->contents = pobj::make_persistent<char[]>(CONTENTS);
       file5->contents_size = pobj::make_persistent<uint32_t[]>(CONTENTS_SIZE);  
-      file5->current_offset = pobj::make_persistent<uint32_t[]>(CONTENTS_SIZE);
+      // file5->current_offset = pobj::make_persistent<uint32_t[]>(CONTENTS_SIZE);
     });
     pobj::transaction::exec_tx(filePool6, [&] {
       file6->contents = pobj::make_persistent<char[]>(CONTENTS);
       file6->contents_size = pobj::make_persistent<uint32_t[]>(CONTENTS_SIZE);  
-      file6->current_offset = pobj::make_persistent<uint32_t[]>(CONTENTS_SIZE);
+      // file6->current_offset = pobj::make_persistent<uint32_t[]>(CONTENTS_SIZE);
     });
     pobj::transaction::exec_tx(filePool7, [&] {
       file7->contents = pobj::make_persistent<char[]>(CONTENTS);
       file7->contents_size = pobj::make_persistent<uint32_t[]>(CONTENTS_SIZE);  
-      file7->current_offset = pobj::make_persistent<uint32_t[]>(CONTENTS_SIZE);
+      // file7->current_offset = pobj::make_persistent<uint32_t[]>(CONTENTS_SIZE);
     });
     pobj::transaction::exec_tx(filePool8, [&] {
       file8->contents = pobj::make_persistent<char[]>(CONTENTS);
       file8->contents_size = pobj::make_persistent<uint32_t[]>(CONTENTS_SIZE);  
-      file8->current_offset = pobj::make_persistent<uint32_t[]>(CONTENTS_SIZE);
+      // file8->current_offset = pobj::make_persistent<uint32_t[]>(CONTENTS_SIZE);
     });
     pobj::transaction::exec_tx(filePool9, [&] {
       file9->contents = pobj::make_persistent<char[]>(CONTENTS);
       file9->contents_size = pobj::make_persistent<uint32_t[]>(CONTENTS_SIZE);  
-      file9->current_offset = pobj::make_persistent<uint32_t[]>(CONTENTS_SIZE);
+      // file9->current_offset = pobj::make_persistent<uint32_t[]>(CONTENTS_SIZE);
     });
-    // printf("Finish all initialization \n");
   } else {
-    // std::cout<< "Reuse PmemFile "<<FILE0<<" \n";
     filePool0 = pobj::pool<rootFile>::open (FILE0, FILEID);
     filePool1 = pobj::pool<rootFile>::open (FILE1, FILEID);
     filePool2 = pobj::pool<rootFile>::open (FILE2, FILEID);
@@ -1275,23 +1324,25 @@ PmemEnv::PmemEnv()
     filePool7 = pobj::pool<rootFile>::open (FILE7, FILEID);
     filePool8 = pobj::pool<rootFile>::open (FILE8, FILEID);
     filePool9 = pobj::pool<rootFile>::open (FILE9, FILEID);
-    // file0 = filePool0.get_root();
-    // file1 = filePool1.get_root();
-    // file2 = filePool2.get_root();
-    // file3 = filePool3.get_root();
-    // file4 = filePool4.get_root();
-    // file5 = filePool5.get_root();
-    // file6 = filePool6.get_root();
-    // file7 = filePool7.get_root();
-    // file8 = filePool8.get_root();
-    // file9 = filePool9.get_root();
+
+    // for (int i=0; i < CONTENTS_SIZE; i++) {
+    //   ResetFile(&filePool0, i);
+    //   ResetFile(&filePool1, i);
+    //   ResetFile(&filePool2, i);
+    //   ResetFile(&filePool3, i);
+    //   ResetFile(&filePool4, i);
+    //   ResetFile(&filePool5, i);
+    //   ResetFile(&filePool6, i);
+    //   ResetFile(&filePool7, i);
+    //   ResetFile(&filePool8, i);
+    //   ResetFile(&filePool9, i);
+    // }
+
   } 
   // OFFSET BUFFER
   if (!FileExists(OFFSET)) {
-    // std::cout<< "New OffsetFile "<<OFFSET<<" \n";
     offsetPool = pobj::pool<rootOffset>::create (OFFSET, OFFSETID,
         OFFSETS_POOL_SIZE , S_IRUSR | S_IWUSR | S_IRGRP | S_IWGRP | S_IROTH);
-    // printf("After creating pool\n");
 
     offsets = offsetPool.get_root();
     // 4000Files
@@ -1301,10 +1352,11 @@ PmemEnv::PmemEnv()
     });
 
   } else {
-    // std::cout<< "Reuse OffsetFile "<<FILE0<<" \n";
     offsetPool = pobj::pool<rootOffset>::open (OFFSET, OFFSETID);
     offsets = offsetPool.get_root();
   }
+
+
   // tmp for initializing
   pobj::persistent_ptr<rootFile> exfile;
   // EXTRA CONTENTS BUFFER
@@ -1315,12 +1367,10 @@ PmemEnv::PmemEnv()
     pobj::transaction::exec_tx(exfilePool, [&] {
       exfile->contents = pobj::make_persistent<char[]>(EXFILE_CONTENTS);
       exfile->contents_size = pobj::make_persistent<uint32_t[]>(EXFILE_CONTENTS_SIZE);  
-      exfile->current_offset = pobj::make_persistent<uint32_t[]>(EXFILE_CONTENTS_SIZE);
+      // exfile->current_offset = pobj::make_persistent<uint32_t[]>(EXFILE_CONTENTS_SIZE);
     });
   } else {
-    // printf("exfile pool\n");
     exfilePool = pobj::pool<rootFile>::open (EXFILE, EXFILEID);
-    // exfile = exfilePool.get_root();
   }
   // EXTRA OFFSET BUFFER
   if (!FileExists(EXOFFSET)) {
@@ -1332,14 +1382,13 @@ PmemEnv::PmemEnv()
       exOffsets->start_offset = pobj::make_persistent<uint32_t[]>(EXOFFSETS_SIZE);
     });
   } else {
-    // printf("exoffset pool\n");
     exOffsetPool = pobj::pool<rootOffset>::open (EXOFFSET, EXOFFSETID);
     exOffsets = exOffsetPool.get_root();
   }
-    // printf("set extraoffset\n");
+    
   // Initialize for preventing from renaming confusion
   for (int i=0; i<5; i++) {
-    SetExtraOffset(i, i*EACH_EXFILE_CONTENT);
+    SetExtraOffset(i, i, i*EACH_EXFILE_CONTENT);
   }
     printf("End all setting\n");
 }
@@ -1385,19 +1434,6 @@ void PmemEnv::BGThread() {
     (*function)(arg);
   }
 }
-
-// namespace {
-// struct StartThreadState {
-//   void (*user_function)(void*);
-//   void* arg;
-// };
-// }
-// static void* StartThreadWrapper(void* arg) {
-//   StartThreadState* state = reinterpret_cast<StartThreadState*>(arg);
-//   state->user_function(state->arg);
-//   delete state;
-//   return nullptr;
-// }
 
 void PmemEnv::StartThread(void (*function)(void* arg), void* arg) {
   pthread_t t;

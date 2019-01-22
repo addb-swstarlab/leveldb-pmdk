@@ -16,8 +16,8 @@
 #include <libpmemobj++/transaction.hpp>
 #include <libpmemobj++/mutex.hpp>
 
-#define MAX_ARRAY_SIZE 4000000 // 4MB
-#define NUM_OF_FILE 500
+// #define MAX_ARRAY_SIZE 4000000 // 4MB
+// #define NUM_OF_FILE 500
 
 namespace pobj = pmem::obj;
 
@@ -36,7 +36,7 @@ struct rootFile;
 struct rootFile {
   pobj::persistent_ptr<char[]> contents;                   // Total 1.65GB, each 4MB
   pobj::persistent_ptr<uint32_t[]> contents_size;          // 400 Files
-  pobj::persistent_ptr<uint32_t[]> current_offset;          // 400 Files
+  // pobj::persistent_ptr<uint32_t[]> current_offset;          // 400 Files
 };
 struct rootOffset {
   pobj::persistent_ptr<uint32_t[]> fname;                  // 4000 Files

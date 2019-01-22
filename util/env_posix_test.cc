@@ -131,44 +131,44 @@ TEST(EnvPosixTest, TestWriteAndAppendPmem) {
 //   ASSERT_OK(s);
 // }
 
-// TEST(EnvPosixTest, TestSequentialReadPmem) {
-//   // Write some test data to a single file that will be opened |n| times.
-//   std::string pmem_dir = "/home/hwan/pmem_dir";
-//   std::string test_file2 = pmem_dir + "/000156.ldb";
+TEST(EnvPosixTest, TestSequentialReadPmem) {
+  // Write some test data to a single file that will be opened |n| times.
+  std::string pmem_dir = "/home/hwan/pmem_dir";
+  std::string test_file2 = pmem_dir + "/000156.ldb";
 
-//   leveldb::SequentialFile* file;
-//   env_->NewSequentialFile(test_file2, &file);
+  leveldb::SequentialFile* file;
+  env_->NewSequentialFile(test_file2, &file);
 
-//   static const int kBufferSize = 250;
-//   char* space = new char[kBufferSize];
-//   Slice data;
-//   Status s = file->Read(kBufferSize, &data, space);
-//   printf("End] data: %s %d\n", data.data(), data.size());
-//   s = file->Read(kBufferSize, &data, space);
-//   printf("Skip End] data: %s, %d\n", data.data(), data.size());
-//   std::cout<< data.empty() << std::endl;
-//   delete file;
-//   ASSERT_OK(s);
-// }
+  static const int kBufferSize = 200;
+  char* space = new char[kBufferSize];
+  Slice data;
+  Status s = file->Read(kBufferSize, &data, space);
+  printf("End] data: %s %d\n", data.data(), data.size());
+  s = file->Read(kBufferSize, &data, space);
+  printf("Skip End] data: %s, %d\n", data.data(), data.size());
+  std::cout<< data.empty() << std::endl;
+  delete file;
+  ASSERT_OK(s);
+}
 
-// TEST(EnvPosixTest, TestRandomReadPmem) {
-//   // Write some test data to a single file that will be opened |n| times.
-//   std::string pmem_dir = "/home/hwan/pmem_dir";
-//   std::string test_file2 = pmem_dir + "/000156.ldb";
+TEST(EnvPosixTest, TestRandomReadPmem) {
+  // Write some test data to a single file that will be opened |n| times.
+  std::string pmem_dir = "/home/hwan/pmem_dir";
+  std::string test_file2 = pmem_dir + "/000156.ldb";
 
-//   leveldb::RandomAccessFile* file;
-//   env_->NewRandomAccessFile(test_file2, &file);
+  leveldb::RandomAccessFile* file;
+  env_->NewRandomAccessFile(test_file2, &file);
 
-//   static const int kBufferSize = 4018;
-//   char* space = new char[kBufferSize];
-//   Slice data;
-//   Status s = file->Read(5, kBufferSize, &data, space);
-//   printf("End] data: %s\n", data.data());
-//   s = file->Read(3400000, kBufferSize, &data, space);
-//   printf("End2] data: %s\n", data.data());
-//   delete file;
-//   ASSERT_OK(s);
-// }
+  static const int kBufferSize = 4018;
+  char* space = new char[kBufferSize];
+  Slice data;
+  Status s = file->Read(5, kBufferSize, &data, space);
+  printf("End] data: %s\n", data.data());
+  s = file->Read(3400000, kBufferSize, &data, space);
+  printf("End2] data: %s\n", data.data());
+  delete file;
+  ASSERT_OK(s);
+}
 
 }  // namespace leveldb
 
