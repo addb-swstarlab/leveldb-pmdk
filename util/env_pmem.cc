@@ -32,7 +32,8 @@
 #include <iostream>
 #include <fstream>
 #include <list>
-
+#include <map>
+#include <vector>
 #include "pmem/pmem_file.h"
 #include "libpmemobj++/mutex.hpp"
 #include "env_posix.cc"
@@ -113,7 +114,10 @@ class PmemSequentialFile : public SequentialFile {
   virtual ~PmemSequentialFile() {
     // pool.close();
     // printf("Delete [S]%s\n", filename_.c_str());
-    close(fd);
+    if (fd >= 0) {
+      // printf("Close[Seq] %s\n", filename_.c_str());
+      close(fd);
+    }
   }
 
   virtual Status Read(size_t n, Slice* result, char* scratch) {
@@ -219,7 +223,11 @@ class PmemRandomAccessFile : public RandomAccessFile {
 
   virtual ~PmemRandomAccessFile() {
     // pool.close();
-    close(fd);
+      // printf("Close1[RA] %s\n", filename_.c_str());
+    if (fd >= 0) {
+      printf("Close2[RA] %s\n", filename_.c_str());
+      close(fd);
+    }
   }
 
   virtual Status Read(uint64_t offset, size_t n, Slice* result,
@@ -262,6 +270,7 @@ class PmemRandomAccessFile : public RandomAccessFile {
 
       // pool->memcpy_persist(scratch, ptr->contents.get() + start_offset + offset 
       //     , n);
+      // strcpy(scratch, ptr->contents.get() + start_offset + offset);
       memcpy(scratch, ptr->contents.get() + start_offset + offset 
           , n);
       r = n;
@@ -325,7 +334,10 @@ class PmemWritableFile : public WritableFile {
 
   virtual Status Close() {
     Status result;
-    const int r = close(fd);
+    // printf("Close 1 %s\n", filename_.c_str());
+    // const int r = close(fd);
+    int r = 1;
+    if (fd >= 0) r = close(fd);
     if (r < 0) {
       result = PosixError(filename_, errno);
     }
@@ -333,8 +345,10 @@ class PmemWritableFile : public WritableFile {
     pool->persist(ptr->contents);
     pool->memcpy_persist(ptr->contents_size.get() + (index * sizeof(uint32_t)), &local_contents_size,
             sizeof(uint32_t));
+    pool->persist(ptr);
     // pool->persist(ptr->contents_size);
     fd = -1;
+    // printf("Close 2 %s\n", filename_.c_str());
     return result;
   }
 
@@ -439,10 +453,6 @@ class PmemEnv : public Env {
     char msg[] = "Destroying Env::Default()\n";
     fwrite(msg, 1, sizeof(msg), stderr);
 
-    // JH
-    // pobj::delete_persistent<rootDirectory>(Dir_ptr);
-    // Dir_pool.close();
-
     abort();
   }
 
@@ -455,88 +465,85 @@ class PmemEnv : public Env {
     uint32_t index = (uint32_t)num / NUM_OF_FILES;
     pobj::pool<rootFile>* pool = GetPool(num);
     uint32_t offset = GetOffset(fname, num);
+    int fd = -1;
     // Special file
     if (num == -1) {
       index = GetExtraFileNumber(fname);
       // Get renamed number
       if (index == 0) index = offset / EACH_EXFILE_CONTENT;
       // SetExtraOffset(num, offset);
+      fd = open(fname.c_str(), O_RDONLY);
     } 
     // Normal file
     else {
       // Get offset
       if (num >= OFFSETS_SIZE) {
-        std::list<IndexNumPair*> *allocList = GetAllocList(num); 
-        index = GetIndexFromAllocList(allocList , (uint16_t)num);
+        // std::list<IndexNumPair*> *allocList = GetAllocList(num); 
+        // index = GetIndexFromAllocList(allocList , (uint16_t)num);
+        // offset = ((uint16_t)index * EACH_CONTENT);
+        std::map<uint16_t, uint16_t> *allocMap = GetAllocMap(num); 
+        index = GetIndexFromAllocMap(allocMap, (uint16_t)num);
         offset = ((uint16_t)index * EACH_CONTENT);
         // printf("[DEBUG][Sequential] %d %d %d\n", num, index, offset);
       }
     }
 
-    // Add empty file
-    // int fd = open(fname.c_str(), O_TRUNC | O_WRONLY | O_CREAT, 0644);
-    int fd = open(fname.c_str(), O_RDONLY);
-    if (fd < 0) {
-      *result = nullptr;
-      s = PosixError(fname, errno);
-    } else {
-      *result = new PmemSequentialFile(fname, pool, offset, index, fd);
-    }
+    *result = new PmemSequentialFile(fname, pool, offset, index, fd);
     return s;
 
   }
 
   virtual Status NewRandomAccessFile(const std::string& fname,
                                      RandomAccessFile** result) {
-    std::cout<< "NewRandomAccessFile "<<fname<<" \n";
+    // std::cout<< "NewRandomAccessFile "<<fname<<" \n";
     Status s;
     // 1) Get info
     int32_t num = GetFileNumber(fname);
     uint32_t index = (uint32_t)num / NUM_OF_FILES;
     pobj::pool<rootFile>* pool = GetPool(num);
     uint32_t offset = GetOffset(fname, num);
+    int fd = -1;
     // Special file
     if (num == -1) {
       index = GetExtraFileNumber(fname);
       // Get renamed number
       if (index == 0) index = offset / EACH_EXFILE_CONTENT;
+      fd = open(fname.c_str(), O_RDONLY);
     } 
     // Normal file
     else {
       // Get offset
       if (num >= OFFSETS_SIZE) {
-        std::list<IndexNumPair*> *allocList = GetAllocList(num); 
-        index = GetIndexFromAllocList(allocList , (uint16_t)num);
+        // std::list<IndexNumPair*> *allocList = GetAllocList(num); 
+        // index = GetIndexFromAllocList(allocList , (uint16_t)num);
+        // offset = ((uint16_t)index * EACH_CONTENT);
+        std::map<uint16_t, uint16_t> *allocMap = GetAllocMap(num); 
+        index = GetIndexFromAllocMap(allocMap, (uint16_t)num);
         offset = ((uint16_t)index * EACH_CONTENT);
         // printf("[DEBUG][RandomAccess] %d %d %d\n", num, index, offset);
       }
     }
-    // Add empty file
-    int fd = open(fname.c_str(), O_RDONLY);
-    if (fd < 0) {
-      *result = nullptr;
-      s = PosixError(fname, errno);
-    } else {
-      *result = new PmemRandomAccessFile(fname, pool, offset, index, fd);
-    }
+    *result = new PmemRandomAccessFile(fname, pool, offset, index, fd);
     return s;
   }
 
   virtual Status NewWritableFile(const std::string& fname,
                                  WritableFile** result) {
-      //   std::cout<< "NewWritableFile "<<fname<<" \n";
+        // std::cout<< "NewWritableFile "<<fname<<" \n";
     Status s;
     // 1) Get info
     int32_t num = GetFileNumber(fname);
     uint16_t index = num / NUM_OF_FILES;
     pobj::pool<rootFile>* pool = GetPool(num);
     uint32_t offset = GetOffset(fname, num);
+    int fd = -1;
 
     // Special file
     if (num == -1) {
       index = GetExtraFileNumber(fname);
       ResetFile(pool, index);
       SetExtraOffset(index, index, offset);
+      fd = open(fname.c_str(), O_TRUNC | O_WRONLY | O_CREAT, 0644);
     } 
     // Normal file
     else {
@@ -568,8 +575,10 @@ class PmemEnv : public Env {
         // printf("[DEBUG][Writable] %d %d %d\n", num, index, offset);
 
         // Push into allocList
-        std::list<IndexNumPair*> *allocList = GetAllocList(num);
-        PushList(allocList, index, (uint16_t)num);
+        // std::list<IndexNumPair*> *allocList = GetAllocList(num);
+        // PushList(allocList, index, (uint16_t)num);
+        std::map<uint16_t, uint16_t> *allocMap = GetAllocMap(num);
+        InsertMap(allocMap, (uint16_t)num, index);
       }
       // if ( 10 <= num && num <= 19) {
       //     printf("##[%d]\n", num);
@@ -584,59 +593,60 @@ class PmemEnv : public Env {
       //     PrintFile(pool);
       //   }
       ResetFile(pool, index);
-
       SetOffset(index, (uint32_t)num, offset);
+
       
     }
-    // Add empty file
-    int fd = open(fname.c_str(), O_TRUNC | O_WRONLY | O_CREAT, 0644);
-    if (fd < 0) {
-      *result = nullptr;
-      s = PosixError(fname, errno);
-    } else {
-      *result = new PmemWritableFile(fname, pool, offset, index, fd);
-    }
+    // Push filename list
+    std::string filename = ParseFileName(fname);
+    PushFileNameList(filename);
+    
+    *result = new PmemWritableFile(fname, pool, offset, index, fd);
     return s;
   }
 
   virtual Status NewAppendableFile(const std::string& fname,
                                    WritableFile** result) {
-    // std::cout<< "NewAppendableFile \n";
+    std::cout<< "NewAppendableFile \n";
     Status s;
     // 1) Get info
     int32_t num = GetFileNumber(fname);
-    uint32_t index = num;
+    uint16_t index = num / NUM_OF_FILES;
     pobj::pool<rootFile>* pool = GetPool(num);
     uint32_t offset = GetOffset(fname, num);
+    int fd = -1;
       // printf("num %d offset %d\n", num, offset);
     // Special file
     if (num == -1) {
       index = GetExtraFileNumber(fname);
-      // Get renamed number
-      if (index == 0) index = offset / EACH_EXFILE_CONTENT;
+      ResetFile(pool, index);
+      SetExtraOffset(index, index, offset);
+      fd = open(fname.c_str(), O_TRUNC | O_WRONLY | O_CREAT, 0644);
     } 
     // Normal file
     else {
       // Get offset
       if (num >= OFFSETS_SIZE) {
-        std::list<IndexNumPair*> *allocList = GetAllocList(num); 
-        index = GetIndexFromAllocList(allocList , num);
+        // Pop from freeList
+        std::list<uint16_t> *freeList = GetFreeList(num);
+        
+        // Set offset
+        index = PopList(freeList);
         offset = index * EACH_CONTENT;
-        // printf("[DEBUG][RandomAccess] %d %d %d\n", num, index, offset);
+        // Push into allocList
+        // std::list<IndexNumPair*> *allocList = GetAllocList(num);
+        // PushList(allocList, index, (uint16_t)num);
+        std::map<uint16_t, uint16_t> *allocMap = GetAllocMap(num);
+        InsertMap(allocMap, (uint16_t)num, index);
       }
-      
-      if (offset == -1) {
-        printf("[ERROR] Invalid offset ( The number of files >= 4000(Limit)) \n");
-      }
+      ResetFile(pool, index);
+      SetOffset(index, (uint32_t)num, offset);
     }
-    // Add empty file
-    int fd = open(fname.c_str(), O_TRUNC | O_WRONLY | O_CREAT, 0644);
-    if (fd < 0) {
-      *result = nullptr;
-      s = PosixError(fname, errno);
-    } else {
-      *result = new PmemWritableFile(fname, pool, offset, index, fd);
-    }
+    // Push filename list
+    std::string filename = ParseFileName(fname);
+    PushFileNameList(filename);
+
+    *result = new PmemWritableFile(fname, pool, offset, index, fd);
     return s;
   }
 
@@ -673,8 +683,7 @@ class PmemEnv : public Env {
           res = 2;
           break;
         default:
-          printf("[ERROR] Invalid dbtmp number... \n");
-          // throw exception
+          abort();
           break;
       }
     } else if (fileNumber.find("MANIFEST") != std::string::npos) {
@@ -687,8 +696,7 @@ class PmemEnv : public Env {
           res = 4;
           break;
         default:
-          printf("[ERROR] Invalid MANIFEST number... \n");
-          // throw exception
+          abort();
           break;
       }
     } else if (fileNumber.find("CURRENT") != std::string::npos) {
@@ -696,24 +704,67 @@ class PmemEnv : public Env {
     }
     return res;
   }
-
+  // Replace fd with Vector(FileNameList)
+  virtual std::string ParseFileName(const std::string& fname) {
+    return fname.substr( fname.rfind("/")+1, fname.size());
+  }
+  virtual void PushFileNameList(const std::string& filename) {
+    FileNameList.push_back(filename);
+    // printf("[Push %d] %s\n", FileNameList.size(), filename.c_str());
+  }
+  virtual void EraseFileNameList(const std::string& filename) {
+    for (std::vector<std::string>::iterator iter = FileNameList.begin(); 
+          iter != FileNameList.end(); 
+          iter++) {
+      std::string str = *iter;
+      if (str.compare(filename) == 0) {
+        FileNameList.erase(iter);
+        // printf("[Erase] %s\n", str.c_str()); // store only name
+        break;
+      }
+    }
+  }
+  virtual void PrintFileNameList() {
+    for (std::vector<std::string>::iterator iter = FileNameList.begin(); 
+          iter != FileNameList.end(); 
+          iter++) {
+      std::string str = *iter;
+      printf("##%s##\n",str.c_str());
+    }
+  }
+  // Customized by JH
   virtual Status GetChildren(const std::string& dir,
-                             std::vector<std::string>* result) {
+                             std::vector<std::string>* result,
+                             bool benchmark_flag) {
+
     result->clear();
-    DIR* d = opendir(dir.c_str());
-    if (d == nullptr) {
-      return PosixError(dir, errno);
+    if (benchmark_flag) {
+      DIR* d = opendir(dir.c_str());
+      if (d == nullptr) {
+        return PosixError(dir, errno);
+      }
+      struct dirent* entry;
+      while ((entry = readdir(d)) != nullptr) {
+        result->push_back(entry->d_name);
+      }
+      closedir(d);
+    } else {
+      // result = &FileNameList;
+      for (std::vector<std::string>::iterator iter = FileNameList.begin(); 
+            iter != FileNameList.end(); 
+            iter++) {
+        std::string str = *iter;
+        result->push_back(str.c_str());
+        // printf("[GC] %s\n", str.c_str()); // store only name
+      }
+      // PrintFileNameList();
     }
-    struct dirent* entry;
-    while ((entry = readdir(d)) != nullptr) {
-      result->push_back(entry->d_name);
-    }
-    closedir(d);
+    
     return Status::OK();
   }
   // Customized by JH
   virtual Status DeleteFile(const std::string& fname, bool benchmark_flag) {
-    // if (benchmark_flag) printf("[DeleteFile] flag is true\n");
+    // if (!benchmark_flag) printf("[DeleteFile] %s\n", fname.c_str());
     Status result;
     // Extra file
     if (fname.find("MANIFEST") != std::string::npos
@@ -730,9 +781,14 @@ class PmemEnv : public Env {
         SetExtraOffset(1, 1, offset);
         SetExtraOffset(2, 2, offset);
       }
+      if (benchmark_flag) {
       if (unlink(fname.c_str()) != 0) {
         result = PosixError(fname, errno);
       }
+      }
+      // Erase filename list
+      std::string filename = ParseFileName(fname);
+      EraseFileNameList(filename);
     }
     // Normal file
     else if (fname.find(".log") != std::string::npos
@@ -749,10 +805,13 @@ class PmemEnv : public Env {
 
         // DA case (index-based)
         if (num >= OFFSETS_SIZE) {
-          std::list<IndexNumPair*> *allocList = GetAllocList(num);
-          index = GetIndexFromAllocList(allocList, (uint16_t)num);
+          // std::list<IndexNumPair*> *allocList = GetAllocList(num);
+          // index = GetIndexFromAllocList(allocList, (uint16_t)num);
+          // PopList(allocList, index);
+          std::map<uint16_t, uint16_t> *allocMap = GetAllocMap(num);
+          index = GetIndexFromAllocMap(allocMap, (uint16_t)num);
           // TO DO, Check ordering
-          PopList(allocList, index);
+          EraseMap(allocMap, num);
           // ResetFile(pool, index);
           SetOffset(index, num, offset_reset_value);
           PushList(freeList, index);
@@ -763,15 +822,22 @@ class PmemEnv : public Env {
           SetOffset(index, num, offset_reset_value);
           
           PushList(freeList, index);
+          // printf("Push List %d\n", index);
         }
       }
+      if (benchmark_flag) {
       if (unlink(fname.c_str()) != 0) {
         result = PosixError(fname, errno);
       }
-    }
-    else if (fname.find("file") != std::string::npos
+      }
+      std::string filename = ParseFileName(fname);
+      EraseFileNameList(filename);
+    } else if (fname.find("file") != std::string::npos
               || fname.find("offset") != std::string::npos) {
       // printf("[INFO] Do not delete file, offset\n");
+    } else if (fname.find(".dbtmp") != std::string::npos) {
+      std::string filename = ParseFileName(fname);
+      EraseFileNameList(filename);
     }
     return result;
   }
@@ -937,8 +1003,7 @@ class PmemEnv : public Env {
       case 9: pool = &filePool9; break;
       case -1: pool = &exfilePool; break;
       default: 
-        printf("[ERROR] Invalid File name type...\n");
-        // Throw exception
+        abort();
         break;
     }
     return pool;
@@ -1029,85 +1094,122 @@ class PmemEnv : public Env {
       case 8: list = &freeList8; break;
       case 9: list = &freeList9; break;
       default: 
-        printf("[ERROR] Invalid File name type...\n");
-        // Throw exception
+        abort();
         break;
     }
     return list;
   }
-  virtual std::list<IndexNumPair*>* GetAllocList(const int32_t num) {
-    std::list<IndexNumPair*> *list;
+  // virtual std::list<IndexNumPair*>* GetAllocList(const int32_t num) {
+  //   std::list<IndexNumPair*> *list;
+  //   switch (num % 10) {
+  //     case 0: list = &allocList0; break;
+  //     case 1: list = &allocList1; break;
+  //     case 2: list = &allocList2; break;
+  //     case 3: list = &allocList3; break;
+  //     case 4: list = &allocList4; break;
+  //     case 5: list = &allocList5; break;
+  //     case 6: list = &allocList6; break;
+  //     case 7: list = &allocList7; break;
+  //     case 8: list = &allocList8; break;
+  //     case 9: list = &allocList9; break;
+  //     default: 
+  //       printf("[ERROR] Invalid File name type...\n");
+  //       // Throw exception
+  //       break;
+  //   }
+  //   return list;
+  // }
+  virtual std::map<uint16_t, uint16_t>* GetAllocMap(const int32_t num) {
+    std::map<uint16_t, uint16_t> *map;
     switch (num % 10) {
-      case 0: list = &allocList0; break;
-      case 1: list = &allocList1; break;
-      case 2: list = &allocList2; break;
-      case 3: list = &allocList3; break;
-      case 4: list = &allocList4; break;
-      case 5: list = &allocList5; break;
-      case 6: list = &allocList6; break;
-      case 7: list = &allocList7; break;
-      case 8: list = &allocList8; break;
-      case 9: list = &allocList9; break;
+      case 0: map = &allocMap0; break;
+      case 1: map = &allocMap1; break;
+      case 2: map = &allocMap2; break;
+      case 3: map = &allocMap3; break;
+      case 4: map = &allocMap4; break;
+      case 5: map = &allocMap5; break;
+      case 6: map = &allocMap6; break;
+      case 7: map = &allocMap7; break;
+      case 8: map = &allocMap8; break;
+      case 9: map = &allocMap9; break;
       default: 
-        printf("[ERROR] Invalid File name type...\n");
-        // Throw exception
+        abort();
         break;
     }
-    return list;
+    return map;
   }
   // FreeList
   virtual void PushList(std::list<uint16_t> *list, uint16_t index) {
     list->push_back(index);
   }
   virtual uint16_t PopList(std::list<uint16_t> *list) {
+    assert(list->size() != 0);
     uint16_t res = list->front();
     list->pop_front();
     return res;
+    // printf("[ERROR] Free List is empty..\n");
   }
   // AllocList
-  virtual void PushList(std::list<IndexNumPair*> *list, 
-                          uint16_t index, uint16_t num) {
-    IndexNumPair* pair = new IndexNumPair(index, num);
-    list->push_back(pair);
+  // virtual void PushList(std::list<IndexNumPair*> *list, 
+  //                         uint16_t index, uint16_t num) {
+  //   IndexNumPair* pair = new IndexNumPair(index, num);
+  //   list->push_back(pair);
+  // }
+  // virtual void PopList(std::list<IndexNumPair*> *list, uint16_t index) {
+  //   std::list<IndexNumPair*>::iterator iter;
+  //   IndexNumPair* indexNumPair;
+  //   bool res = false;
+  //   for (iter = list->begin(); iter != list->end(); iter++) {
+  //     indexNumPair = *iter;
+  //     if (indexNumPair->index == index) {
+  //       list->remove(indexNumPair);
+  //       res = true;
+  //       break;
+  //     }
+  //   }
+  //   if (!res) {
+  //     printf("[ERROR][PopAllocList] Cannot pop..\n");
+  //   } else {
+  //     delete indexNumPair;
+  //   }
+  // }
+  // virtual uint16_t GetIndexFromAllocList(std::list<IndexNumPair*> *list, 
+  //                                     uint16_t num) {
+  //   std::list<IndexNumPair*>::iterator iter;
+  //   IndexNumPair* indexNumPair;
+  //   int16_t res = -1;
+  //   for (iter = list->begin(); iter != list->end(); iter++) {
+  //     indexNumPair = *iter;
+  //     if (indexNumPair->num == num) {
+  //       res = indexNumPair->index;
+  //       break;
+  //     }
+  //   }
+  //   // remove from list
+  //   if (res != -1) {
+  //     // list->remove(indexNumPair);
+  //   } else {
+  //     printf("[Error][GetIndexFromAllocList] Cannot seek index..\n");
+  //     // throw exception
+  //   }
+  //   return res;
+  // }
+  // AllocMap
+  virtual void InsertMap(std::map<uint16_t, uint16_t> *m, 
+                          uint16_t num, uint16_t index) {
+    // m->insert(std::pair<uint16_t, uint16_t>(num, index));
+    m->emplace(num, index);
   }
-  virtual void PopList(std::list<IndexNumPair*> *list, uint16_t index) {
-    std::list<IndexNumPair*>::iterator iter;
-    IndexNumPair* indexNumPair;
-    bool res = false;
-    for (iter = list->begin(); iter != list->end(); iter++) {
-      indexNumPair = *iter;
-      if (indexNumPair->index == index) {
-        list->remove(indexNumPair);
-        res = true;
-        break;
-      }
-    }
-    if (!res) {
-      printf("[ERROR][PopAllocList] Cannot pop..\n");
-    } else {
-      delete indexNumPair;
-    }
+  virtual void EraseMap(std::map<uint16_t, uint16_t> *m, uint16_t num) {
+    int res = m->erase(num);
+    assert(!res);
+    // printf("[ERROR][EraseAllocMap] Cannot erase..\n");
   }
-  virtual uint16_t GetIndexFromAllocList(std::list<IndexNumPair*> *list, 
-                                      uint16_t num) {
-    std::list<IndexNumPair*>::iterator iter;
-    IndexNumPair* indexNumPair;
-    int16_t res = -1;
-    for (iter = list->begin(); iter != list->end(); iter++) {
-      indexNumPair = *iter;
-      if (indexNumPair->num == num) {
-        res = indexNumPair->index;
-        break;
-      }
-    }
-    // remove from list
-    if (res != -1) {
-      // list->remove(indexNumPair);
-    } else {
-      printf("[Error][GetIndexFromAllocList] Cannot seek index..\n");
-      // throw exception
-    }
-    return res;
+  virtual uint16_t GetIndexFromAllocMap(std::map<uint16_t, uint16_t> *m, uint16_t num) {
+    std::map<uint16_t, uint16_t>::iterator iter = m->find(num);
+    assert (iter != m->end());
+    // printf("[ERROR][FindAllocMap] Cannot find..\n");
+    return iter->second;
   }
 
  private:
@@ -1160,6 +1262,12 @@ class PmemEnv : public Env {
   std::list<IndexNumPair*> allocList4; std::list<IndexNumPair*> allocList5;
   std::list<IndexNumPair*> allocList6; std::list<IndexNumPair*> allocList7;
   std::list<IndexNumPair*> allocList8; std::list<IndexNumPair*> allocList9;
+  //  3) allocated map
+  std::map<uint16_t, uint16_t> allocMap0; std::map<uint16_t, uint16_t> allocMap1;
+  std::map<uint16_t, uint16_t> allocMap2; std::map<uint16_t, uint16_t> allocMap3;
+  std::map<uint16_t, uint16_t> allocMap4; std::map<uint16_t, uint16_t> allocMap5;
+  std::map<uint16_t, uint16_t> allocMap6; std::map<uint16_t, uint16_t> allocMap7;
+  std::map<uint16_t, uint16_t> allocMap8; std::map<uint16_t, uint16_t> allocMap9;
 
   // 1-extra-filePool & ptr for MANIFEST, tmp file
   pobj::pool<rootFile> exfilePool;
@@ -1173,6 +1281,9 @@ class PmemEnv : public Env {
   pobj::pool<rootOffset> exOffsetPool;
   pobj::persistent_ptr<rootOffset> exOffsets;
 
+  // FileNameList
+  std::vector<std::string> FileNameList;
+  
 };
 
 PmemEnv::PmemEnv()

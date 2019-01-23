@@ -71,7 +71,9 @@ class TestEnv : public EnvWrapper {
   void SetIgnoreDotFiles(bool ignored) { ignore_dot_files_ = ignored; }
 
   Status GetChildren(const std::string& dir,
-                     std::vector<std::string>* result) override {
+                     std::vector<std::string>* result,
+                     // Customized by JH
+                     bool benchmark_flag=false) override {
     Status s = target()->GetChildren(dir, result);
     if (!s.ok() || !ignore_dot_files_) {
       return s;

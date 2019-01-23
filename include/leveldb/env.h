@@ -97,8 +97,10 @@ class LEVELDB_EXPORT Env {
   // Store in *result the names of the children of the specified directory.
   // The names are relative to "dir".
   // Original contents of *results are dropped.
+  // Customized by JH
   virtual Status GetChildren(const std::string& dir,
-                             std::vector<std::string>* result) = 0;
+                             std::vector<std::string>* result,
+                             bool benchmark_flag=false) = 0;
 
   // Delete the named file.
   // Customized by JH
@@ -310,8 +312,9 @@ class LEVELDB_EXPORT EnvWrapper : public Env {
     return target_->FileExists(f);
   }
   Status GetChildren(const std::string& dir,
-                     std::vector<std::string>* r) override {
-    return target_->GetChildren(dir, r);
+                     std::vector<std::string>* r,
+                     bool benchmark_flag=false) override {
+    return target_->GetChildren(dir, r, benchmark_flag);
   }
   Status DeleteFile(const std::string& f, bool benchmark_flag=false) override {
     return target_->DeleteFile(f, benchmark_flag);
