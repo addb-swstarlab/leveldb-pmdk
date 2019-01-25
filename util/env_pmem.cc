@@ -49,7 +49,7 @@
 #define FILE8 "/home/hwan/pmem_dir/file8"
 #define FILE9 "/home/hwan/pmem_dir/file9"
 #define NUM_OF_FILES 10
-#define FILESIZE (1024 * 1024  * 1024 * 1.9) // About 1.65GB
+#define FILESIZE (1024 * 1024  * 1024 * 1.95) // About 1.65GB
 #define FILEID "file"
 #define CONTENTS 1600000000 // 1.6GB
 #define EACH_CONTENT 4000000
@@ -206,11 +206,14 @@ class PmemRandomAccessFile : public RandomAccessFile {
   uint32_t index;
   int fd;
 
+  char* contents_offset;
+
  public:
   PmemRandomAccessFile(const std::string& fname, pobj::pool<rootFile>* pool, 
                     uint32_t start_offset, uint32_t index, int fd)
       : filename_(fname), pool(pool), start_offset(start_offset), index(index), fd(fd) {
     pobj::persistent_ptr<rootFile> ptr = pool->get_root();
+    // Get contents_size
     memcpy(&contents_size, ptr->contents_size.get() + (index * sizeof(uint32_t)), 
             sizeof(uint32_t));
     if (contents_size >= EACH_CONTENT) {
@@ -219,6 +222,8 @@ class PmemRandomAccessFile : public RandomAccessFile {
     if (contents_size == 0) {
       printf("[WARN][%s] contents_size is 0.. Maybe lost some data..\n", filename_.c_str());
     }
+    // Get contents start-offset
+    contents_offset = ptr->contents.get();
   }
 
   virtual ~PmemRandomAccessFile() {
@@ -233,20 +238,11 @@ class PmemRandomAccessFile : public RandomAccessFile {
   virtual Status Read(uint64_t offset, size_t n, Slice* result,
                       char* scratch) const {
     // printf("############# %s Read %lld %lld \n", filename_.c_str(), offset, n);
-    // ssize_t r = ptr->file->Read(offset, n, scratch);
-    // *result = Slice(scratch, (r<0 ? 0 : r));
-    // std::cout<<"Read End\n";
     Status s;
     // Get info
-    
     pobj::persistent_ptr<rootFile> ptr = pool->get_root();
     // pool->memcpy_persist(&contents_size, ptr->contents_size.get() + (index * sizeof(uint32_t)),
     //         sizeof(uint32_t));
-    
-
-    // if (filename_.find("025") != std::string::npos)
-    //   printf("sizeof uint32_t %d\n", sizeof(uint32_t));
-    //   printf("[READ DEBUG %s] %d %d %d\n",filename_.c_str(), contents_size, offset, n );
     ssize_t r;
 
     // TO DO, run memcpy without buffer-size limitation
@@ -262,7 +258,6 @@ class PmemRandomAccessFile : public RandomAccessFile {
       //     , avaliable_indexspace);
       // r = avaliable_indexspace;
 
-
       // Check, read n
       r = 0;
     } else {
@@ -270,15 +265,13 @@ class PmemRandomAccessFile : public RandomAccessFile {
 
       // pool->memcpy_persist(scratch, ptr->contents.get() + start_offset + offset 
       //     , n);
-      // strcpy(scratch, ptr->contents.get() + start_offset + offset);
-      memcpy(scratch, ptr->contents.get() + start_offset + offset 
-          , n);
+
+      // memcpy(scratch, ptr->contents.get() + start_offset + offset 
+      //     , n);
       r = n;
     }
-    *result = Slice(scratch, r);
-    // if (filename_.find("041") != std::string::npos) {
-    //   printf("Read %d] %d %d %s \n",index,contents_size, result->size(), result->data());
-    // }
+    // *result = Slice(scratch, r);
+    *result = Slice(ptr->contents.get() + start_offset + offset, r);
     // printf("Read %d %d %d] %d '%s' \n", offset, n, contents_size, result->size(), result->data());
     return s;
   }
@@ -496,6 +489,7 @@ class PmemEnv : public Env {
   virtual Status NewRandomAccessFile(const std::string& fname,
                                      RandomAccessFile** result) {
     // std::cout<< "NewRandomAccessFile "<<fname<<" \n";
+    
     Status s;
     // 1) Get info
     int32_t num = GetFileNumber(fname);
@@ -514,12 +508,17 @@ class PmemEnv : public Env {
     else {
       // Get offset
       if (num >= OFFSETS_SIZE) {
+    // std::cout<< "NewRandomAccessFile "<<fname<<" ";
         // std::list<IndexNumPair*> *allocList = GetAllocList(num); 
         // index = GetIndexFromAllocList(allocList , (uint16_t)num);
         // offset = ((uint16_t)index * EACH_CONTENT);
         std::map<uint16_t, uint16_t> *allocMap = GetAllocMap(num); 
         index = GetIndexFromAllocMap(allocMap, (uint16_t)num);
         offset = ((uint16_t)index * EACH_CONTENT);
+        
+        // std::list<uint16_t> *freeList = GetFreeList(num);
+        // PrintFreeListSize(freeList);
+        // PrintAllocMapSize(allocMap);
         // printf("[DEBUG][RandomAccess] %d %d %d\n", num, index, offset);
       }
     }
@@ -782,9 +781,9 @@ class PmemEnv : public Env {
         SetExtraOffset(2, 2, offset);
       }
       if (benchmark_flag) {
-      if (unlink(fname.c_str()) != 0) {
-        result = PosixError(fname, errno);
-      }
+        if (unlink(fname.c_str()) != 0) {
+          result = PosixError(fname, errno);
+        }
       }
       // Erase filename list
       std::string filename = ParseFileName(fname);
@@ -826,9 +825,9 @@ class PmemEnv : public Env {
         }
       }
       if (benchmark_flag) {
-      if (unlink(fname.c_str()) != 0) {
-        result = PosixError(fname, errno);
-      }
+        if (unlink(fname.c_str()) != 0) {
+          result = PosixError(fname, errno);
+        }
       }
       std::string filename = ParseFileName(fname);
       EraseFileNameList(filename);
@@ -1149,6 +1148,10 @@ class PmemEnv : public Env {
     return res;
     // printf("[ERROR] Free List is empty..\n");
   }
+  // For DEBUG
+  virtual void PrintFreeListSize(std::list<uint16_t> *list) {
+    printf(" freeList-size: %d ,",list->size());
+  }
   // AllocList
   // virtual void PushList(std::list<IndexNumPair*> *list, 
   //                         uint16_t index, uint16_t num) {
@@ -1199,6 +1202,8 @@ class PmemEnv : public Env {
                           uint16_t num, uint16_t index) {
     // m->insert(std::pair<uint16_t, uint16_t>(num, index));
     m->emplace(num, index);
+    // Check boundary
+    assert(m->size() < OFFSETS_SIZE);
   }
   virtual void EraseMap(std::map<uint16_t, uint16_t> *m, uint16_t num) {
     int res = m->erase(num);
@@ -1210,6 +1215,10 @@ class PmemEnv : public Env {
     assert (iter != m->end());
     // printf("[ERROR][FindAllocMap] Cannot find..\n");
     return iter->second;
+  }
+  // For DEBUG
+  virtual void PrintAllocMapSize(std::map<uint16_t, uint16_t> *m) {
+    printf(" size: %d \n",m->size());
   }
 
  private:
