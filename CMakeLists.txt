@@ -75,6 +75,7 @@ include_directories(
 )
 # JH
 include_directories(
+  "/usr/local/include/libpmemobj"
   "/usr/local/include/libpmemobj++"
 )
 #add_subdirectory(libpmemobj++)
@@ -185,10 +186,15 @@ target_sources(leveldb
     "${PROJECT_SOURCE_DIR}/util/random.h"
     "${PROJECT_SOURCE_DIR}/util/status.cc"
     # JH
-    #"${PROJECT_SOURCE_DIR}/pmem/pmem_file.cc"
-    #"${PROJECT_SOURCE_DIR}/pmem/pmem_file.h"
     "${PROJECT_SOURCE_DIR}/pmem/pmem_map.cc"
     "${PROJECT_SOURCE_DIR}/pmem/pmem_map.h"
+    "${PROJECT_SOURCE_DIR}/pmem/layout.h"
+    "${PROJECT_SOURCE_DIR}/pmem/ds/skiplist_map.cc"
+    "${PROJECT_SOURCE_DIR}/pmem/ds/skiplist_map.h"
+    "${PROJECT_SOURCE_DIR}/pmem/map/map_skiplist.cc"
+    "${PROJECT_SOURCE_DIR}/pmem/map/map_skiplist.h"
+    "${PROJECT_SOURCE_DIR}/pmem/map/map.cc"
+    "${PROJECT_SOURCE_DIR}/pmem/map/map.h"
 
   # Only CMake 3.3+ supports PUBLIC sources in targets exported by "install".
   $<$<VERSION_GREATER:CMAKE_VERSION,3.2>:PUBLIC>
@@ -355,7 +361,7 @@ if(LEVELDB_BUILD_TESTS)
     leveldb_test("${PROJECT_SOURCE_DIR}/util/logging_test.cc")
 
     # JH
-    leveldb_test("${PROJECT_SOURCE_DIR}/pmem/pmem_map_test.cpp")
+    leveldb_test("${PROJECT_SOURCE_DIR}/pmem/pmem_map_test.cc")
 
     # TODO(costan): This test also uses
     #               "${PROJECT_SOURCE_DIR}/util/env_posix_test_helper.h"
