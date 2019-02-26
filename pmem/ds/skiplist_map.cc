@@ -40,6 +40,9 @@
 #include <stdio.h>
 #include "pmem/ds/skiplist_map.h"
 
+#include <chrono>
+#include <iostream>
+
 #define SKIPLIST_LEVELS_NUM 4
 #define NULL_NODE TOID_NULL(struct skiplist_map_node)
 
@@ -57,6 +60,12 @@ struct skiplist_map_node {
 	struct skiplist_map_entry entry;
 };
 
+/* LAST_NODE for find insert-position(next) */
+struct store_last_node {
+	TOID(struct skiplist_map_node) path[SKIPLIST_LEVELS_NUM];
+};
+struct store_last_node last_node;
+
 /*
  * skiplist_map_create -- allocates a new skiplist instance
  */
@@ -67,8 +76,11 @@ skiplist_map_create(PMEMobjpool *pop, TOID(struct skiplist_map_node) *map,
 	int ret = 0;
 
 	TX_BEGIN(pop) {
+		// printf("[DEBUG1]");
 		pmemobj_tx_add_range_direct(map, sizeof(*map));
+		// printf(" - [DEBUG2]");
 		*map = TX_ZNEW(struct skiplist_map_node);
+		// printf(" - [DEBUG3] \n");
 	} TX_ONABORT {
 		ret = 1;
 	} TX_END
@@ -106,7 +118,7 @@ skiplist_map_destroy(PMEMobjpool *pop, TOID(struct skiplist_map_node) *map)
 		skiplist_map_clear(pop, *map);
 		// printf("[DEBUG] 2\n");
 		/* 
-		 * TODO [190222][JH], Need to fix this function call...
+		 * TODO: [190222][JH], Need to fix this function call...
 		 * Since this occurs error, it goes to TX_ONABORT state
 		 */
 		// pmemobj_tx_add_range_direct(map, sizeof(*map));
@@ -150,6 +162,7 @@ static void
 skiplist_map_insert_node(TOID(struct skiplist_map_node) new_node,
 	TOID(struct skiplist_map_node) path[SKIPLIST_LEVELS_NUM])
 {
+	// std::chrono::steady_clock::time_point begin = std::chrono::steady_clock::now();
 	unsigned current_level = 0;
 	do {
 		TX_ADD_FIELD(path[current_level], next[current_level]);
@@ -157,6 +170,9 @@ skiplist_map_insert_node(TOID(struct skiplist_map_node) new_node,
 			D_RO(path[current_level])->next[current_level];
 		D_RW(path[current_level])->next[current_level] = new_node;
 	} while (++current_level < SKIPLIST_LEVELS_NUM && rand() % 2 == 0);
+	
+	// std::chrono::steady_clock::time_point end= std::chrono::steady_clock::now();
+	// std::cout << "insert-node = " << std::chrono::duration_cast<std::chrono::nanoseconds> (end - begin).count() <<std::endl;
 }
 
 /*
@@ -167,28 +183,61 @@ static void
 skiplist_map_find(PMEMobjpool *pop, char *key, 
 	TOID(struct skiplist_map_node) map, TOID(struct skiplist_map_node) *path)
 {
+	// std::chrono::steady_clock::time_point begin = std::chrono::steady_clock::now();
 	int current_level;
 	TOID(struct skiplist_map_node) active = map;
 	for (current_level = SKIPLIST_LEVELS_NUM - 1;
 			current_level >= 0; current_level--) {
-		/* Initialize variables */
 		TOID(struct skiplist_map_node) next = D_RO(active)->next[current_level];
 		for ( void *ptr ;
 				!TOID_EQUALS(next, NULL_NODE);
 				next = D_RO(active)->next[current_level]) {
 			uint8_t key_len = D_RO(next)->entry.key_len+1;
 			ptr = pmemobj_direct(D_RO(next)->entry.key);
-			// printf("[DEBUG] key:'%s' ptr:'%s' buf:'%s'\n", key, (char *)ptr, buf);
 			if (strcmp(key, (char *)ptr) <= 0)  { // ascending order
 			// if (strcmp(key, (char *)ptr) >= 0)  { // descending order
 				break;
 			}
+			printf("[DEBUG %d] key:'%s' ptr:'%s'\n", current_level, key, (char *)ptr);
 			active = next;
 		}
 		path[current_level] = active;
 	}
+	// std::chrono::steady_clock::time_point end= std::chrono::steady_clock::now();
+	// std::cout << "find = " << std::chrono::duration_cast<std::chrono::nanoseconds> (end - begin).count() <<" / ";
 }
-
+/*
+ * skiplist_map_find_insert -- (internal) returns path to last node, or if
+ * node doesn't exist, it will return path to place where key should be.
+ */
+static void
+skiplist_map_find_insert(PMEMobjpool *pop, char *key, 
+	TOID(struct skiplist_map_node) map, TOID(struct skiplist_map_node) *path)
+{
+	// std::chrono::steady_clock::time_point begin = std::chrono::steady_clock::now();
+	int current_level;
+	TOID(struct skiplist_map_node) active = map;
+	for (current_level = SKIPLIST_LEVELS_NUM - 1;
+			current_level >= 0; current_level--) {
+		TOID(struct skiplist_map_node) next = D_RO(active)->next[current_level];
+		if (TOID_EQUALS(next, NULL_NODE)) {
+			path[current_level] = active;
+			last_node.path[current_level] = active;
+		} else {
+			active = last_node.path[current_level];
+			next = D_RO(active)->next[current_level];
+			if (TOID_EQUALS(next, NULL_NODE)) {
+				path[current_level] = active;
+				last_node.path[current_level] = active;
+			} else {
+				path[current_level] = next;
+				last_node.path[current_level] = next;
+			}
+		}
+	}
+	// std::chrono::steady_clock::time_point end= std::chrono::steady_clock::now();
+	// std::cout << "find = " << std::chrono::duration_cast<std::chrono::nanoseconds> (end - begin).count() <<" / ";
+}
 /*
  * skiplist_map_insert -- inserts a new key-value pair into the map
  */
@@ -201,20 +250,54 @@ skiplist_map_insert(PMEMobjpool *pop, TOID(struct skiplist_map_node) map,
 	TOID(struct skiplist_map_node) new_node;
 	TOID(struct skiplist_map_node) path[SKIPLIST_LEVELS_NUM];
 
+	std::chrono::steady_clock::time_point begin, end;
 	TX_BEGIN(pop) {
+		// begin = std::chrono::steady_clock::now();
+		// printf("New");
 		new_node = TX_ZNEW(struct skiplist_map_node);
+	// 	end= std::chrono::steady_clock::now();
+	// std::cout << "insert1 = " << std::chrono::duration_cast<std::chrono::nanoseconds> (end - begin).count() <<" / ";
+	// 	begin = std::chrono::steady_clock::now();
+		// printf("-key");
 		D_RW(new_node)->entry.key = pmemobj_tx_zalloc(strlen(key), 500); // temp, string:= 500
+	// 	end= std::chrono::steady_clock::now();
+	// std::cout << "insert2 = " << std::chrono::duration_cast<std::chrono::nanoseconds> (end - begin).count() <<" / ";
+	// 	begin = std::chrono::steady_clock::now();
 		void *key_ptr = pmemobj_direct(D_RW(new_node)->entry.key);
+	// 	end= std::chrono::steady_clock::now();
+	// std::cout << "insert3 = " << std::chrono::duration_cast<std::chrono::nanoseconds> (end - begin).count() <<" / ";
+	// 	begin = std::chrono::steady_clock::now();
 		pmemobj_memcpy_persist(pop, (char *)key_ptr, (char *)key, strlen(key)+1);
+	// 	end= std::chrono::steady_clock::now();
+	// std::cout << "insert4 = " << std::chrono::duration_cast<std::chrono::nanoseconds> (end - begin).count() <<" / ";
+	// 	begin = std::chrono::steady_clock::now();
 		D_RW(new_node)->entry.key_len = (uint8_t)strlen(key)+1; 
+	// 	end= std::chrono::steady_clock::now();
+	// std::cout << "insert5 = " << std::chrono::duration_cast<std::chrono::nanoseconds> (end - begin).count() <<"\n";
 
-		D_RW(new_node)->entry.value = pmemobj_tx_zalloc(strlen(value), 600); // temp, string:= 500
+		// printf("-value");
+		// begin = std::chrono::steady_clock::now();
+		D_RW(new_node)->entry.value = pmemobj_tx_alloc(strlen(value), 600); // temp, string:= 500
+	// 	end= std::chrono::steady_clock::now();
+	// std::cout << "insert1 = " << std::chrono::duration_cast<std::chrono::nanoseconds> (end - begin).count() <<" / ";
+		// begin = std::chrono::steady_clock::now();
 		void *value_ptr = pmemobj_direct(D_RW(new_node)->entry.value);
+	// 	end= std::chrono::steady_clock::now();
+	// std::cout << "insert2 = " << std::chrono::duration_cast<std::chrono::nanoseconds> (end - begin).count() <<" / ";
+	// 	begin = std::chrono::steady_clock::now();
 		pmemobj_memcpy_persist(pop, (char *)value_ptr, (char *)value, strlen(value)+1);
+	// 	end= std::chrono::steady_clock::now();
+	// std::cout << "insert3 = " << std::chrono::duration_cast<std::chrono::nanoseconds> (end - begin).count() <<"\n";
+	// 	begin = std::chrono::steady_clock::now();
 		D_RW(new_node)->entry.value_len = (uint8_t)strlen(value)+1; 
-
-		skiplist_map_find(pop, key, map, path);
+	// 	end= std::chrono::steady_clock::now();
+	// std::cout << "insert2 = " << std::chrono::duration_cast<std::chrono::nanoseconds> (end - begin).count() <<" / ";
+		printf("keylen:%d, valuelen:%d\n",D_RW(new_node)->entry.key_len, D_RW(new_node)->entry.value_len);
+ 		// printf("-find");
+		skiplist_map_find_insert(pop, key, map, path);
+		// printf("-insertNode");
 		skiplist_map_insert_node(new_node, path);
+		// printf("-End\n");
 
 	} TX_ONABORT {
 		ret = 1;
@@ -332,7 +415,7 @@ skiplist_map_get(PMEMobjpool *pop, TOID(struct skiplist_map_node) map,
 		pmemobj_memcpy_persist(pop, buf, ptr, key_len);
 	// printf("[GET-DEBUG] key:'%s' ptr:'%s' buf:'%s'\n", key, (char *)ptr, buf);
 		if (strcmp(buf, key) == 0) {
-	printf("66\n");
+	// printf("66\n");
 			free(buf);
 			uint8_t value_len = D_RO(found)->entry.value_len+1;
 			buf = (char *)malloc(value_len);
@@ -389,12 +472,24 @@ skiplist_map_foreach(PMEMobjpool *pop, TOID(struct skiplist_map_node) map,
 		next = D_RO(next)->next[0];
 		void *key_ptr = pmemobj_direct(D_RO(next)->entry.key);
 		void *value_ptr = pmemobj_direct(D_RO(next)->entry.value);
-		char *res_key = new char;
-		char *res_value = new char;
-		pmemobj_memcpy_persist(pop, res_key, key_ptr, 
-														D_RO(next)->entry.key_len);
-		pmemobj_memcpy_persist(pop, res_value, value_ptr, 
-														D_RO(next)->entry.value_len);
+
+		char *res_key = new char[D_RO(next)->entry.key_len];
+		char *res_value = new char[D_RO(next)->entry.value_len];
+
+		strcpy(res_key, (char *)key_ptr);
+		strcpy(res_value, (char *)value_ptr);
+		
+		// pmemobj_memcpy_persist(pop, res_key, key_ptr, 
+		// 												D_RO(next)->entry.key_len);
+		// pmemobj_memcpy_persist(pop, res_value, value_ptr, 
+		// 												D_RO(next)->entry.value_len);
+
+		// char *res_key = new char;
+		// char *res_value = new char;
+		// pmemobj_memcpy_persist(pop, res_key, key_ptr, 
+		// 												D_RO(next)->entry.key_len);
+		// pmemobj_memcpy_persist(pop, res_value, value_ptr, 
+		// 												D_RO(next)->entry.value_len);
 
 		cb(res_key, res_value, arg);
 	}
