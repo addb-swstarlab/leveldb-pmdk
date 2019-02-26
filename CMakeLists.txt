@@ -116,6 +116,9 @@ find_library(
 target_sources(leveldb
   PRIVATE
     "${PROJECT_BINARY_DIR}/${LEVELDB_PORT_CONFIG_DIR}/port_config.h"
+    #"${PROJECT_SOURCE_DIR}/pmem/pmem_skiplist.cc"
+    #"${PROJECT_SOURCE_DIR}/pmem/pmem_skiplist.h"
+
     "${PROJECT_SOURCE_DIR}/db/builder.cc"
     "${PROJECT_SOURCE_DIR}/db/builder.h"
     "${PROJECT_SOURCE_DIR}/db/c.cc"
@@ -195,6 +198,8 @@ target_sources(leveldb
     "${PROJECT_SOURCE_DIR}/pmem/map/map_skiplist.h"
     "${PROJECT_SOURCE_DIR}/pmem/map/map.cc"
     "${PROJECT_SOURCE_DIR}/pmem/map/map.h"
+    "${PROJECT_SOURCE_DIR}/pmem/pmem_skiplist.cc"
+    "${PROJECT_SOURCE_DIR}/pmem/pmem_skiplist.h"
 
   # Only CMake 3.3+ supports PUBLIC sources in targets exported by "install".
   $<$<VERSION_GREATER:CMAKE_VERSION,3.2>:PUBLIC>
@@ -362,6 +367,7 @@ if(LEVELDB_BUILD_TESTS)
 
     # JH
     leveldb_test("${PROJECT_SOURCE_DIR}/pmem/pmem_map_test.cc")
+    leveldb_test("${PROJECT_SOURCE_DIR}/pmem/pmem_skiplist_test.cc")
 
     # TODO(costan): This test also uses
     #               "${PROJECT_SOURCE_DIR}/util/env_posix_test_helper.h"
