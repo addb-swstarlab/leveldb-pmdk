@@ -56,12 +56,12 @@ map_skiplist_check(PMEMobjpool *pop, TOID(struct map) map)
  * map_skiplist_create -- wrapper for skiplist_map_new
  */
 static int
-map_skiplist_create(PMEMobjpool *pop, TOID(struct map) *map, void *arg)
+map_skiplist_create(PMEMobjpool *pop, TOID(struct map) *map, int index, void *arg)
 {
 	TOID(struct skiplist_map_node) *skiplist_map =
 		(TOID(struct skiplist_map_node) *)map;
 
-	return skiplist_map_create(pop, skiplist_map, arg);
+	return skiplist_map_create(pop, skiplist_map, index, arg);
 }
 
 /*
@@ -81,12 +81,13 @@ map_skiplist_destroy(PMEMobjpool *pop, TOID(struct map) *map)
  */
 static int
 map_skiplist_insert(PMEMobjpool *pop, TOID(struct map) map,
-		char *key, char *value)
+		char *key, char *value, int key_len, int value_len, int index)
 {
 	TOID(struct skiplist_map_node) skiplist_map;
 	TOID_ASSIGN(skiplist_map, map.oid);
 
-	return skiplist_map_insert(pop, skiplist_map, key, value);
+	return skiplist_map_insert(pop, skiplist_map, key, value, 
+																key_len, value_len, index);
 }
 
 /*

@@ -43,6 +43,12 @@ class TableCache {
              const Slice& k,
              void* arg,
              void (*handle_result)(void*, const Slice&, const Slice&));
+  // JH
+  Status GetFromPmem(const Options& options,
+                     uint64_t file_number,
+                     const Slice& k,
+                     void* arg,
+                     void (*handle_result)(void*, const Slice&, const Slice&));
 
   // Evict any entry for the specified file number
   void Evict(uint64_t file_number);

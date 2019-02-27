@@ -7,6 +7,8 @@
 
 #include <stddef.h>
 #include "leveldb/export.h"
+// JH
+#include "pmem/pmem_skiplist.h"
 
 namespace leveldb {
 
@@ -153,6 +155,9 @@ struct LEVELDB_EXPORT Options {
   //
   // Default: nullptr
   const FilterPolicy* filter_policy;
+
+  // JH 
+  PmemSkiplist *pmem_skiplist;
 
   // Create an Options object with default values for all fields.
   Options();

@@ -69,8 +69,11 @@ class Version {
     FileMetaData* seek_file;
     int seek_file_level;
   };
-  Status Get(const ReadOptions&, const LookupKey& key, std::string* val,
-             GetStats* stats);
+  // Customized by JH
+  // Status Get(const ReadOptions&, const LookupKey& key, std::string* val,
+  //            GetStats* stats);
+  Status Get(const Options&, const ReadOptions&, const LookupKey& key, 
+              std::string* val, GetStats* stats);
 
   // Adds "stats" into the current state.  Returns true if a new
   // compaction may need to be triggered, false otherwise.

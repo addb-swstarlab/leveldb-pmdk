@@ -79,7 +79,7 @@ namespace leveldb {
                         sizeof(TOID(struct map)) * SKIPLIST_MANAGER_LIST_SIZE);
       /* create */
       for (int i=0; i<SKIPLIST_MANAGER_LIST_SIZE; i++) {
-        int res = map_create(mapc, &(skiplists[i].map), &args); 
+        int res = map_create(mapc, &(skiplists[i].map), i, &args); 
         if (res) printf("[CREATE ERROR %d] %d\n",i ,res);
         else if (i==SKIPLIST_MANAGER_LIST_SIZE-1) printf("[CREATE SUCCESS %d]\n",i);	
         map[i] = skiplists[i].map;
@@ -113,10 +113,13 @@ namespace leveldb {
     return pool;
   };
 
-  void PmemSkiplist::Insert(int index, char *key, char *value) {
-    int res = map_insert(mapc, map[index], key, value);
+  void PmemSkiplist::Insert(char *key, char *value, int key_len, int value_len, int index) {
+    int res = map_insert(mapc, map[index], key, value, key_len, value_len, index);
     if(res) { fprintf(stderr, "[ERROR] insert %d\n", index);  abort();} 
     // else if (!res) printf("insert %d] success\n", index);
+  }
+  char* PmemSkiplist::Get(int index, char *key) {
+    return map_get(mapc, map[index], key);
   }
 
 } // namespace leveldb 

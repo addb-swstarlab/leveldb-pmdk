@@ -34,7 +34,6 @@ SPDX-License-Identifier: BSD-3-Clause
 #include "util/testharness.h"
 
 // For this test
-#include <cinttypes>
 #include "pmem/pmem_map.h"
 #include "pmem/layout.h"
 #include "pmem/map/map.h"
@@ -121,6 +120,8 @@ file_exists (const std::string &name)
 // 	/* Close persistent pool */
 // 	pmemobj_close(pool);
 // }
+
+
 static int
 hashmap_print(char *key, char *value, void *arg)
 {
@@ -129,9 +130,7 @@ hashmap_print(char *key, char *value, void *arg)
 }
 
 TEST (PmemMapTest, Skiplist_map) {
-	// struct root_pmap {
-  // 	char buf[BUF_SIZE];
-	// };
+
 	POBJ_LAYOUT_BEGIN(root_skiplist_map);
 	POBJ_LAYOUT_ROOT(root_skiplist_map, struct root_skiplist_map);
 	POBJ_LAYOUT_END(root_skiplist_map);
@@ -144,28 +143,13 @@ TEST (PmemMapTest, Skiplist_map) {
 	static TOID(struct map) map;
 	const struct map_ops *ops = MAP_SKIPLIST;
 
-
-	// struct root {
-	// 	int count;
-	// 	PMEMoid skiplists;
-	// };
-
-	// TOID(struct root) rootoid = POBJ_ROOT(pm_pool, struct root);
-	// struct root *root_ptr = D_RW(rootoid);
-
-	// // Initialize by counting 10
-	// root_ptr->count = 10;
-	// root_ptr->skiplists = pmemobj_tx_zalloc(sizeof(skiplist) * count, PM_TYPE_SKIPLISTS);
-	// skiplist *skiplists = pmemobj_direct(root_ptr->skiplists);
-	// skiplists[0];
-
 	cout << "# Start Skiplist_map" << endl;
 	// Prepare the input to store into persistent memory
 	
-	if (!file_exists(MAP_PATH)) {
-		pool = pmemobj_create(MAP_PATH, 
-													POBJ_LAYOUT_NAME(root_skiplist_map), 
-													MAP_SIZE, 0666); // S_IRUSR | S_IWUSR
+	if (!file_exists(SKIPLIST_PATH)) {
+		pool = pmemobj_create(SKIPLIST_PATH, 
+								POBJ_LAYOUT_NAME(root_skiplist_map), 
+								SKIPLIST_POOL_SIZE, 0666); // S_IRUSR | S_IWUSR
 		if (pool == NULL) {
 			fprintf(stderr, "failed to create pool: %s\n",
 					pmemobj_errormsg());
@@ -185,14 +169,14 @@ TEST (PmemMapTest, Skiplist_map) {
 
 		root = POBJ_ROOT(pool, struct root_skiplist_map);
 
-		int res = map_create(mapc, &D_RW(root)->map, &args);
+		int res = map_create(mapc, &D_RW(root)->map, 0, &args);
 
 		if (res) printf("[CREATE ERROR] %d\n",res);
 		else printf("[CREATE SUCCESS] %d\n",res);	
 		map = D_RO(root)->map;
 
 	} else {
-		pool = pmemobj_open(MAP_PATH, POBJ_LAYOUT_NAME(root_skiplist_map));
+		pool = pmemobj_open(SKIPLIST_PATH, POBJ_LAYOUT_NAME(root_skiplist_map));
 		if (pool == NULL) {
 			fprintf(stderr, "failed to open pool: %s\n",
 					pmemobj_errormsg());
@@ -207,8 +191,8 @@ TEST (PmemMapTest, Skiplist_map) {
 		root = POBJ_ROOT(pool, struct root_skiplist_map);
 		map = D_RW(root)->map;
 		// char *test = " 12";
-		char *key = "789";
-		char *value = "value45";
+		// char *key = "789";
+		// char *value = "value45";
 		/* insert */
 		// int res;
 		// res = map_insert(mapc, map, key, value); 
@@ -258,8 +242,6 @@ TEST (PmemMapTest, Skiplist_map) {
 		// printf("destroy] %s\n", destroy ? "FAILED" : "SUCCESS");
 
 		/* print all */
-		if (mapc->ops->count)
-			printf("count: %zu\n", map_count(mapc, map));
 		map_foreach(mapc, map, hashmap_print, NULL);
 		printf("\n");
 

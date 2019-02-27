@@ -70,6 +70,7 @@ Slice BlockBuilder::Finish() {
   return Slice(buffer_);
 }
 
+/* TODO: Write file based on pmem */
 void BlockBuilder::Add(const Slice& key, const Slice& value) {
   Slice last_key_piece(last_key_);
   assert(!finished_);

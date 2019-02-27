@@ -19,7 +19,8 @@ namespace leveldb {
     PMEMobjpool* GetPool();
 
     /* Wrapper function */
-    void Insert(int index, char *key, char *value);
+    void Insert(char *key, char *value, int key_len, int value_len, int index);
+    char* Get(int index, char *key);
 
 
    private:

@@ -55,11 +55,11 @@ struct map_ctx;
 
 struct map_ops {
 	int(*check)(PMEMobjpool *pop, TOID(struct map) map);
-	int(*create)(PMEMobjpool *pop, TOID(struct map) *map, void *arg);
+	int(*create)(PMEMobjpool *pop, TOID(struct map) *map, int index, void *arg);
 	int(*destroy)(PMEMobjpool *pop, TOID(struct map) *map);
 	int(*init)(PMEMobjpool *pop, TOID(struct map) map);
 	int(*insert)(PMEMobjpool *pop, TOID(struct map) map,
-		char *key, char *value);
+		char *key, char *value, int key_len, int value_len, int index);
 	/* Deprecated function */
 	int(*insert_new)(PMEMobjpool *pop, TOID(struct map) map,
 		char *key, size_t size,
@@ -92,11 +92,11 @@ struct map_ctx {
 struct map_ctx *map_ctx_init(const struct map_ops *ops, PMEMobjpool *pop);
 void map_ctx_free(struct map_ctx *mapc);
 int map_check(struct map_ctx *mapc, TOID(struct map) map);
-int map_create(struct map_ctx *mapc, TOID(struct map) *map, void *arg);
+int map_create(struct map_ctx *mapc, TOID(struct map) *map, int index, void *arg);
 int map_destroy(struct map_ctx *mapc, TOID(struct map) *map);
 int map_init(struct map_ctx *mapc, TOID(struct map) map);
 int map_insert(struct map_ctx *mapc, TOID(struct map) map,
-	char *key, char *value);
+	char *key, char *value, int key_len, int value_len, int index);
 /* Deprecated function */
 int map_insert_new(struct map_ctx *mapc, TOID(struct map) map,
 	char *key, size_t size,

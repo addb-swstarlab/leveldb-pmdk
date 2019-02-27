@@ -218,14 +218,17 @@ Iterator* Table::NewIterator(const ReadOptions& options) const {
       &Table::BlockReader, const_cast<Table*>(this), options);
 }
 
+/* TODO: Get based on pmem */
 Status Table::InternalGet(const ReadOptions& options, const Slice& k,
                           void* arg,
                           void (*saver)(void*, const Slice&, const Slice&)) {
   Status s;
   Iterator* iiter = rep_->index_block->NewIterator(rep_->options.comparator);
   iiter->Seek(k);
+  // printf("[DEBUG InternalGet1]'%s' \n", k.data());
   if (iiter->Valid()) {
     Slice handle_value = iiter->value();
+  // printf("[DEBUG InternalGet2]'%s' \n", handle_value.data());
     FilterBlockReader* filter = rep_->filter;
     BlockHandle handle;
     if (filter != nullptr &&
@@ -236,7 +239,8 @@ Status Table::InternalGet(const ReadOptions& options, const Slice& k,
       Iterator* block_iter = BlockReader(this, options, iiter->value());
       block_iter->Seek(k);
       if (block_iter->Valid()) {
-        (*saver)(arg, block_iter->key(), block_iter->value());
+        (*saver)(arg, block_iter->key(), block_iter->value()); //[JH] Return value
+        // printf("[DEBUG InternalGet3]'%s'-'%s'\n", block_iter->key().data(), block_iter->value().data());
       }
       s = block_iter->status();
       delete block_iter;

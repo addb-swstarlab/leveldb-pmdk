@@ -329,7 +329,9 @@ void Version::ForEachOverlapping(Slice user_key, Slice internal_key,
   }
 }
 
-Status Version::Get(const ReadOptions& options,
+/* TODO: Get based on pmem */
+Status Version::Get(const Options& options_,
+                    const ReadOptions& options,
                     const LookupKey& k,
                     std::string* value,
                     GetStats* stats) {
@@ -350,8 +352,8 @@ Status Version::Get(const ReadOptions& options,
   FileMetaData* tmp2;
   for (int level = 0; level < config::kNumLevels; level++) {
     size_t num_files = files_[level].size();
+    // printf("[DEBUG] level:%d\n", level);
     if (num_files == 0) continue;
-
     // Get the list of files to search in this level
     FileMetaData* const* files = &files_[level][0];
     if (level == 0) {
@@ -390,6 +392,7 @@ Status Version::Get(const ReadOptions& options,
     }
 
     for (uint32_t i = 0; i < num_files; ++i) {
+      // printf("[DEBUG %d]\n", i);
       if (last_file_read != nullptr && stats->seek_file == nullptr) {
         // We have had more than one seek for this read.  Charge the 1st file.
         stats->seek_file = last_file_read;
@@ -405,7 +408,14 @@ Status Version::Get(const ReadOptions& options,
       saver.ucmp = ucmp;
       saver.user_key = user_key;
       saver.value = value;
-      s = vset_->table_cache_->Get(options, f->number, f->file_size,
+      /*
+       * TODO: Get operation 
+       */
+      // printf("[version_set][Get1]'%s' %d\n",ikey.data(), ikey.size());
+      // printf("[version_set][Get2]'%s' %d\n",user_key.data(), user_key.size());
+      // s = vset_->table_cache_->Get(options, f->number, f->file_size,
+      //                              ikey, &saver, SaveValue);
+      s = vset_->table_cache_->GetFromPmem(options_, f->number,
                                    ikey, &saver, SaveValue);
       if (!s.ok()) {
         return s;

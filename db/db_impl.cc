@@ -113,6 +113,8 @@ Options SanitizeOptions(const std::string& dbname,
   if (result.block_cache == nullptr) {
     result.block_cache = NewLRUCache(8 << 20);
   }
+  // JH
+  result.pmem_skiplist = new PmemSkiplist;
   return result;
 }
 
@@ -504,6 +506,9 @@ Status DBImpl::WriteLevel0Table(MemTable* mem, VersionEdit* edit,
   Status s;
   {
     mutex_.Unlock();
+    /*
+     * TODO: Write file based on pmem
+     */
     s = BuildTable(dbname_, env_, options_, table_cache_, iter, &meta);
     mutex_.Lock();
   }
@@ -835,6 +840,7 @@ Status DBImpl::FinishCompactionOutputFile(CompactionState* compact,
   }
   const uint64_t current_bytes = compact->builder->FileSize();
   compact->current_output()->file_size = current_bytes;
+  // printf("[DEBUG][num_entries %d][filesize %d]\n", current_entries, current_bytes);
   compact->total_bytes += current_bytes;
   delete compact->builder;
   compact->builder = nullptr;
@@ -1147,7 +1153,10 @@ Status DBImpl::Get(const ReadOptions& options,
     } else if (imm != nullptr && imm->Get(lkey, value, &s)) {
       // Done
     } else {
-      s = current->Get(options, lkey, value, &stats);
+      /* TODO: Get based on pmem */
+      // s = current->Get(options, lkey, value, &stats);
+      s = current->Get(options_, options, lkey, value, &stats);
+      // printf("Version Get\n");
       have_stat_update = true;
     }
     mutex_.Lock();
@@ -1214,7 +1223,6 @@ Status DBImpl::Write(const WriteOptions& options, WriteBatch* my_batch) {
   if (w.done) {
     return w.status;
   }
-
   // May temporarily unlock and wait.
   Status status = MakeRoomForWrite(my_batch == nullptr);
   uint64_t last_sequence = versions_->LastSequence();
@@ -1366,6 +1374,7 @@ Status DBImpl::MakeRoomForWrite(bool force) {
       assert(versions_->PrevLogNumber() == 0);
       uint64_t new_log_number = versions_->NewFileNumber();
       WritableFile* lfile = nullptr;
+      // printf("[DEBUG %d] log_num\n", new_log_number);
       s = env_->NewWritableFile(LogFileName(dbname_, new_log_number), &lfile);
       if (!s.ok()) {
         // Avoid chewing through file number space in a tight loop.
@@ -1500,7 +1509,6 @@ DB::~DB() { }
 Status DB::Open(const Options& options, const std::string& dbname,
                 DB** dbptr) {
   *dbptr = nullptr;
-
   DBImpl* impl = new DBImpl(options, dbname);
   impl->mutex_.Lock();
   VersionEdit edit;
@@ -1568,6 +1576,11 @@ Status DestroyDB(const std::string& dbname, const Options& options) {
         }
       }
     }
+    /* [JH]
+     * db_bench run open() twice.. 
+     * Thus, temp delete 
+     */
+    env->DeleteFile("/home/hwan/pmem_dir/skiplist_manager");
     env->UnlockFile(lock);  // Ignore error since state is already gone
     env->DeleteFile(lockname);
     env->DeleteDir(dbname);  // Ignore error in case dir contains other files

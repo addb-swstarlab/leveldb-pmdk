@@ -101,7 +101,7 @@ Iterator* TableCache::NewIterator(const ReadOptions& options,
   }
   return result;
 }
-
+/* TODO: Get based on pmem */
 Status TableCache::Get(const ReadOptions& options,
                        uint64_t file_number,
                        uint64_t file_size,
@@ -109,6 +109,7 @@ Status TableCache::Get(const ReadOptions& options,
                        void* arg,
                        void (*saver)(void*, const Slice&, const Slice&)) {
   Cache::Handle* handle = nullptr;
+  /* TODO: Get based on pmem*/
   Status s = FindTable(file_number, file_size, &handle);
   if (s.ok()) {
     Table* t = reinterpret_cast<TableAndFile*>(cache_->Value(handle))->table;
@@ -117,6 +118,39 @@ Status TableCache::Get(const ReadOptions& options,
   }
   return s;
 }
+// JH
+Status TableCache::GetFromPmem(const Options& options,
+                   uint64_t file_number,
+                   const Slice& k,
+                   void* arg,
+                   void (*saver)(void*, const Slice&, const Slice&)) {
+  Status s;
+  PmemSkiplist *pmem_skiplist = options.pmem_skiplist;
+  // char *key = new char[k.size()-10];
+  // memcpy(key, k.data(), k.size()-10);
+  // strcpy(key, k.data());
+  // Slice pmem_k = Slice(key, strlen(key));
+  // Slice pmem_k = Slice((char *)k.data(), k.size()-2);
+  // Slice test_k = Slice((char *)k.data(), k.size()-8);
+  // printf("[DEBUG] '%s'-'%s' %s\n", pmem_k.data(), k.data(), test_k.data());
+  // printf("[DEBUG] '%d'-'%d' %d\n", pmem_k.size(), k.size()-2, k.size());
+  // printf("[DEBUG] '%s'-'%s' \n", pmem_k.data(), key);
+  // printf("[DEBUG] '%s'-'%d' \n", k.data(), k.size());
+  char *res = pmem_skiplist->Get(file_number, (char *)k.data());
+  // char *res = pmem_skiplist->Get(file_number, (char *)pmem_k.data());
+  if (strlen(res) == 0) {
+    s = Status::NotFound(Slice());
+    printf("Not Found.. '%s'\n", k.data());
+  } else {
+    Slice key(k);
+    Slice value(res);
+    (*saver)(arg, key, value);
+    delete res;
+  }
+  // delete key;
+  return s;
+}
+
 
 void TableCache::Evict(uint64_t file_number) {
   char buf[sizeof(file_number)];

@@ -432,7 +432,7 @@ class Benchmark {
 
   void Run() {
     PrintHeader();
-    Open();
+    // Open();
 
     const char* benchmarks = FLAGS_benchmarks;
     while (benchmarks != nullptr) {

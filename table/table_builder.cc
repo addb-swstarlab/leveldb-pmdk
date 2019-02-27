@@ -89,6 +89,7 @@ Status TableBuilder::ChangeOptions(const Options& options) {
   return Status::OK();
 }
 
+/* TODO: Write file based on pmem */
 void TableBuilder::Add(const Slice& key, const Slice& value) {
   Rep* r = rep_;
   assert(!r->closed);
@@ -118,6 +119,24 @@ void TableBuilder::Add(const Slice& key, const Slice& value) {
   if (estimated_block_size >= r->options.block_size) {
     Flush();
   }
+}
+// JH
+void TableBuilder::AddToPmem(PmemSkiplist *pmem_skiplist, uint64_t number,
+                              const Slice& key, const Slice& value) {
+  Rep* r = rep_;
+  assert(!r->closed);
+  if (!ok()) return;
+  if (r->num_entries > 0) {
+    assert(r->options.comparator->Compare(key, Slice(r->last_key)) > 0);
+  }
+  r->last_key.assign(key.data(), key.size());
+  r->num_entries++;
+  // r->data_block.Add(key, value);
+  r->offset += (key.size() + value.size());
+  // printf("%s, %d\n", key.ToString().c_str(), key.ToString().size());
+  // pmem_skiplist->Insert(number, (char *)key.data(), (char *)value.data());  
+  pmem_skiplist->Insert((char *)key.data(), (char *)value.data(), 
+                        key.size(), value.size(), number);
 }
 
 void TableBuilder::Flush() {
@@ -198,6 +217,8 @@ Status TableBuilder::status() const {
 
 Status TableBuilder::Finish() {
   Rep* r = rep_;
+  // const size_t estimated_block_size = r->data_block.CurrentSizeEstimate();
+  // printf("[DEBUG] %d\n", estimated_block_size); 
   Flush();
   assert(!r->closed);
   r->closed = true;

@@ -64,7 +64,12 @@ file_exists (const std::string &name)
 static int
 hashmap_print(char *key, char *value, void *arg)
 {
-	printf("[print] key:'%s', value:'%s'\n", key, value);
+	if (strcmp(key, "") != 0 && strcmp(value, "") != 0)
+		printf("[print] [key %d]:'%s', [value %d]:'%s'\n", strlen(key), key, strlen(value), value);
+		// printf("[print] [key %d]:'%s', [value %d]:'%s'\n", strlen(key), strlen(value), key, value);
+		// printf("[print] [key]:'%s', [value]:'%s'\n", key, value);
+	// if (strlen(key) != 0 && strlen(value) != 0)
+	// 	printf("[print] [key %d]:'%s', [value %d]:'%s'\n", strlen(key), strlen(value), key, value);
 	delete[] key;
 	delete[] value;
 	return 0;
@@ -106,8 +111,6 @@ TEST (PmemSkiplistManagerTest, Skiplist_manager) {
 
 
 	cout << "# Start Skiplist_manager" << endl;
-	// Prepare the input to store into persistent memory
-	
 	if (!file_exists(SKIPLIST_MANAGER_PATH)) {
         /* Initialize pool & map_ctx */
 		pool = pmemobj_create(SKIPLIST_MANAGER_PATH, 
@@ -146,7 +149,6 @@ TEST (PmemSkiplistManagerTest, Skiplist_manager) {
 		// 	printf("abort\n");
 		// } TX_END
 		// Error. Need to znew struct root_skiplist_map
-		printf("[4]\n");
 		TX_BEGIN(pool) {
 			root_ptr->skiplists = pmemobj_tx_zalloc(
 														// sizeof(root_skiplist_map), 
@@ -155,7 +157,6 @@ TEST (PmemSkiplistManagerTest, Skiplist_manager) {
 		} TX_ONABORT {
 			printf("abort bye..\n");
 		} TX_END
-		printf("[445]\n");
 		/* 
 		 * 3) map_create for all indices
 		 */
@@ -174,14 +175,15 @@ TEST (PmemSkiplistManagerTest, Skiplist_manager) {
 		// printf("[5]\n");
 		/* create */
 		for (int i=0; i<SKIPLIST_MANAGER_LIST_SIZE; i++) {
-			int res = map_create(mapc, &(skiplists[i].map), &args); // [ERROR] D_RW need TOID
+			int res = map_create(mapc, &(skiplists[i].map), i, &args); // [ERROR] D_RW need TOID
 			if (res) printf("[CREATE ERROR %d] %d\n",i ,res);
 			else printf("[CREATE SUCCESS %d] %d\n",i ,res);	
 			map[i] = skiplists[i].map;
 		}
 		/* bulk insert */
 		for (int i=0; i<SKIPLIST_MANAGER_LIST_SIZE; i++) {
-			for (int j=0; j<SKIPLIST_BULK_INSERT_NUM; j++) {
+			for (int j=0; j<NUM_OF_PRE_ALLOC_NODE; j++) {
+			// for (int j=0; j<SKIPLIST_BULK_INSERT_NUM; j++) {
 				char key[] = "key-";
 				stringstream ss_key, ss_value;
 				ss_key << key << i << "-" << j;
@@ -190,12 +192,14 @@ TEST (PmemSkiplistManagerTest, Skiplist_manager) {
 				ss_value << value << i << "-" << j 
 				<< ".......................................................................................";
 				// << "..............................................";
-				printf("'%s'-'%s'\n", (char *)ss_key.str().c_str(), (char *)ss_value.str().c_str());
+				// printf("'%s'-'%s'\n", (char *)ss_key.str().c_str(), (char *)ss_value.str().c_str());
 				int res = map_insert(mapc, map[i], 
-									(char *)ss_key.str().c_str(), (char *)ss_value.str().c_str());
+									(char *)ss_key.str().c_str(), (char *)ss_value.str().c_str(), 
+									ss_key.str().size(), ss_value.str().size(), i);
 				if(res) { fprintf(stderr, "[ERROR] insert %d-%d\n", i, j);  abort();} 
-				else if (!res && (j%10==0)) printf("insert %d] success\n", j);
+				// else if (!res && (j%10==0)) printf("insert %d] success\n", j);
 			}
+			printf("Insert %d] End\n", i);
 		}
 		
 		// // skiplists[0];
@@ -238,13 +242,13 @@ TEST (PmemSkiplistManagerTest, Skiplist_manager) {
 											sizeof(TOID(struct map)) * SKIPLIST_MANAGER_LIST_SIZE);
 		for (int i=0; i<SKIPLIST_MANAGER_LIST_SIZE; i++) {
 				map[i] = skiplists[i].map;
-				// char *key = "123";
+				// char *key = "key-0-5";
+				// char *key = "key-0-30400";
 				// char *get = map_get(mapc, map[i], key);
 				// if (strlen(get) != 0) printf("get %d] key:'%s',value:'%s'\n",i, key, get);
 				// else printf("get] cannot get key %d:'%s'\n",i, key);
-
-				// if (mapc->ops->count)
-				// 	printf("count: %zu\n", map_count(mapc, map[i]));
+				// printf("Get-End\n");
+				// delete get;
 				map_foreach(mapc, map[i], hashmap_print, NULL);
 				printf("\n");
 		}
