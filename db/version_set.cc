@@ -18,6 +18,10 @@
 #include "util/coding.h"
 #include "util/logging.h"
 
+// JH
+#include "table/iterator_wrapper.h"
+
+
 namespace leveldb {
 
 static size_t TargetFileSize(const Options* options) {
@@ -209,6 +213,113 @@ class Version::LevelFileNumIterator : public Iterator {
   // Backing store for value().  Holds the file number and size.
   mutable char value_buf_[16];
 };
+// PROGRESS: Maybe files are ordered, thus only concatenating files by flist-order
+class Version::LevelFilesConcatIteratorFromPmem : public Iterator {
+ public:
+  LevelFilesConcatIteratorFromPmem(
+                       const InternalKeyComparator& icmp,
+                       PmemSkiplist *pmem_skiplist,
+                       const std::vector<FileMetaData*>* flist)
+      : icmp_(icmp), flist_(flist), size_(flist->size()), current_(nullptr)
+        // ,index_(flist->size()) 
+        {
+
+    pmem_iterator = new PmemIterator*[size_];
+    // Make PmemIterators based on each index
+    for (int i=0; i<size_; i++) {
+      // printf("i %d, number %d\n", i, flist_->at(i)->number);
+      // pmem_iterator[i] = new PmemIterator(flist_->at(i)->number, pmem_skiplist);
+      pmem_iterator[i] = new PmemIterator(flist_->at(i)->number, pmem_skiplist);
+    }
+    // printf("Constructor End\n");
+  }
+  ~LevelFilesConcatIteratorFromPmem() {
+    for (int i=0; i<size_; i++) {
+      delete pmem_iterator[i];
+    }
+    delete pmem_iterator;
+  }
+  virtual bool Valid() const {
+    return (current_ != nullptr && current_->Valid());
+  }
+  virtual void Seek(const Slice& target) {
+    // index_ = FindFile(icmp_, *flist_, target);
+    // Specific searching
+    assert(Valid());
+    // Copy from FindFile() in version_set.cc
+    uint32_t left = 0;
+    uint32_t right = flist_->size();
+    while (left < right) {
+      uint32_t mid = (left + right) / 2;
+      const FileMetaData* f = flist_->at(mid);
+      if (icmp_.InternalKeyComparator::Compare(f->largest.Encode(), target) < 0) {
+        // Key at "mid.largest" is < "target".  Therefore all
+        // files at or before "mid" are uninteresting.
+        left = mid + 1;
+      } else {
+        // Key at "mid.largest" is >= "target".  Therefore all files
+        // after "mid" are uninteresting.
+        right = mid;
+      }
+    }
+    current_index_ = right;
+    current_ = pmem_iterator[current_index_];
+    current_->Seek(target);
+  }
+  virtual void SeekToFirst() {
+    current_index_ = 0;
+    current_ = pmem_iterator[current_index_];
+    current_->SeekToFirst();
+  }
+  virtual void SeekToLast() {
+    current_index_ = size_-1;
+    current_ = pmem_iterator[current_index_];
+    current_->SeekToLast();
+  }
+  virtual void Next() {
+    assert(Valid());
+    // if Next is not null, just run Next()
+    // else, point to next iterator
+    current_->Next();
+    if (!current_->Valid()) {
+      if (!(current_index_ == size_-1)) {
+        current_index_ += 1;
+        current_ = pmem_iterator[current_index_];
+        current_->SeekToFirst();
+      }
+    }
+  }
+  virtual void Prev() {
+    assert(Valid());
+    // if Prev is not null, just run Prev()
+    // else, point to previous iterator
+    current_->Prev();
+    if (!current_->Valid()) {
+      if (!(current_index_ == 0)) {
+        current_index_ -= 1;
+        current_ = pmem_iterator[current_index_];
+        current_->SeekToLast();
+      }
+    }
+  }
+  Slice key() const {
+    assert(Valid());
+    return current_->key();
+  }
+  Slice value() const {
+    assert(Valid());
+    return current_->value();
+  }
+  virtual Status status() const { return Status::OK(); }
+ private:
+  InternalKeyComparator icmp_;
+  PmemIterator **pmem_iterator;
+  const std::vector<FileMetaData*>* const flist_;
+  PmemIterator* current_;
+  uint8_t size_;
+  uint8_t current_index_;
+
+};
 
 static Iterator* GetFileIterator(void* arg,
                                  const ReadOptions& options,
@@ -223,7 +334,7 @@ static Iterator* GetFileIterator(void* arg,
                               DecodeFixed64(file_value.data() + 8));
   }
 }
-
+/* TODO: Iterator based on pmem */
 Iterator* Version::NewConcatenatingIterator(const ReadOptions& options,
                                             int level) const {
   return NewTwoLevelIterator(
@@ -329,7 +440,6 @@ void Version::ForEachOverlapping(Slice user_key, Slice internal_key,
   }
 }
 
-/* TODO: Get based on pmem */
 Status Version::Get(const Options& options_,
                     const ReadOptions& options,
                     const LookupKey& k,
@@ -360,6 +470,7 @@ Status Version::Get(const Options& options_,
       // Level-0 files may overlap each other.  Find all files that
       // overlap user_key and process them in order from newest to oldest.
       tmp.reserve(num_files);
+          // printf("%d ] %d\n", level, num_files);
       for (uint32_t i = 0; i < num_files; i++) {
         FileMetaData* f = files[i];
         if (ucmp->Compare(user_key, f->smallest.user_key()) >= 0 &&
@@ -373,6 +484,7 @@ Status Version::Get(const Options& options_,
       files = &tmp[0];
       num_files = tmp.size();
     } else {
+          // printf("%d ] %d\n", level, num_files);
       // Binary search to find earliest index whose largest key >= ikey.
       uint32_t index = FindFile(vset_->icmp_, files_[level], ikey);
       if (index >= num_files) {
@@ -392,7 +504,7 @@ Status Version::Get(const Options& options_,
     }
 
     for (uint32_t i = 0; i < num_files; ++i) {
-      // printf("[DEBUG %d]\n", i);
+      // printf("[VERSION_SET DEBUG %d]\n", i);
       if (last_file_read != nullptr && stats->seek_file == nullptr) {
         // We have had more than one seek for this read.  Charge the 1st file.
         stats->seek_file = last_file_read;
@@ -409,20 +521,27 @@ Status Version::Get(const Options& options_,
       saver.user_key = user_key;
       saver.value = value;
       /*
-       * TODO: Get operation 
+       * NOTE: Get operation 
        */
-      // printf("[version_set][Get1]'%s' %d\n",ikey.data(), ikey.size());
       // printf("[version_set][Get2]'%s' %d\n",user_key.data(), user_key.size());
-      // s = vset_->table_cache_->Get(options, f->number, f->file_size,
-      //                              ikey, &saver, SaveValue);
-      s = vset_->table_cache_->GetFromPmem(options_, f->number,
+      SSTMakerType sst_type = options_.sst_type;
+      // DEBUG:
+      // printf("version_set: %d\n", f->number);
+      // printf("key: '%s'\n",ikey.data());
+      if (sst_type == kFileDescriptorSST) {
+        s = vset_->table_cache_->Get(options, f->number, f->file_size,
+                                    ikey, &saver, SaveValue);
+      } else if (sst_type == kPmemSST) {
+        s = vset_->table_cache_->GetFromPmem(options_, f->number,
                                    ikey, &saver, SaveValue);
+      }
+      // printf("[Saver_state] %d\n", saver.state);
       if (!s.ok()) {
         return s;
       }
       switch (saver.state) {
         case kNotFound:
-          break;      // Keep searching in other files
+          break;      // NOTE: Keep searching in other files
         case kFound:
           return s;
         case kDeleted:
@@ -432,7 +551,13 @@ Status Version::Get(const Options& options_,
           s = Status::Corruption("corrupted key for ", user_key);
           return s;
       }
+      // if (saver.state == kNotFound && i == num_files-1) {
+      //   printf("Cannot seek key '%s'\n", ikey.data());
+      // }
     }
+    // if (saver.state == kNotFound) {
+    //   printf();
+    // }
   }
 
   return Status::NotFound(Slice());  // Use an empty error message for speed
@@ -1270,6 +1395,7 @@ void VersionSet::GetRange2(const std::vector<FileMetaData*>& inputs1,
   GetRange(all, smallest, largest);
 }
 
+// PROGRESS: Compaction based on pmem
 Iterator* VersionSet::MakeInputIterator(Compaction* c) {
   ReadOptions options;
   options.verify_checksums = options_->paranoid_checks;
@@ -1281,23 +1407,58 @@ Iterator* VersionSet::MakeInputIterator(Compaction* c) {
   const int space = (c->level() == 0 ? c->inputs_[0].size() + 1 : 2);
   Iterator** list = new Iterator*[space];
   int num = 0;
+
+  // Customized by JH
+  // printf("MakeInputInterator]\n");
+  SSTMakerType sst_type = options_->sst_type;
+  // NOTE: which=[0, 1] := Compaction between two level
   for (int which = 0; which < 2; which++) {
     if (!c->inputs_[which].empty()) {
-      if (c->level() + which == 0) {
+      if (c->level() + which == 0) { // Only L0 in Compaction between L0-L1
+        // if (c->inputs_[which].size() > 0) {
+        //   for (int i=0; i<c->inputs_[which].size(); i++) {
+        //     printf("[DEBUG1] fileNumber:%d\n", c->inputs_[which][i]->number);
+        //   }
+        // }
         const std::vector<FileMetaData*>& files = c->inputs_[which];
         for (size_t i = 0; i < files.size(); i++) {
-          list[num++] = table_cache_->NewIterator(
-              options, files[i]->number, files[i]->file_size);
+          // printf("i:%d, files:%d\n", i, files.size());
+          if (sst_type == kFileDescriptorSST) {
+            list[num++] = table_cache_->NewIterator(
+                options, files[i]->number, files[i]->file_size);
+            // printf("number: %d\n", files[i]->number);
+          } 
+          // PROGRESS: Pmem-based
+          else if (sst_type == kPmemSST) {
+            list[num++] = table_cache_->NewIteratorFromPmem(
+                options, files[i]->number, files[i]->file_size);
+          }
         }
-      } else {
+        // printf("num1: %d\n", num);
+      } else { 
         // Create concatenating iterator for the files from this level
-        list[num++] = NewTwoLevelIterator(
-            new Version::LevelFileNumIterator(icmp_, &c->inputs_[which]),
-            &GetFileIterator, table_cache_, options);
+        // printf("num2: %d, inputs_size: %d\n", num, c->inputs_[which].size());
+        // if (c->inputs_[which].size() > 0) {
+        //   for (int i=0; i<c->inputs_[which].size(); i++) {
+        //     printf("[DEBUG2] fileNumber:%d\n", c->inputs_[which][i]->number);
+        //   }
+        // }
+        // printf("If\n");
+        if (sst_type == kFileDescriptorSST) {
+          list[num++] = NewTwoLevelIterator(
+              new Version::LevelFileNumIterator(icmp_, &c->inputs_[which]),
+              &GetFileIterator, table_cache_, options);
+        }
+        else if (sst_type == kPmemSST) {
+          list[num++] = new Version::LevelFilesConcatIteratorFromPmem(
+                          icmp_, options_->pmem_skiplist, &c->inputs_[which]);
+        }
+        // printf("FI\n");
       }
     }
   }
   assert(num <= space);
+  // Merge all iterators
   Iterator* result = NewMergingIterator(&icmp_, list, num);
   delete[] list;
   return result;

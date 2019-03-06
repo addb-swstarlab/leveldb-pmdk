@@ -120,6 +120,9 @@ class Version {
   friend class VersionSet;
 
   class LevelFileNumIterator;
+  // JH
+  class LevelFilesConcatIteratorFromPmem;
+
   Iterator* NewConcatenatingIterator(const ReadOptions&, int level) const;
 
   // Call func(arg, level, f) for every file that overlaps user_key in

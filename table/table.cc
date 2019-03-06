@@ -218,7 +218,15 @@ Iterator* Table::NewIterator(const ReadOptions& options) const {
       &Table::BlockReader, const_cast<Table*>(this), options);
 }
 
-/* TODO: Get based on pmem */
+/* TODO: Compaction based on pmem */
+Iterator* Table::NewIteratorFromPmem(
+                  const Options& options_, const ReadOptions& options) const {
+                    
+  return NewTwoLevelIterator(
+      rep_->index_block->NewIterator(rep_->options.comparator),
+      &Table::BlockReader, const_cast<Table*>(this), options);
+}
+
 Status Table::InternalGet(const ReadOptions& options, const Slice& k,
                           void* arg,
                           void (*saver)(void*, const Slice&, const Slice&)) {

@@ -37,7 +37,7 @@ SPDX-License-Identifier: BSD-3-Clause
 #include <iostream>
 #include <fstream> //file_exists
 #include "pmem/layout.h"
-#include "pmem/map/map.h"
+// #include "pmem/map/map.h"
 #include "pmem/map/map_skiplist.h"
 #include "pmem/map/hashmap.h"
 // #include <errno.h>
@@ -81,8 +81,18 @@ TEST (PmemSkiplistManagerTest, Skiplist_manager) {
 	POBJ_LAYOUT_BEGIN(root_skiplist_manager);
 	POBJ_LAYOUT_ROOT(root_skiplist_manager, struct root_skiplist_manager);
 	POBJ_LAYOUT_TOID(root_skiplist_manager, struct root_skiplist_map);
+	// POBJ_LAYOUT_TOID(root_skiplist_manager, struct skiplist_map_node);
 	POBJ_LAYOUT_END(root_skiplist_manager);
 
+	// struct skiplist_map_entry {
+  //   uint64_t key;
+  //   PMEMoid value;
+  // };
+
+  // struct skiplist_map_node {
+  //   TOID(struct skiplist_map_node) next[12];
+  //   struct skiplist_map_entry entry;
+  // };
 
 	struct root_skiplist_map {
  		TOID(struct map) map;
@@ -173,14 +183,14 @@ TEST (PmemSkiplistManagerTest, Skiplist_manager) {
 		// 	ret = 1;
 		// } TX_END
 		// printf("[5]\n");
-		/* create */
+		/* NOTE: create */
 		for (int i=0; i<SKIPLIST_MANAGER_LIST_SIZE; i++) {
 			int res = map_create(mapc, &(skiplists[i].map), i, &args); // [ERROR] D_RW need TOID
 			if (res) printf("[CREATE ERROR %d] %d\n",i ,res);
 			else printf("[CREATE SUCCESS %d] %d\n",i ,res);	
 			map[i] = skiplists[i].map;
 		}
-		/* bulk insert */
+		/* NOTE: bulk insert */
 		for (int i=0; i<SKIPLIST_MANAGER_LIST_SIZE; i++) {
 			for (int j=0; j<NUM_OF_PRE_ALLOC_NODE; j++) {
 			// for (int j=0; j<SKIPLIST_BULK_INSERT_NUM; j++) {
@@ -240,6 +250,7 @@ TEST (PmemSkiplistManagerTest, Skiplist_manager) {
 		skiplists = (struct root_skiplist_map *)pmemobj_direct(root_ptr->skiplists);
 		map = (TOID(struct map) *) malloc(
 											sizeof(TOID(struct map)) * SKIPLIST_MANAGER_LIST_SIZE);
+		/* NOTE: foreach test */
 		for (int i=0; i<SKIPLIST_MANAGER_LIST_SIZE; i++) {
 				map[i] = skiplists[i].map;
 				// char *key = "key-0-5";
@@ -249,9 +260,14 @@ TEST (PmemSkiplistManagerTest, Skiplist_manager) {
 				// else printf("get] cannot get key %d:'%s'\n",i, key);
 				// printf("Get-End\n");
 				// delete get;
+				printf("[%d]\n",i);
 				map_foreach(mapc, map[i], hashmap_print, NULL);
 				printf("\n");
 		}
+
+		/* NOTE: Get_TOID test */
+		
+
 	// for (int i=0; i<SKIPLIST_MANAGER_LIST_SIZE; i++) {
 	// 		map[i] = D_RW(root_ptr->skiplists[i])->map;
 	// 		char *key = "123";

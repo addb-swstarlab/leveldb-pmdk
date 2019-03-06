@@ -24,7 +24,11 @@ Options::Options()
       max_file_size(2<<20),
       compression(kSnappyCompression),
       reuse_logs(false),
-      filter_policy(nullptr) {
+      filter_policy(nullptr)
+      // JH
+      // , sst_type(kPmemSST) // option 1
+      , sst_type(kFileDescriptorSST) // option 2
+       {
 }
 
 }  // namespace leveldb

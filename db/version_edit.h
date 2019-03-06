@@ -68,6 +68,7 @@ class VersionEdit {
     f.file_size = file_size;
     f.smallest = smallest;
     f.largest = largest;
+    // printf("AddFile] %d\n", f.number);
     new_files_.push_back(std::make_pair(level, f));
   }
 

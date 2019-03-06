@@ -101,7 +101,34 @@ Iterator* TableCache::NewIterator(const ReadOptions& options,
   }
   return result;
 }
-/* TODO: Get based on pmem */
+// JH
+/* TODO: Compaction based on pmem */
+Iterator* TableCache::NewIteratorFromPmem(const ReadOptions& options,
+                                  uint64_t file_number,
+                                  uint64_t file_size,
+                                  Table** tableptr) {
+  PmemSkiplist *pmem_skiplist = options_.pmem_skiplist;
+  if (tableptr != nullptr) {
+    *tableptr = nullptr;
+  }
+  
+  // Cache::Handle* handle = nullptr;
+  // Status s = FindTable(file_number, file_size, &handle);
+  // if (!s.ok()) {
+  //   return NewErrorIterator(s);
+  // }
+
+  // FIXME: Checks cache logic
+  Iterator* result = new PmemIterator(file_number, pmem_skiplist);
+  result->SeekToFirst();
+  // Table* table = reinterpret_cast<TableAndFile*>(cache_->Value(handle))->table;
+  // Iterator* result = table->NewIteratorFromPmem(options_, options);
+  // result->RegisterCleanup(&UnrefEntry, cache_, handle);
+  // if (tableptr != nullptr) {
+  //   *tableptr = table;
+  // }
+  return result;
+}
 Status TableCache::Get(const ReadOptions& options,
                        uint64_t file_number,
                        uint64_t file_size,
@@ -109,7 +136,6 @@ Status TableCache::Get(const ReadOptions& options,
                        void* arg,
                        void (*saver)(void*, const Slice&, const Slice&)) {
   Cache::Handle* handle = nullptr;
-  /* TODO: Get based on pmem*/
   Status s = FindTable(file_number, file_size, &handle);
   if (s.ok()) {
     Table* t = reinterpret_cast<TableAndFile*>(cache_->Value(handle))->table;
@@ -119,35 +145,34 @@ Status TableCache::Get(const ReadOptions& options,
   return s;
 }
 // JH
+/* SOLVE: Get based on pmem */
 Status TableCache::GetFromPmem(const Options& options,
                    uint64_t file_number,
                    const Slice& k,
                    void* arg,
                    void (*saver)(void*, const Slice&, const Slice&)) {
   Status s;
-  PmemSkiplist *pmem_skiplist = options.pmem_skiplist;
-  // char *key = new char[k.size()-10];
-  // memcpy(key, k.data(), k.size()-10);
-  // strcpy(key, k.data());
-  // Slice pmem_k = Slice(key, strlen(key));
-  // Slice pmem_k = Slice((char *)k.data(), k.size()-2);
-  // Slice test_k = Slice((char *)k.data(), k.size()-8);
-  // printf("[DEBUG] '%s'-'%s' %s\n", pmem_k.data(), k.data(), test_k.data());
-  // printf("[DEBUG] '%d'-'%d' %d\n", pmem_k.size(), k.size()-2, k.size());
-  // printf("[DEBUG] '%s'-'%s' \n", pmem_k.data(), key);
-  // printf("[DEBUG] '%s'-'%d' \n", k.data(), k.size());
-  char *res = pmem_skiplist->Get(file_number, (char *)k.data());
-  // char *res = pmem_skiplist->Get(file_number, (char *)pmem_k.data());
-  if (strlen(res) == 0) {
-    s = Status::NotFound(Slice());
-    printf("Not Found.. '%s'\n", k.data());
-  } else {
-    Slice key(k);
-    Slice value(res);
-    (*saver)(arg, key, value);
-    delete res;
-  }
-  // delete key;
+  // PmemSkiplist *pmem_skiplist = options.pmem_skiplist;
+  PmemIterator *pmem_iterator = options.pmem_internal_iterator;
+  // pmem_iterator->SetIndex(file_number);
+  // printf("3 %d\n", file_number);
+  // PmemIterator *pmem_iterator = new PmemIterator(file_number, pmem_skiplist);
+  // printf("1\n");
+  pmem_iterator->SetIndexAndSeek(file_number, k);
+  // printf("2\n");
+  // pmem_iterator->Seek(k);
+  // Slice key(pmem_iterator->key());
+  // Slice value(pmem_iterator->value());
+  // (*saver)(arg, key, value);
+  (*saver)(arg, pmem_iterator->key(), pmem_iterator->value());
+  // printf("key1:'%s'\n", pmem_iterator->key());
+  // printf("value1:'%s'\n", pmem_iterator->value());
+
+  // TEST:
+  // pmem_iterator->SeekToLast();
+  // printf("key2:'%s'\n", pmem_iterator->key());
+  // printf("value2:'%s'\n", pmem_iterator->value());
+
   return s;
 }
 

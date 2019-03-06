@@ -803,6 +803,10 @@ class Benchmark {
       snprintf(key, sizeof(key), "%016d", k);
       if (db_->Get(options, key, &value).ok()) {
         found++;
+      } 
+      // JH
+      else {
+        printf("Cannot seek key:'%s'\n", key);
       }
       thread->stats.FinishedSingleOp();
     }

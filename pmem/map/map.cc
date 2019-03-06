@@ -232,5 +232,41 @@ map_cmd(struct map_ctx *mapc, TOID(struct map) map, unsigned cmd, uint64_t arg)
 	ABORT_NOT_IMPLEMENTED(mapc, cmd);
 	return mapc->ops->cmd(mapc->pop, map, cmd, arg);
 }
+/*
+ * map_get_prev_OID -- get OID of specified key
+ */
+const PMEMoid*
+map_get_prev_OID(struct map_ctx *mapc, TOID(struct map) map, char *key)
+{
+	ABORT_NOT_IMPLEMENTED(mapc, get_prev_OID);
+	return mapc->ops->get_prev_OID(mapc->pop, map, key);
+}
+/*
+ * map_get_next_OID -- get OID of specified key
+ */
+const PMEMoid*
+map_get_next_OID(struct map_ctx *mapc, TOID(struct map) map, char *key)
+{
+	ABORT_NOT_IMPLEMENTED(mapc, get_next_OID);
+	return mapc->ops->get_next_OID(mapc->pop, map, key);
+}
+/*
+ * map_get_first_OID -- get OID of first node
+ */
+const PMEMoid*
+map_get_first_OID(struct map_ctx *mapc, TOID(struct map) map)
+{
+	ABORT_NOT_IMPLEMENTED(mapc, get_first_OID);
+	return mapc->ops->get_first_OID(mapc->pop, map);
+}
+/*
+ * map_get_first_OID -- get OID of last node
+ */
+const PMEMoid*
+map_get_last_OID(struct map_ctx *mapc, TOID(struct map) map)
+{
+	ABORT_NOT_IMPLEMENTED(mapc, get_last_OID);
+	return mapc->ops->get_last_OID(mapc->pop, map);
+}
 
 } // namespace leveldb

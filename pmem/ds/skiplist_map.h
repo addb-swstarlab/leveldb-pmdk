@@ -85,6 +85,17 @@ int skiplist_map_foreach(PMEMobjpool *pop, TOID(struct skiplist_map_node) map,
 	int (*cb)(char *key, char *value, void *arg), void *arg);
 int skiplist_map_is_empty(PMEMobjpool *pop, TOID(struct skiplist_map_node) map);
 
+// JH
+const PMEMoid*
+skiplist_map_get_prev_OID(PMEMobjpool *pop, TOID(struct skiplist_map_node) map,
+		char *key);
+const PMEMoid*
+skiplist_map_get_next_OID(PMEMobjpool *pop, TOID(struct skiplist_map_node) map,
+		char *key);
+const PMEMoid*
+skiplist_map_get_first_OID(PMEMobjpool *pop, TOID(struct skiplist_map_node) map);
+const PMEMoid*
+skiplist_map_get_last_OID(PMEMobjpool *pop, TOID(struct skiplist_map_node) map);
 
 } // namespace leveldb
 

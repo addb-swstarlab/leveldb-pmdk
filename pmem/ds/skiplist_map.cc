@@ -259,6 +259,9 @@ skiplist_map_insert(PMEMobjpool *pop, TOID(struct skiplist_map_node) map,
 	/* Get from L0 */
 		// begin = std::chrono::steady_clock::now();
 	TOID(struct skiplist_map_node) new_node = D_RW(current_node[index])->next[0];
+	if (TOID_IS_NULL(new_node) || TOID_EQUALS(new_node, NULL_NODE)) {
+		printf("[ERROR][Skiplist][insertion] Out of bound \n");
+	}
 	current_node[index] = new_node;
 	// 	end= std::chrono::steady_clock::now();
 	// std::cout << "insert0 = " << std::chrono::duration_cast<std::chrono::nanoseconds> (end - begin).count() <<"\n";
@@ -472,22 +475,81 @@ skiplist_map_get_find(PMEMobjpool *pop, char *key,
 	TOID(struct skiplist_map_node) active = map;
 	for (current_level = SKIPLIST_LEVELS_NUM - 1;
 			current_level >= 0; current_level--) {
+
+		// void *key_ptr = pmemobj_direct(D_RO(active)->entry.key);
+		// printf("[Before DEBUG %d] key:'%s' ptr:'%s'\n", current_level, key, (char *)key_ptr);
+
 		TOID(struct skiplist_map_node) next = D_RO(active)->next[current_level];
 		for ( void *ptr ;
 				!TOID_EQUALS(next, NULL_NODE);
 				next = D_RO(active)->next[current_level]) {
-			// Only compare key
-			uint8_t key_len = D_RO(next)->entry.key_len-NUM_OF_TAG_BYTES;
-			ptr = pmemobj_direct(D_RO(next)->entry.key);
+			// NOTE: Only compare key
+			uint8_t key_len = D_RO(next)->entry.key_len;
 			// Avoid looping about empty&pre-allocated key
-			if (strlen((char *)ptr) == 0) {
+			// if (strlen((char *)ptr) == 0) {
+			if (key_len == 0) {
+				if (current_level == 0) {
+					path[current_level] = NULL_NODE;
+				}
 				break;
+			} else if (key_len > NUM_OF_TAG_BYTES){
+				key_len -= NUM_OF_TAG_BYTES;
 			}
+			ptr = pmemobj_direct(D_RO(next)->entry.key);
 			// printf("[DEBUG %d] key:'%s' ptr:'%s'\n", current_level, key, (char *)ptr);
 			int res_cmp = memcmp(key, ptr, key_len);
 			if (res_cmp < 0) {
-			// if (memcmp(key, ptr, key_len) <= 0) {
-			// if (strcmp(key, (char *)ptr) <= 0)  { // ascending order
+			// printf("[Break DEBUG %d] key:'%s' ptr:'%s'\n", current_level, key, (char *)ptr);
+				break;
+			} 
+			// Immediatly stop
+			else if (res_cmp == 0) {
+				// printf("Break1 '%s'\n", key);
+				// printf("Break2 '%s'\n", (char *)ptr);
+				*find_res = current_level;
+				break;
+			}
+			active = next;
+		}
+		// Immediatly stop
+		path[current_level] = active;
+		if (*find_res >= 0) { 
+			break;
+		}
+	}
+}
+/*
+ * skiplist_map_get_prev_find -- (internal) returns path to searched node, or if
+ * node doesn't exist, it will return path to place where key should be.
+ */
+static void
+skiplist_map_get_prev_find(PMEMobjpool *pop, char *key, 
+	TOID(struct skiplist_map_node) map, TOID(struct skiplist_map_node) *path,
+	int *find_res)
+{
+	int current_level;
+	TOID(struct skiplist_map_node) active = map;
+	for (current_level = SKIPLIST_LEVELS_NUM - 1;
+			current_level >= 0; current_level--) {
+
+		// void *key_ptr = pmemobj_direct(D_RO(active)->entry.key);
+		// printf("[Before DEBUG %d] key:'%s' ptr:'%s'\n", current_level, key, (char *)key_ptr);
+
+		TOID(struct skiplist_map_node) next = D_RO(active)->next[current_level];
+		for ( void *ptr ;
+				!TOID_EQUALS(next, NULL_NODE);
+				next = D_RO(active)->next[current_level]) {
+			// NOTE: Key-matching exactly
+			uint8_t key_len = D_RO(next)->entry.key_len;
+			// Avoid looping about empty&pre-allocated key
+			// if (strlen((char *)ptr) == 0) {
+			if (key_len == 0) {
+				break;
+			}
+			ptr = pmemobj_direct(D_RO(next)->entry.key);
+			// printf("[DEBUG %d] key:'%s' ptr:'%s'\n", current_level, key, (char *)ptr);
+			int res_cmp = memcmp(key, ptr, key_len);
+			if (res_cmp < 0) {
 			// printf("[Break DEBUG %d] key:'%s' ptr:'%s'\n", current_level, key, (char *)ptr);
 				break;
 			} 
@@ -496,14 +558,44 @@ skiplist_map_get_find(PMEMobjpool *pop, char *key,
 				*find_res = current_level;
 				break;
 			}
-			// if (res_cmp > 0 && current_level==0)
 			active = next;
 		}
 		// Immediatly stop
 		path[current_level] = active;
-		if (*find_res >= 0) break;
+		if (*find_res >= 0) { 
+			break;
+		}
 	}
 }
+/*
+ * skiplist_map_get_last_find -- (internal) returns path to searched node, or if
+ * node doesn't exist, it will return path to place where key should be.
+ */
+static void
+skiplist_map_get_last_find(PMEMobjpool *pop, 
+	TOID(struct skiplist_map_node) map, TOID(struct skiplist_map_node) *path)
+{
+	int current_level;
+	TOID(struct skiplist_map_node) active = map;
+	for (current_level = SKIPLIST_LEVELS_NUM - 1;
+			current_level >= 0; current_level--) {
+		TOID(struct skiplist_map_node) next = D_RO(active)->next[current_level];
+		for ( void *ptr ;
+				!TOID_EQUALS(next, NULL_NODE);
+				next = D_RO(active)->next[current_level]) {
+			// NOTE: Check only Key-length
+			uint8_t key_len = D_RO(next)->entry.key_len;
+			// uint8_t value_len = D_RO(next)->entry.value_len;
+			// Seek first empty node in each level
+			if (key_len == 0) break;
+			// if (key_len == 0 & value_len == 0) break;
+			active = next;
+		}
+		// Immediatly stop
+		path[current_level] = active;
+	}
+}
+
 /*
  * skiplist_map_get -- searches for a value of the key
  */
@@ -514,63 +606,170 @@ skiplist_map_get(PMEMobjpool *pop, TOID(struct skiplist_map_node) map,
 	// std::chrono::steady_clock::time_point begin, end;
 	// begin = std::chrono::steady_clock::now();
 
-	int find_res = -1;
-	char *ret = new char;
-	strcpy(ret, "");
+	int exactly_found_level = -1;
+	char *res;
 	TOID(struct skiplist_map_node) path[SKIPLIST_LEVELS_NUM], found;
 	// end= std::chrono::steady_clock::now();
 	// std::cout << "get1 = " << std::chrono::duration_cast<std::chrono::nanoseconds> (end - begin).count() <<" / ";
 	// begin = std::chrono::steady_clock::now();
 
 	// FIXME: Implement only-key comparison
-	skiplist_map_get_find(pop, key, map, path, &find_res);
+	skiplist_map_get_find(pop, key, map, path, &exactly_found_level);
 	// end= std::chrono::steady_clock::now();
 	// std::cout << "get2 = " << std::chrono::duration_cast<std::chrono::nanoseconds> (end - begin).count() <<" / ";
 	// begin = std::chrono::steady_clock::now();
-	if (find_res != -1) {
+	if (exactly_found_level != -1) {
+		// printf("1\n");
 		// printf("find_res: %d\n",find_res );
 	// end= std::chrono::steady_clock::now();
 	// std::cout << "get3 = " << std::chrono::duration_cast<std::chrono::nanoseconds> (end - begin).count() <<" / ";
 	// begin = std::chrono::steady_clock::now();
-		found = D_RO(path[find_res])->next[0];
-		delete ret;
+		found = D_RO(path[exactly_found_level])->next[exactly_found_level];
 		uint8_t value_len = D_RO(found)->entry.value_len+STRING_PADDING;
+		void *key_ptr = pmemobj_direct(D_RO(found)->entry.key);
 		void *ptr = pmemobj_direct(D_RO(found)->entry.value);
-		ret = new char[value_len];
-		memcpy(ret, ptr, value_len);
+		res = new char[value_len];
+		memcpy(res, ptr, value_len);
+		// printf("Get key %d: '%s'\n", exactly_found_level, key_ptr);
 	// end= std::chrono::steady_clock::now();
 	// std::cout << "get4 = " << std::chrono::duration_cast<std::chrono::nanoseconds> (end - begin).count() <<"\n";
 	} else {
+		// printf("2\n");
 		found = D_RO(path[0])->next[0];
 		if (!TOID_EQUALS(found, NULL_NODE)) {
-			// printf("[DEBUG] '%s'\n", key);
+		// printf("3\n");
 			uint8_t key_len = D_RO(found)->entry.key_len+STRING_PADDING-NUM_OF_TAG_BYTES;
 			void *ptr = pmemobj_direct(D_RO(found)->entry.key);
+		// printf("4\n");
 		// printf("[GET-DEBUG] key:'%s' ptr:'%s' buf:'%s'\n", key, (char *)ptr, buf);
-			if (memcmp(ptr, key, key_len-NUM_OF_TAG_BYTES) == 0) {
-				delete ret;
+			if (memcmp(ptr, key, key_len) == 0) {
+		// printf("6\n");
 				uint8_t value_len = D_RO(found)->entry.value_len+STRING_PADDING;
-				ptr = pmemobj_direct(D_RO(found)->entry.value);
-				ret = new char[value_len];
-				memcpy(ret, ptr, value_len);
-			} 
+				void *value_ptr = pmemobj_direct(D_RO(found)->entry.value);
+				res = new char[value_len];
+				memcpy(res, value_ptr, value_len);
+				// printf("Get key %d : '%s'-'%s'\n", exactly_found_level, key, ptr);
+			} else {
+				printf("[Get-ERROR] Cannot seek key '%s' \n", key);
+			}
 		} else {
-			found = path[0];
-			uint8_t key_len = D_RO(found)->entry.key_len+STRING_PADDING-NUM_OF_TAG_BYTES;
-			void *ptr = pmemobj_direct(D_RO(found)->entry.key);
-		// printf("[GET-DEBUG] key:'%s' ptr:'%s' buf:'%s'\n", key, (char *)ptr, buf);
-			if (memcmp(ptr, key, key_len-NUM_OF_TAG_BYTES) == 0) {
-				delete ret;
-				uint8_t value_len = D_RO(found)->entry.value_len+STRING_PADDING;
-				ptr = pmemobj_direct(D_RO(found)->entry.value);
-				ret = new char[value_len];
-				memcpy(ret, ptr, value_len);
-			} 
-			printf("[Get-ERROR] '%s'\n", key);
+		// 	found = path[0];
+		// 	uint8_t key_len = D_RO(found)->entry.key_len+STRING_PADDING-NUM_OF_TAG_BYTES;
+		// 	void *ptr = pmemobj_direct(D_RO(found)->entry.key);
+		// // printf("[GET-DEBUG] key:'%s' ptr:'%s' buf:'%s'\n", key, (char *)ptr, buf);
+		// 	if (memcmp(ptr, key, key_len-NUM_OF_TAG_BYTES) == 0) {
+		// 		uint8_t value_len = D_RO(found)->entry.value_len+STRING_PADDING;
+		// 		ptr = pmemobj_direct(D_RO(found)->entry.value);
+		// 		res = new char[value_len];
+		// 		memcpy(res, ptr, value_len);
+		// 	} else {
+		// 	} 
+			res = new char;
+			strcpy(res, "");
+			printf("[Get-ERROR] Reach first empty node '%s'\n", key);
 		}
 	}
-// */
-	return ret;
+	// printf("res: '%s'\n", res);
+	return res;
+}
+/*
+ * skiplist_map_get_prev_OID -- searches for prev OID of the key
+ */
+const PMEMoid*
+skiplist_map_get_prev_OID(PMEMobjpool *pop, TOID(struct skiplist_map_node) map,
+	char *key)
+{	
+	const PMEMoid* res;
+	int exactly_found_level = -1;
+	TOID(struct skiplist_map_node) path[SKIPLIST_LEVELS_NUM];
+
+	skiplist_map_get_prev_find(pop, key, map, path, &exactly_found_level);
+	if (exactly_found_level != -1) {
+		res = &(path[exactly_found_level].oid);
+		// printf("1\n");
+	} else {
+		// FIXME: check prev to -1
+		if (TOID_EQUALS(map, path[0])) {
+			res = &OID_NULL;
+		}
+		else {
+			res = &(path[0].oid);
+		}
+	}
+	return res;
+}
+/*
+ * skiplist_map_get_next_OID -- searches for next OID of the key
+ */
+const PMEMoid*
+skiplist_map_get_next_OID(PMEMobjpool *pop, TOID(struct skiplist_map_node) map,
+	char *key)
+{	
+	// PMEMoid *res = OID_NULL;
+	const PMEMoid *res;
+	int exactly_found_level = -1;
+	TOID(struct skiplist_map_node) path[SKIPLIST_LEVELS_NUM];
+
+	skiplist_map_get_find(pop, key, map, path, &exactly_found_level);
+	if (exactly_found_level != -1) {
+		// found = D_RO(path[exactly_found_level])->next[exactly_found_level];
+		res = &(D_RO(path[exactly_found_level])->next[exactly_found_level].oid);
+	} else {
+		// res = D_RO(path[0])->next[0].oid;
+		if (!TOID_EQUALS(path[0], NULL_NODE)) {
+			
+			res = &(D_RO(path[0])->next[0].oid);
+		} else {
+			res = &OID_NULL;
+		}
+		// if (!TOID_EQUALS(found, NULL_NODE)) {
+		// 	res = found.oid;
+		// } else {
+		// 	printf("[Get_next_OID-ERROR] '%s'\n", key);
+		// }
+	}
+	return res;
+}
+/*
+ * skiplist_map_get_first_OID -- searches for OID of first node
+ */
+const PMEMoid*
+skiplist_map_get_first_OID(PMEMobjpool *pop, TOID(struct skiplist_map_node) map)
+{	
+	// PMEMoid res = OID_NULL;
+	const PMEMoid *res;
+	// TOID(struct skiplist_map_node) first = D_RO(map)->next[0];
+	
+	// Check whether first-node is valid
+	// if (!TOID_EQUALS(first, NULL_NODE)) {
+	uint8_t key_len = D_RO(D_RO(map)->next[0])->entry.key_len;
+	uint8_t value_len = D_RO(D_RO(map)->next[0])->entry.value_len;
+	if (key_len && value_len) {
+		res = &(D_RO(map)->next[0].oid);
+	}
+	// }
+	return res;
+}
+/*
+ * skiplist_map_get_last_OID -- searches for OID of last node
+ */
+const PMEMoid*
+skiplist_map_get_last_OID(PMEMobjpool *pop, TOID(struct skiplist_map_node) map)
+{	
+	// PMEMoid res = OID_NULL;
+	const PMEMoid *res;
+
+	TOID(struct skiplist_map_node) path[SKIPLIST_LEVELS_NUM];
+	// Seek non-empty node
+	skiplist_map_get_last_find(pop, map, path);
+	// found = path[0];
+	// if (!TOID_EQUALS(found, NULL_NODE)) {
+		// res = found.oid;
+	res = &(path[0].oid);
+	// } else {
+	// 	printf("[Get_last_OID-ERROR]\n");
+	// }
+	return res;
 }
 
 /*
@@ -620,6 +819,7 @@ skiplist_map_foreach(PMEMobjpool *pop, TOID(struct skiplist_map_node) map,
 		char *res_key = new char[D_RO(next)->entry.key_len];
 		char *res_value = new char[D_RO(next)->entry.value_len];
 
+		// FIXME: Use proper function..
 		strcpy(res_key, (char *)key_ptr);
 		strcpy(res_value, (char *)value_ptr);
 		

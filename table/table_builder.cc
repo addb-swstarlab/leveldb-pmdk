@@ -131,9 +131,10 @@ void TableBuilder::AddToPmem(PmemSkiplist *pmem_skiplist, uint64_t number,
   }
   r->last_key.assign(key.data(), key.size());
   r->num_entries++;
-  // r->data_block.Add(key, value);
-  r->offset += (key.size() + value.size());
-  // printf("%s, %d\n", key.ToString().c_str(), key.ToString().size());
+  // FIXME: Adjust estimated-size(offset) 
+  r->offset += (key.size() + value.size() / 2);
+  // r->offset += (value.size() / 2);
+  // printf("%d] %s\n", number, key.ToString().c_str());
   // pmem_skiplist->Insert(number, (char *)key.data(), (char *)value.data());  
   pmem_skiplist->Insert((char *)key.data(), (char *)value.data(), 
                         key.size(), value.size(), number);

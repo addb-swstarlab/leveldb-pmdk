@@ -71,8 +71,7 @@ struct map_ops {
 	int(*remove_free)(PMEMobjpool *pop, TOID(struct map) map,
 		char *key);
 	int(*clear)(PMEMobjpool *pop, TOID(struct map) map);
-	char*(*get)(PMEMobjpool *pop, TOID(struct map) map,
-		char *key);
+	char*(*get)(PMEMobjpool *pop, TOID(struct map) map, char *key);
 	int(*lookup)(PMEMobjpool *pop, TOID(struct map) map,
 		char *key);
 	int(*foreach)(PMEMobjpool *pop, TOID(struct map) map,
@@ -82,6 +81,11 @@ struct map_ops {
 	size_t(*count)(PMEMobjpool *pop, TOID(struct map) map);
 	int(*cmd)(PMEMobjpool *pop, TOID(struct map) map,
 		unsigned cmd, uint64_t arg);
+	const PMEMoid*(*get_prev_OID)(PMEMobjpool *pop, TOID(struct map) map, char *key);
+	const PMEMoid*(*get_next_OID)(PMEMobjpool *pop, TOID(struct map) map, char *key);
+	// PMEMoid(*get_next_OID)(PMEMobjpool *pop, TOID(struct map) map, char *key);
+	const PMEMoid*(*get_first_OID)(PMEMobjpool *pop, TOID(struct map) map);
+	const PMEMoid*(*get_last_OID)(PMEMobjpool *pop, TOID(struct map) map);
 };
 
 struct map_ctx {
@@ -115,6 +119,15 @@ int map_is_empty(struct map_ctx *mapc, TOID(struct map) map);
 size_t map_count(struct map_ctx *mapc, TOID(struct map) map);
 int map_cmd(struct map_ctx *mapc, TOID(struct map) map,
 	unsigned cmd, uint64_t arg);
+const PMEMoid*
+	map_get_prev_OID(struct map_ctx *mapc, TOID(struct map) map, char *key);
+// PMEMoid 
+const PMEMoid* 
+	map_get_next_OID(struct map_ctx *mapc, TOID(struct map) map, char *key);
+const PMEMoid*
+	map_get_first_OID(struct map_ctx *mapc, TOID(struct map) map);
+const PMEMoid*
+	map_get_last_OID(struct map_ctx *mapc, TOID(struct map) map);
 } // namespace leveldb
 // #ifdef __cplusplus
 // }

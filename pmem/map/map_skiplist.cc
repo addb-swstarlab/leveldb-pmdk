@@ -190,8 +190,52 @@ map_skiplist_is_empty(PMEMobjpool *pop, TOID(struct map) map)
 {
 	TOID(struct skiplist_map_node) skiplist_map;
 	TOID_ASSIGN(skiplist_map, map.oid);
-
+	
 	return skiplist_map_is_empty(pop, skiplist_map);
+}
+/*
+ * map_skiplist_get_prev_OID -- wrapper for skiplist_map_get_prev_OID
+ */
+const PMEMoid*
+map_skiplist_get_prev_OID(PMEMobjpool *pop, TOID(struct map) map, char *key)
+{
+	TOID(struct skiplist_map_node) skiplist_map;
+	TOID_ASSIGN(skiplist_map, map.oid);
+	
+	return skiplist_map_get_prev_OID(pop, skiplist_map, key);
+}
+/*
+ * map_skiplist_get_next_OID -- wrapper for skiplist_map_get_next_OID
+ */
+const PMEMoid*
+map_skiplist_get_next_OID(PMEMobjpool *pop, TOID(struct map) map, char *key)
+{
+	TOID(struct skiplist_map_node) skiplist_map;
+	TOID_ASSIGN(skiplist_map, map.oid);
+	
+	return skiplist_map_get_next_OID(pop, skiplist_map, key);
+}
+/*
+ * map_skiplist_get_first_OID -- wrapper for skiplist_map_get_first_OID
+ */
+const PMEMoid*
+map_skiplist_get_first_OID(PMEMobjpool *pop, TOID(struct map) map)
+{
+	TOID(struct skiplist_map_node) skiplist_map;
+	TOID_ASSIGN(skiplist_map, map.oid);
+	
+	return skiplist_map_get_first_OID(pop, skiplist_map);
+}
+/*
+ * map_skiplist_get_last_OID -- wrapper for skiplist_map_get_last_OID
+ */
+const PMEMoid*
+map_skiplist_get_last_OID(PMEMobjpool *pop, TOID(struct map) map)
+{
+	TOID(struct skiplist_map_node) skiplist_map;
+	TOID_ASSIGN(skiplist_map, map.oid);
+	
+	return skiplist_map_get_last_OID(pop, skiplist_map);
 }
 
 struct map_ops skiplist_map_ops = {
@@ -210,6 +254,10 @@ struct map_ops skiplist_map_ops = {
 	/* .is_empty	= */ map_skiplist_is_empty,
 	/* .count	= */ NULL,
 	/* .cmd		= */ NULL,
+	/* .get_prev_OID = */ map_skiplist_get_prev_OID,
+	/* .get_next_OID = */ map_skiplist_get_next_OID,
+	/* .get_first_OID = */ map_skiplist_get_first_OID,
+	/* .get_last_OID = */ map_skiplist_get_last_OID,
 };
 
 } // namespace leveldb

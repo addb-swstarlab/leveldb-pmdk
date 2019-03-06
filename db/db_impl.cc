@@ -1,7 +1,7 @@
 // Copyright (c) 2011 The LevelDB Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file. See the AUTHORS file for names of contributors.
-
+// REVIEW: DEBUG: TODO: FIXME: NOTE: SOLVE: PROGRESS: JH:
 #include "db/db_impl.h"
 
 #include <stdint.h>
@@ -115,6 +115,7 @@ Options SanitizeOptions(const std::string& dbname,
   }
   // JH
   result.pmem_skiplist = new PmemSkiplist;
+  result.pmem_internal_iterator = new PmemIterator(0, result.pmem_skiplist);
   return result;
 }
 
@@ -507,7 +508,7 @@ Status DBImpl::WriteLevel0Table(MemTable* mem, VersionEdit* edit,
   {
     mutex_.Unlock();
     /*
-     * TODO: Write file based on pmem
+     * SOLVE: Write file based on pmem
      */
     s = BuildTable(dbname_, env_, options_, table_cache_, iter, &meta);
     mutex_.Lock();
@@ -745,13 +746,19 @@ void DBImpl::BackgroundCompaction() {
         versions_->LevelSummary(&tmp));
   } else {
     CompactionState* compact = new CompactionState(c);
+    /* PROGRESS: Compaction based on pmem */
     status = DoCompactionWork(compact);
     if (!status.ok()) {
       RecordBackgroundError(status);
     }
     CleanupCompaction(compact);
     c->ReleaseInputs();
-    DeleteObsoleteFiles();
+    /* TODO: Delete files based on pmem */
+    if(options_.sst_type == kFileDescriptorSST) {
+      DeleteObsoleteFiles();
+    } else if (options_.sst_type == kPmemSST) {
+      // Done
+    }
   }
   delete c;
 
@@ -795,7 +802,7 @@ void DBImpl::CleanupCompaction(CompactionState* compact) {
   }
   delete compact;
 }
-
+/* SOLVE: Compaction based on pmem */
 Status DBImpl::OpenCompactionOutputFile(CompactionState* compact) {
   assert(compact != nullptr);
   assert(compact->builder == nullptr);
@@ -813,19 +820,28 @@ Status DBImpl::OpenCompactionOutputFile(CompactionState* compact) {
   }
 
   // Make the output file
+  // JH
   std::string fname = TableFileName(dbname_, file_number);
-  Status s = env_->NewWritableFile(fname, &compact->outfile);
-  if (s.ok()) {
-    compact->builder = new TableBuilder(options_, compact->outfile);
+  Status s;
+  if (options_.sst_type == kFileDescriptorSST) {
+    s = env_->NewWritableFile(fname, &compact->outfile);
+    if (s.ok()) {
+      compact->builder = new TableBuilder(options_, compact->outfile);
+    }
+  } else if (options_.sst_type == kPmemSST) {
+    compact->builder = new TableBuilder(options_, nullptr);
   }
   return s;
 }
-
+/* SOLVE: Compaction based on pmem */
 Status DBImpl::FinishCompactionOutputFile(CompactionState* compact,
                                           Iterator* input) {
   assert(compact != nullptr);
   assert(compact->outfile != nullptr);
   assert(compact->builder != nullptr);
+
+  // JH
+  SSTMakerType sst_type = options_.sst_type;
 
   const uint64_t output_number = compact->current_output()->number;
   assert(output_number != 0);
@@ -833,10 +849,15 @@ Status DBImpl::FinishCompactionOutputFile(CompactionState* compact,
   // Check for iterator errors
   Status s = input->status();
   const uint64_t current_entries = compact->builder->NumEntries();
-  if (s.ok()) {
-    s = compact->builder->Finish();
-  } else {
-    compact->builder->Abandon();
+  // Builder
+  if (sst_type == kFileDescriptorSST) {
+    if (s.ok()) {
+      s = compact->builder->Finish();
+    } else {
+      compact->builder->Abandon();
+    }
+  } else if (sst_type == kPmemSST) {
+    // Done
   }
   const uint64_t current_bytes = compact->builder->FileSize();
   compact->current_output()->file_size = current_bytes;
@@ -845,21 +866,34 @@ Status DBImpl::FinishCompactionOutputFile(CompactionState* compact,
   delete compact->builder;
   compact->builder = nullptr;
 
-  // Finish and check for file errors
-  if (s.ok()) {
-    s = compact->outfile->Sync();
+  // Output file
+  if (sst_type == kFileDescriptorSST) {
+    // Finish and check for file errors
+    if (s.ok()) {
+      s = compact->outfile->Sync();
+    }
+    if (s.ok()) {
+      // printf("Close %d\n", output_number);
+      s = compact->outfile->Close();
+    }
+    delete compact->outfile;
+    compact->outfile = nullptr;
+  } else if (sst_type == kPmemSST) {
+    // Done
   }
-  if (s.ok()) {
-    s = compact->outfile->Close();
-  }
-  delete compact->outfile;
-  compact->outfile = nullptr;
 
   if (s.ok() && current_entries > 0) {
     // Verify that the table is usable
-    Iterator* iter = table_cache_->NewIterator(ReadOptions(),
-                                               output_number,
-                                               current_bytes);
+    Iterator *iter;
+    if (sst_type == kFileDescriptorSST) {
+      iter = table_cache_->NewIterator(ReadOptions(),
+                                       output_number,
+                                       current_bytes);
+    } else if (sst_type == kPmemSST) {
+      iter = table_cache_->NewIteratorFromPmem(ReadOptions(),
+                                                output_number,
+                                                current_bytes);
+    }
     s = iter->status();
     delete iter;
     if (s.ok()) {
@@ -917,7 +951,7 @@ Status DBImpl::DoCompactionWork(CompactionState* compact) {
 
   // Release mutex while we're actually doing the compaction work
   mutex_.Unlock();
-
+  // PROGRESS: Need to analyze here
   Iterator* input = versions_->MakeInputIterator(compact->compaction);
   input->SeekToFirst();
   Status status;
@@ -925,7 +959,10 @@ Status DBImpl::DoCompactionWork(CompactionState* compact) {
   std::string current_user_key;
   bool has_current_user_key = false;
   SequenceNumber last_sequence_for_key = kMaxSequenceNumber;
+  // printf("Start iteration\n");
+  SSTMakerType sst_type = options_.sst_type;
   for (; input->Valid() && !shutting_down_.Acquire_Load(); ) {
+    // printf("key:'%s'\n", input->key());
     // Prioritize immutable compaction work
     if (has_imm_.NoBarrier_Load() != nullptr) {
       const uint64_t imm_start = env_->NowMicros();
@@ -1005,7 +1042,12 @@ Status DBImpl::DoCompactionWork(CompactionState* compact) {
         compact->current_output()->smallest.DecodeFrom(key);
       }
       compact->current_output()->largest.DecodeFrom(key);
-      compact->builder->Add(key, input->value());
+      if (sst_type == kFileDescriptorSST) {
+        compact->builder->Add(key, input->value());
+      } else if (sst_type == kPmemSST) {
+        compact->builder->AddToPmem(options_.pmem_skiplist, 
+                      compact->current_output()->number, key, input->value());
+      }
 
       // Close output file if it is big enough
       if (compact->builder->FileSize() >=
@@ -1019,7 +1061,8 @@ Status DBImpl::DoCompactionWork(CompactionState* compact) {
 
     input->Next();
   }
-
+  // printf("End iteration\n");
+ 
   if (status.ok() && shutting_down_.Acquire_Load()) {
     status = Status::IOError("Deleting DB during compaction");
   }
@@ -1032,6 +1075,7 @@ Status DBImpl::DoCompactionWork(CompactionState* compact) {
   delete input;
   input = nullptr;
 
+  // Make compaction-stats
   CompactionStats stats;
   stats.micros = env_->NowMicros() - start_micros - imm_micros;
   for (int which = 0; which < 2; which++) {
@@ -1046,6 +1090,7 @@ Status DBImpl::DoCompactionWork(CompactionState* compact) {
   mutex_.Lock();
   stats_[compact->compaction->level() + 1].Add(stats);
 
+  // Actual insertion into current Version
   if (status.ok()) {
     status = InstallCompactionResults(compact);
   }
@@ -1153,7 +1198,7 @@ Status DBImpl::Get(const ReadOptions& options,
     } else if (imm != nullptr && imm->Get(lkey, value, &s)) {
       // Done
     } else {
-      /* TODO: Get based on pmem */
+      /* SOLVE: Get based on pmem */
       // s = current->Get(options, lkey, value, &stats);
       s = current->Get(options_, options, lkey, value, &stats);
       // printf("Version Get\n");

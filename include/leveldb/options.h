@@ -30,6 +30,12 @@ enum CompressionType {
   kSnappyCompression = 0x1
 };
 
+// JH
+enum SSTMakerType {
+  kFileDescriptorSST,
+  kPmemSST
+};
+
 // Options to control the behavior of a database (passed to DB::Open)
 struct LEVELDB_EXPORT Options {
   // -------------------
@@ -158,6 +164,8 @@ struct LEVELDB_EXPORT Options {
 
   // JH 
   PmemSkiplist *pmem_skiplist;
+  PmemIterator *pmem_internal_iterator;
+  SSTMakerType sst_type;
 
   // Create an Options object with default values for all fields.
   Options();
