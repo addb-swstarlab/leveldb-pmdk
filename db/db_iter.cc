@@ -85,6 +85,10 @@ class DBIter: public Iterator {
   virtual void SeekToFirst();
   virtual void SeekToLast();
 
+  // JH
+  virtual PMEMoid* key_oid();
+  virtual PMEMoid* value_oid();
+
  private:
   void FindNextUserEntry(bool skipping, std::string* skip);
   void FindPrevUserEntry();
@@ -302,7 +306,13 @@ void DBIter::SeekToLast() {
   iter_->SeekToLast();
   FindPrevUserEntry();
 }
-
+// [JH][Pmem]
+PMEMoid* DBIter::key_oid() {
+  return nullptr;
+}
+PMEMoid* DBIter::value_oid() {
+  return nullptr;
+}
 }  // anonymous namespace
 
 Iterator* NewDBIterator(

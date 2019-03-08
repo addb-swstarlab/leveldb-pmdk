@@ -26,8 +26,8 @@ Options::Options()
       reuse_logs(false),
       filter_policy(nullptr)
       // JH
-      // , sst_type(kPmemSST) // option 1
-      , sst_type(kFileDescriptorSST) // option 2
+      , sst_type(kPmemSST) // option 1
+      // , sst_type(kFileDescriptorSST) // option 2
        {
 }
 

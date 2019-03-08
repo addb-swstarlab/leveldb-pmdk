@@ -36,6 +36,7 @@ SPDX-License-Identifier: BSD-3-Clause
 // For this test
 #include <iostream>
 #include <fstream> //file_exists
+#include <chrono>
 #include "pmem/layout.h"
 // #include "pmem/map/map.h"
 #include "pmem/map/map_skiplist.h"
@@ -121,6 +122,7 @@ TEST (PmemSkiplistManagerTest, Skiplist_manager) {
 
 
 	cout << "# Start Skiplist_manager" << endl;
+	// NOTE: Create pool
 	if (!file_exists(SKIPLIST_MANAGER_PATH)) {
         /* Initialize pool & map_ctx */
 		pool = pmemobj_create(SKIPLIST_MANAGER_PATH, 
@@ -192,7 +194,10 @@ TEST (PmemSkiplistManagerTest, Skiplist_manager) {
 		}
 		/* NOTE: bulk insert */
 		for (int i=0; i<SKIPLIST_MANAGER_LIST_SIZE; i++) {
-			for (int j=0; j<NUM_OF_PRE_ALLOC_NODE; j++) {
+			// for (int j=0; j<NUM_OF_PRE_ALLOC_NODE; j++) {
+			chrono::steady_clock::time_point begin, end;
+
+			for (int j=0; j<5; j++) {
 			// for (int j=0; j<SKIPLIST_BULK_INSERT_NUM; j++) {
 				char key[] = "key-";
 				stringstream ss_key, ss_value;
@@ -203,35 +208,22 @@ TEST (PmemSkiplistManagerTest, Skiplist_manager) {
 				<< ".......................................................................................";
 				// << "..............................................";
 				// printf("'%s'-'%s'\n", (char *)ss_key.str().c_str(), (char *)ss_value.str().c_str());
+			begin = std::chrono::steady_clock::now();
 				int res = map_insert(mapc, map[i], 
 									(char *)ss_key.str().c_str(), (char *)ss_value.str().c_str(), 
 									ss_key.str().size(), ss_value.str().size(), i);
+			end = std::chrono::steady_clock::now();
+			std::cout << "insert"<< i <<" = " << std::chrono::duration_cast<std::chrono::nanoseconds> (end - begin).count() <<"\n";
 				if(res) { fprintf(stderr, "[ERROR] insert %d-%d\n", i, j);  abort();} 
 				// else if (!res && (j%10==0)) printf("insert %d] success\n", j);
 			}
+
 			printf("Insert %d] End\n", i);
 		}
-		
-		// // skiplists[0];
-		/*
-		printf("[5]\n");
-		for (int i=0; i<SKIPLIST_MANAGER_LIST_SIZE; i++) {
-			int res = map_create(mapc, &D_RW(root_ptr->skiplists[i])->map, &args); // [ERROR] D_RW need TOID
-			if (res) printf("[CREATE ERROR %d] %d\n",i ,res);
-			else printf("[CREATE SUCCESS %d] %d\n",i ,res);	
-			map[i] = D_RW(root_ptr->skiplists[i])->map;
-			char *key = "123";
-			// stringstream ss;
-			// ss << i;
-			char *value = "value123";
-			res = map_insert(mapc, map[i], key, value);
-			if(res) fprintf(stderr, "[ERROR] insert\n");
-			else printf("insert] success\n");
-		}
-		*/
 
-
-	} else {
+	} 
+	// NOTE: Open
+	else {
 		pool = pmemobj_open(SKIPLIST_MANAGER_PATH, 
                             POBJ_LAYOUT_NAME(root_skiplist_manager));
 		if (pool == NULL) {
@@ -251,7 +243,7 @@ TEST (PmemSkiplistManagerTest, Skiplist_manager) {
 		map = (TOID(struct map) *) malloc(
 											sizeof(TOID(struct map)) * SKIPLIST_MANAGER_LIST_SIZE);
 		/* NOTE: foreach test */
-		for (int i=0; i<SKIPLIST_MANAGER_LIST_SIZE; i++) {
+		for (int i=0; i<SKIPLIST_MANAGER_LIST_SIZE-1; i++) {
 				map[i] = skiplists[i].map;
 				// char *key = "key-0-5";
 				// char *key = "key-0-30400";
@@ -260,13 +252,47 @@ TEST (PmemSkiplistManagerTest, Skiplist_manager) {
 				// else printf("get] cannot get key %d:'%s'\n",i, key);
 				// printf("Get-End\n");
 				// delete get;
+
 				printf("[%d]\n",i);
+				// map_clear(mapc, map[i]);
 				map_foreach(mapc, map[i], hashmap_print, NULL);
 				printf("\n");
 		}
+		// TOID(struct map) *prev, *curr;
+		// printf("start\n");
+		// map_get_next_TOID(mapc, map[8], "key-8-1", prev, curr);
+		// printf("end\n");
 
-		/* NOTE: Get_TOID test */
-		
+		/* TEST: swap oid test */
+		// struct hashmap_args args; // empty
+		// int res = map_create(mapc, &(skiplists[9].map), 9, args); // [ERROR] D_RW need TOID
+		// if (res) printf("[CREATE ERROR %d] %d\n",9 ,res);
+		// else printf("[CREATE SUCCESS %d] %d\n",9 ,res);	
+		// map[9] = skiplists[9].map;
+		// chrono::steady_clock::time_point begin, end;
+		// begin = std::chrono::steady_clock::now();
+		// for (int i=0; i<SKIPLIST_MANAGER_LIST_SIZE; i++) {
+		// 		printf("[%d]\n",i);
+		// 		if (i != 9) {
+		// 			chrono::steady_clock::time_point begin, end;
+
+			
+		// 			PMEMoid *oid = const_cast<PMEMoid *>(map_get_first_OID(mapc, map[i]));
+		// 	begin = std::chrono::steady_clock::now();
+		// 			map_insert_by_oid(mapc, map[9], 9, oid);
+		// 	end = std::chrono::steady_clock::now();
+		// 	std::cout << "insert by oid"<< i <<" = " << std::chrono::duration_cast<std::chrono::nanoseconds> (end - begin).count() <<"\n";
+		// 		}
+		// 		// printf("\n");
+		// }
+		// begin = std::chrono::steady_clock::now();
+		// map_insert_null_node(mapc, map[9], 9);
+		// 	end = std::chrono::steady_clock::now();
+		// 	std::cout << "insert null node"<< " = " << std::chrono::duration_cast<std::chrono::nanoseconds> (end - begin).count() <<"\n";
+		// for (int i=0; i<SKIPLIST_MANAGER_LIST_SIZE; i++) {
+		// 	printf("[%d]\n",i);
+		// 		map_foreach(mapc, map[i], hashmap_print, NULL);
+		// }
 
 	// for (int i=0; i<SKIPLIST_MANAGER_LIST_SIZE; i++) {
 	// 		map[i] = D_RW(root_ptr->skiplists[i])->map;

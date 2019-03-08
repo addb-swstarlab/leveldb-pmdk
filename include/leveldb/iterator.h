@@ -18,6 +18,8 @@
 #include "leveldb/export.h"
 #include "leveldb/slice.h"
 #include "leveldb/status.h"
+// JH
+#include "libpmemobj.h"
 
 namespace leveldb {
 
@@ -68,6 +70,10 @@ class LEVELDB_EXPORT Iterator {
   // the iterator.
   // REQUIRES: Valid()
   virtual Slice value() const = 0;
+
+  // JH
+  virtual PMEMoid* key_oid() const {return nullptr;};
+  virtual PMEMoid* value_oid() const {return nullptr;};
 
   // If an error has occurred, return it.  Else return an ok status.
   virtual Status status() const = 0;

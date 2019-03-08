@@ -311,6 +311,12 @@ class Version::LevelFilesConcatIteratorFromPmem : public Iterator {
     return current_->value();
   }
   virtual Status status() const { return Status::OK(); }
+  PMEMoid* key_oid() const {
+    return current_->key_oid();
+  }
+  PMEMoid* value_oid() const {
+    return current_->value_oid();
+  }
  private:
   InternalKeyComparator icmp_;
   PmemIterator **pmem_iterator;

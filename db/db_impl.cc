@@ -753,11 +753,13 @@ void DBImpl::BackgroundCompaction() {
     }
     CleanupCompaction(compact);
     c->ReleaseInputs();
-    /* TODO: Delete files based on pmem */
+    /* SOLVE: Delete files based on pmem */
     if(options_.sst_type == kFileDescriptorSST) {
       DeleteObsoleteFiles();
     } else if (options_.sst_type == kPmemSST) {
       // Done
+      // DEBUG:
+      DeleteObsoleteFiles();
     }
   }
   delete c;
@@ -951,7 +953,7 @@ Status DBImpl::DoCompactionWork(CompactionState* compact) {
 
   // Release mutex while we're actually doing the compaction work
   mutex_.Unlock();
-  // PROGRESS: Need to analyze here
+  // SOLVE: Need to analyze here
   Iterator* input = versions_->MakeInputIterator(compact->compaction);
   input->SeekToFirst();
   Status status;
@@ -985,6 +987,7 @@ Status DBImpl::DoCompactionWork(CompactionState* compact) {
       }
     }
 
+    // NOTE: Check whether current key is valid. If not, drop = true.
     // Handle key/value, add to state, etc.
     bool drop = false;
     if (!ParseInternalKey(key, &ikey)) {
@@ -1042,11 +1045,19 @@ Status DBImpl::DoCompactionWork(CompactionState* compact) {
         compact->current_output()->smallest.DecodeFrom(key);
       }
       compact->current_output()->largest.DecodeFrom(key);
+      // PROGRESS:
       if (sst_type == kFileDescriptorSST) {
         compact->builder->Add(key, input->value());
       } else if (sst_type == kPmemSST) {
-        compact->builder->AddToPmem(options_.pmem_skiplist, 
-                      compact->current_output()->number, key, input->value());
+        // printf("1]\n");
+        
+        Slice value = input->value();
+        // compact->builder->AddToPmem(options_.pmem_skiplist, 
+        //               compact->current_output()->number, key, value);
+        compact->builder->AddToPmemByOID(options_.pmem_skiplist, 
+                      compact->current_output()->number, key, value,
+                      input->key_oid(), input->value_oid());
+        // printf("Compaction] '%s'\n", key);
       }
 
       // Close output file if it is big enough

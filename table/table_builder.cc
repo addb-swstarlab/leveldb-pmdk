@@ -135,9 +135,33 @@ void TableBuilder::AddToPmem(PmemSkiplist *pmem_skiplist, uint64_t number,
   r->offset += (key.size() + value.size() / 2);
   // r->offset += (value.size() / 2);
   // printf("%d] %s\n", number, key.ToString().c_str());
-  // pmem_skiplist->Insert(number, (char *)key.data(), (char *)value.data());  
+  // pmem_skiplist->Insert(number, (char *)key.data(), (char *)value.data()); 
+  // printf("3]\n"); 
   pmem_skiplist->Insert((char *)key.data(), (char *)value.data(), 
                         key.size(), value.size(), number);
+  // printf("4]\n"); 
+}
+// PROGRESS:
+void TableBuilder::AddToPmemByOID(PmemSkiplist *pmem_skiplist, uint64_t number,
+                              const Slice& key, const Slice& value,
+                              PMEMoid *key_oid, PMEMoid *value_oid) {
+  Rep* r = rep_;
+  assert(!r->closed);
+  if (!ok()) return;
+  if (r->num_entries > 0) {
+    assert(r->options.comparator->Compare(key, Slice(r->last_key)) > 0);
+  }
+  r->last_key.assign(key.data(), key.size());
+  r->num_entries++;
+  // FIXME: Adjust estimated-size(offset) 
+  r->offset += (key.size() + value.size() / 2);
+  // r->offset += (value.size() / 2);
+  // printf("%d] %s\n", number, key.ToString().c_str());
+  // pmem_skiplist->Insert(number, (char *)key.data(), (char *)value.data());  
+  // printf("3]\n");
+  pmem_skiplist->InsertByOID(key_oid, value_oid, 
+                        key.size(), value.size(), number);
+  // printf("4]\n");
 }
 
 void TableBuilder::Flush() {

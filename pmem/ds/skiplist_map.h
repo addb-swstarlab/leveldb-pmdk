@@ -66,6 +66,12 @@ int skiplist_map_create(PMEMobjpool *pop, TOID(struct skiplist_map_node) *map,
 int skiplist_map_destroy(PMEMobjpool *pop, TOID(struct skiplist_map_node) *map);
 int skiplist_map_insert(PMEMobjpool *pop, TOID(struct skiplist_map_node) map,
 		char *key, char *value, int key_len, int value_len, int index);
+int skiplist_map_insert_by_oid(PMEMobjpool *pop, 
+		TOID(struct skiplist_map_node) map, 
+		PMEMoid *key_oid, PMEMoid *value_oid, int key_len, int value_len,
+		int index);
+int skiplist_map_insert_null_node(PMEMobjpool *pop, 
+		TOID(struct skiplist_map_node) map, int index);
 /* Deprecated function */
 // int skiplist_map_insert_new(PMEMobjpool *pop,
 // 		TOID(struct skiplist_map_node) map, char *key, size_t size,
@@ -96,6 +102,13 @@ const PMEMoid*
 skiplist_map_get_first_OID(PMEMobjpool *pop, TOID(struct skiplist_map_node) map);
 const PMEMoid*
 skiplist_map_get_last_OID(PMEMobjpool *pop, TOID(struct skiplist_map_node) map);
+
+void
+skiplist_map_get_next_TOID(PMEMobjpool *pop, 
+		TOID(struct skiplist_map_node) map,
+		char *key, 
+		TOID(struct skiplist_map_node) *prev, 
+		TOID(struct skiplist_map_node) *curr);
 
 } // namespace leveldb
 

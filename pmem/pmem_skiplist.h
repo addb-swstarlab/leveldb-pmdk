@@ -26,6 +26,8 @@ namespace leveldb {
 
     /* Wrapper functions */
     void Insert(char *key, char *value, int key_len, int value_len, int index);
+    void InsertByOID(PMEMoid *key_oid, PMEMoid *value_oid, int key_len, 
+                      int value_len, int index);
     char* Get(int index, char *key);
 
     /* Iterator functions */
@@ -33,7 +35,9 @@ namespace leveldb {
     const PMEMoid* GetNextOID(int index, char *key);
     const PMEMoid* GetFirstOID(int index);    
     const PMEMoid* GetLastOID(int index);
-    // TOID(struct skiplist_map_node)* GetTOID(int index, char *key);
+
+    void GetNextTOID(int index, char *key, 
+                      TOID(struct map) *prev, TOID(struct map) *curr);
 
    private:
     PMEMobjpool *pool;
@@ -66,11 +70,23 @@ namespace leveldb {
     Slice value() const;
     Status status() const;
 
+    virtual PMEMoid* key_oid() const;
+    virtual PMEMoid* value_oid() const;
+    
+    PMEMoid* GetCurrentOID();
+
    private:
-    PmemSkiplist *pmem_skiplist_;
+    PmemSkiplist* pmem_skiplist_;
     int index_;
     // Status status_;
     PMEMoid* current_;
+    struct skiplist_map_node* current_node_;
+
+    mutable PMEMoid* key_oid_;
+    mutable PMEMoid* value_oid_;
+    // PROGRESS:
+    // TOID(struct map) *prev_;
+    // TOID(struct map) *curr_;
   };
 
 } // namespace leveldb

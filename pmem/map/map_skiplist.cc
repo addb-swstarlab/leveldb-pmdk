@@ -91,6 +91,32 @@ map_skiplist_insert(PMEMobjpool *pop, TOID(struct map) map,
 }
 
 /*
+ * map_skiplist_insert_by_oid -- wrapper for skiplist_map_insert_by_oid
+ */
+static int
+map_skiplist_insert_by_oid(PMEMobjpool *pop, TOID(struct map) map, 
+	PMEMoid *key_oid, PMEMoid *value_oid, int key_len, int value_len, int index)
+{
+	TOID(struct skiplist_map_node) skiplist_map;
+	TOID_ASSIGN(skiplist_map, map.oid);
+
+	return skiplist_map_insert_by_oid(pop, skiplist_map, key_oid, value_oid, key_len,
+		value_len, index);
+}
+
+/*
+ * map_skiplist_insert_null_node -- wrapper for skiplist_map_insert_null_node
+ */
+static int
+map_skiplist_insert_null_node(PMEMobjpool *pop, TOID(struct map) map, int index)
+{
+	TOID(struct skiplist_map_node) skiplist_map;
+	TOID_ASSIGN(skiplist_map, map.oid);
+
+	return skiplist_map_insert_null_node(pop, skiplist_map, index);
+}
+
+/*
  * map_skiplist_insert_new -- wrapper for skiplist_map_insert_new
  */
 /* Deprecated function */
@@ -237,13 +263,33 @@ map_skiplist_get_last_OID(PMEMobjpool *pop, TOID(struct map) map)
 	
 	return skiplist_map_get_last_OID(pop, skiplist_map);
 }
-
+/*
+ * map_skiplist_get_next_TOID -- wrapper for skiplist_map_get_next_TOID
+ */
+void
+map_skiplist_get_next_TOID(PMEMobjpool *pop, TOID(struct map) map, char *key,
+	TOID(struct map) *prev, TOID(struct map) *curr)
+{
+	printf("1\n");
+	TOID(struct skiplist_map_node) skiplist_map;
+	TOID_ASSIGN(skiplist_map, map.oid);
+	TOID(struct skiplist_map_node) previous;
+	TOID_ASSIGN(previous, prev->oid);
+	TOID(struct skiplist_map_node) current;
+	TOID_ASSIGN(current, curr->oid);
+	
+	printf("2\n");
+	skiplist_map_get_next_TOID(pop, skiplist_map, key, &previous, &current);
+	printf("3\n");
+}
 struct map_ops skiplist_map_ops = {
 	/* .check	= */ map_skiplist_check,
 	/* .create	= */ map_skiplist_create,
 	/* .destroy	= */ map_skiplist_destroy,
 	/* .init	= */ NULL,
 	/* .insert	= */ map_skiplist_insert,
+	/* .insert_by_oid	= */ map_skiplist_insert_by_oid,
+	/* .insert_null_node	= */ map_skiplist_insert_null_node,
 	/* .insert_new	= */ NULL, /* Deprecated function (map_skiplist_insert_new) */ 
 	/* .remove	= */ map_skiplist_remove,
 	/* .remove_free	= */ map_skiplist_remove_free,
@@ -258,6 +304,7 @@ struct map_ops skiplist_map_ops = {
 	/* .get_next_OID = */ map_skiplist_get_next_OID,
 	/* .get_first_OID = */ map_skiplist_get_first_OID,
 	/* .get_last_OID = */ map_skiplist_get_last_OID,
+	/* .get_next_TOID = */ map_skiplist_get_next_TOID,
 };
 
 } // namespace leveldb

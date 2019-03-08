@@ -60,6 +60,9 @@ struct map_ops {
 	int(*init)(PMEMobjpool *pop, TOID(struct map) map);
 	int(*insert)(PMEMobjpool *pop, TOID(struct map) map,
 		char *key, char *value, int key_len, int value_len, int index);
+	int(*insert_by_oid)(PMEMobjpool *pop, TOID(struct map) map,
+		PMEMoid *key_oid, PMEMoid *value_oid, int key_len, int value_len, int index);
+	int(*insert_null_node)(PMEMobjpool *pop, TOID(struct map) map, int index);
 	/* Deprecated function */
 	int(*insert_new)(PMEMobjpool *pop, TOID(struct map) map,
 		char *key, size_t size,
@@ -83,9 +86,12 @@ struct map_ops {
 		unsigned cmd, uint64_t arg);
 	const PMEMoid*(*get_prev_OID)(PMEMobjpool *pop, TOID(struct map) map, char *key);
 	const PMEMoid*(*get_next_OID)(PMEMobjpool *pop, TOID(struct map) map, char *key);
-	// PMEMoid(*get_next_OID)(PMEMobjpool *pop, TOID(struct map) map, char *key);
 	const PMEMoid*(*get_first_OID)(PMEMobjpool *pop, TOID(struct map) map);
 	const PMEMoid*(*get_last_OID)(PMEMobjpool *pop, TOID(struct map) map);
+
+	// PROGRESS:
+	void (*get_next_TOID)(PMEMobjpool *pop, TOID(struct map) map, char *key, 
+		TOID(struct map) *prev, TOID(struct map) *curr);
 };
 
 struct map_ctx {
@@ -101,6 +107,9 @@ int map_destroy(struct map_ctx *mapc, TOID(struct map) *map);
 int map_init(struct map_ctx *mapc, TOID(struct map) map);
 int map_insert(struct map_ctx *mapc, TOID(struct map) map,
 	char *key, char *value, int key_len, int value_len, int index);
+int map_insert_by_oid(struct map_ctx *mapc, TOID(struct map) map,
+	PMEMoid *key_oid, PMEMoid *value_oid, int key_len, int value_len, int index);
+int map_insert_null_node(struct map_ctx *mapc, TOID(struct map) map, int index);
 /* Deprecated function */
 int map_insert_new(struct map_ctx *mapc, TOID(struct map) map,
 	char *key, size_t size,
@@ -121,13 +130,16 @@ int map_cmd(struct map_ctx *mapc, TOID(struct map) map,
 	unsigned cmd, uint64_t arg);
 const PMEMoid*
 	map_get_prev_OID(struct map_ctx *mapc, TOID(struct map) map, char *key);
-// PMEMoid 
 const PMEMoid* 
 	map_get_next_OID(struct map_ctx *mapc, TOID(struct map) map, char *key);
 const PMEMoid*
 	map_get_first_OID(struct map_ctx *mapc, TOID(struct map) map);
 const PMEMoid*
 	map_get_last_OID(struct map_ctx *mapc, TOID(struct map) map);
+
+void map_get_next_TOID(struct map_ctx *mapc, TOID(struct map) map, char *key,
+	TOID(struct map) *prev, TOID(struct map) *curr);
+
 } // namespace leveldb
 // #ifdef __cplusplus
 // }

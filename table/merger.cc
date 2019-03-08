@@ -8,6 +8,9 @@
 #include "leveldb/iterator.h"
 #include "table/iterator_wrapper.h"
 
+// JH
+#include "libpmemobj.h"
+
 namespace leveldb {
 
 namespace {
@@ -131,7 +134,12 @@ class MergingIterator : public Iterator {
     }
     return status;
   }
-
+  PMEMoid* key_oid() const {
+    return current_->key_oid();
+  }
+  PMEMoid* value_oid() const {
+    return current_->value_oid();
+  }
  private:
   void FindSmallest();
   void FindLargest();

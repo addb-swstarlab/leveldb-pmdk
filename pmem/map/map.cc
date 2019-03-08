@@ -128,6 +128,28 @@ map_insert(struct map_ctx *mapc, TOID(struct map) map,
 }
 
 /*
+ * map_insert_by_oid -- insert by kv-oid
+ */
+int
+map_insert_by_oid(struct map_ctx *mapc, TOID(struct map) map,
+	PMEMoid *key_oid, PMEMoid *value_oid, int key_len, int value_len, int index)
+{
+	ABORT_NOT_IMPLEMENTED(mapc, insert_by_oid);
+	return mapc->ops->insert_by_oid(mapc->pop, map, key_oid, value_oid, key_len,
+		value_len, index);
+}
+
+/*
+ * map_insert_null_node -- insert null node at last
+ */
+int
+map_insert_null_node(struct map_ctx *mapc, TOID(struct map) map, int index)
+{
+	ABORT_NOT_IMPLEMENTED(mapc, insert);
+	return mapc->ops->insert_null_node(mapc->pop, map, index);
+}
+
+/*
  * map_insert_new -- allocate and insert key value pair
  */
 int
@@ -269,4 +291,14 @@ map_get_last_OID(struct map_ctx *mapc, TOID(struct map) map)
 	return mapc->ops->get_last_OID(mapc->pop, map);
 }
 
+/*
+ * map_get_next_TOID -- get TOID of specified key
+ */
+void
+map_get_next_TOID(struct map_ctx *mapc, TOID(struct map) map, char *key,
+	TOID(struct map) *prev, TOID(struct map) *curr)
+{
+	ABORT_NOT_IMPLEMENTED(mapc, get_next_TOID);
+	mapc->ops->get_next_TOID(mapc->pop, map, key, prev, curr);
+}
 } // namespace leveldb

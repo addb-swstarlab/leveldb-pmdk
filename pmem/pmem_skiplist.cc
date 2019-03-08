@@ -95,6 +95,12 @@ namespace leveldb {
         else if (i==SKIPLIST_MANAGER_LIST_SIZE-1) printf("[CREATE SUCCESS %d]\n",i);	
         map[i] = skiplists[i].map;
       }
+      /* NOTE: Reset current node */
+      for (int i=0; i<SKIPLIST_MANAGER_LIST_SIZE; i++) {
+        int res = map_create(mapc, &map[i], i, nullptr); 
+        if (res) printf("[CREATE RESET ERROR %d] %d\n",i ,res);
+        else if (i==SKIPLIST_MANAGER_LIST_SIZE-1) printf("[CREATE RESET SUCCESS %d]\n",i);	
+      }
     } else {
       pool = pmemobj_open(SKIPLIST_MANAGER_PATH, 
                                       POBJ_LAYOUT_NAME(root_skiplist_manager));
@@ -132,7 +138,15 @@ namespace leveldb {
       fprintf(stderr, "[ERROR] insert %d\n", index);  
       abort();
     } 
-    // else if (!res) printf("insert %d] success\n", index);
+  }
+  void PmemSkiplist::InsertByOID(PMEMoid *key_oid, PMEMoid *value_oid, 
+                                      int key_len, int value_len, int index) {
+    int result = map_insert_by_oid(mapc, map[index], key_oid, value_oid, 
+                                    key_len, value_len, index);
+    if(result) { 
+      fprintf(stderr, "[ERROR] insert_by_oid %d\n", index);  
+      abort();
+    } 
   }
   // NOTE: Will be deprecated.. 
   char* PmemSkiplist::Get(int index, char *key) {
@@ -151,6 +165,10 @@ namespace leveldb {
   }
   const PMEMoid* PmemSkiplist::GetLastOID(int index) {
     return map_get_last_OID(mapc, map[index]);
+  }
+  void PmemSkiplist::GetNextTOID(int index, char *key, 
+                                TOID(struct map) *prev, TOID(struct map) *curr) {
+    map_get_next_TOID(mapc, map[index], key, prev, curr);
   }
 
 
@@ -171,6 +189,7 @@ namespace leveldb {
   void PmemIterator::SetIndexAndSeek(int index, const Slice& target) {
     index_ = index;
     current_ = const_cast<PMEMoid *>(pmem_skiplist_->GetNextOID(index_, (char *)target.data()));
+    current_node_ = (struct skiplist_map_node *)pmemobj_direct(*current_);
     if (OID_IS_NULL(*current_)) {
       printf("[ERROR][SetIndexAndSeek] Access Invalid node .. '%s'\n", target.data());
       abort();
@@ -178,6 +197,7 @@ namespace leveldb {
   }
   void PmemIterator::Seek(const Slice& target) {
     current_ = const_cast<PMEMoid *>(pmem_skiplist_->GetNextOID(index_, (char *)target.data()));
+    current_node_ = (struct skiplist_map_node *)pmemobj_direct(*current_);
     if (OID_IS_NULL(*current_)) {
       printf("[ERROR][Seek] Access Invalid node .. '%s'\n", target.data());
       abort();
@@ -185,25 +205,29 @@ namespace leveldb {
   }
   void PmemIterator::SeekToFirst() {
     current_ = const_cast<PMEMoid *>(pmem_skiplist_->GetFirstOID(index_));
+    current_node_ = (struct skiplist_map_node *)pmemobj_direct(*current_);
     assert(!OID_IS_NULL(*current_));
   }
   void PmemIterator::SeekToLast() {
     current_ = const_cast<PMEMoid *>(pmem_skiplist_->GetLastOID(index_));
+    current_node_ = (struct skiplist_map_node *)pmemobj_direct(*current_);
     assert(!OID_IS_NULL(*current_));
   }
   void PmemIterator::Next() {
-    struct skiplist_map_node *current_node = 
-                          (struct skiplist_map_node *)pmemobj_direct(*current_);
-    current_ = &(current_node->next[0].oid); // just move to next oid
+    // struct skiplist_map_node *current_node = 
+    //                       (struct skiplist_map_node *)pmemobj_direct(*current_);
+    current_ = &(current_node_->next[0].oid); // just move to next oid
+    current_node_ = (struct skiplist_map_node *)pmemobj_direct(*current_);
     if (OID_IS_NULL(*current_)) {
       printf("[ERROR][PmemIterator][Next] OID IS NULL\n");
     }
   }
   void PmemIterator::Prev() {
-    struct skiplist_map_node *current_node = 
-                          (struct skiplist_map_node *)pmemobj_direct(*current_);
-    char *key =  (char *)pmemobj_direct(current_node->entry.key);
+    // struct skiplist_map_node *current_node = 
+    //                       (struct skiplist_map_node *)pmemobj_direct(*current_);
+    char *key =  (char *)pmemobj_direct(current_node_->entry.key);
     current_ = const_cast<PMEMoid *>(pmem_skiplist_->GetPrevOID(index_, key));
+    current_node_ = (struct skiplist_map_node *)pmemobj_direct(*current_);
     // FIXME: check Prev() to -1
     if (OID_IS_NULL(*current_)) {
       printf("[ERROR][PmemIterator][Prev] OID IS NULL\n");
@@ -214,29 +238,35 @@ namespace leveldb {
   bool PmemIterator::Valid() const {
     // printf("[ERROR][PmemIterator][Valid] OID IS NULL\n");
     if (OID_IS_NULL(*current_)) return false;
-    struct skiplist_map_node *current_node = 
-                          (struct skiplist_map_node *)pmemobj_direct(*current_);
-    uint8_t key_len = current_node->entry.key_len;
-    uint8_t value_len = current_node->entry.value_len;
+    // struct skiplist_map_node *current_node = 
+    //                       (struct skiplist_map_node *)pmemobj_direct(*current_);
+    uint8_t key_len = current_node_->entry.key_len;
+    uint8_t value_len = current_node_->entry.value_len;
     return key_len && value_len;
   }
   // TODO: Minimize seek time
   Slice PmemIterator::key() const {
     assert(!OID_IS_NULL(*current_));
-    struct skiplist_map_node *current_node = 
-                          (struct skiplist_map_node *)pmemobj_direct(*current_);
-    uint8_t key_len = current_node->entry.key_len;
-    void *ptr = pmemobj_direct(current_node->entry.key);
+    // printf("1\n");
+    // struct skiplist_map_node *current_node = 
+    //                       (struct skiplist_map_node *)pmemobj_direct(*current_);
+    uint8_t key_len = current_node_->entry.key_len;
+    key_oid_ = &(current_node_->entry.key); // mutable
+    void *ptr = pmemobj_direct(*key_oid_);
     Slice res((char *)ptr, key_len);
+    // printf("2\n");
     return res;
   }
   Slice PmemIterator::value() const {
     assert(!OID_IS_NULL(*current_));
-    struct skiplist_map_node *current_node = 
-                          (struct skiplist_map_node *)pmemobj_direct(*current_);
-    uint8_t value_len = current_node->entry.value_len;
-    void *ptr = pmemobj_direct(current_node->entry.value);
+    // printf("11\n");
+    // struct skiplist_map_node *current_node = 
+    //                       (struct skiplist_map_node *)pmemobj_direct(*current_);
+    uint8_t value_len = current_node_->entry.value_len;
+    value_oid_ = &(current_node_->entry.value); // mutable
+    void *ptr = pmemobj_direct(*value_oid_);
     Slice res((char *)ptr, value_len);
+    // printf("22\n");
     return res;
   }
   Status PmemIterator::status() const {
@@ -248,6 +278,16 @@ namespace leveldb {
     //   printf("[ERROR][PmemIterator][Status()]\n");
     // }
     return s;
+  }
+  PMEMoid* PmemIterator::key_oid() const {
+    return key_oid_;
+  }
+  PMEMoid* PmemIterator::value_oid() const {
+    return value_oid_;
+  }
+
+  PMEMoid* PmemIterator::GetCurrentOID() {
+    return current_;
   }
 
 

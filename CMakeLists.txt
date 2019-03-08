@@ -189,8 +189,8 @@ target_sources(leveldb
     "${PROJECT_SOURCE_DIR}/util/random.h"
     "${PROJECT_SOURCE_DIR}/util/status.cc"
     # JH
-    "${PROJECT_SOURCE_DIR}/pmem/pmem_map.cc"
-    "${PROJECT_SOURCE_DIR}/pmem/pmem_map.h"
+    #"${PROJECT_SOURCE_DIR}/pmem/pmem_map.cc"
+    #"${PROJECT_SOURCE_DIR}/pmem/pmem_map.h"
     "${PROJECT_SOURCE_DIR}/pmem/layout.h"
     "${PROJECT_SOURCE_DIR}/pmem/ds/skiplist_map.cc"
     "${PROJECT_SOURCE_DIR}/pmem/ds/skiplist_map.h"
@@ -366,7 +366,7 @@ if(LEVELDB_BUILD_TESTS)
     leveldb_test("${PROJECT_SOURCE_DIR}/util/logging_test.cc")
 
     # JH
-    leveldb_test("${PROJECT_SOURCE_DIR}/pmem/pmem_map_test.cc")
+    #leveldb_test("${PROJECT_SOURCE_DIR}/pmem/pmem_map_test.cc")
     leveldb_test("${PROJECT_SOURCE_DIR}/pmem/pmem_skiplist_test.cc")
 
     # TODO(costan): This test also uses

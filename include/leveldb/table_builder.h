@@ -54,6 +54,10 @@ class LEVELDB_EXPORT TableBuilder {
   void AddToPmem(PmemSkiplist *pmem_skiplist, uint64_t number,
                     const Slice& key, const Slice& value);
 
+  void AddToPmemByOID(PmemSkiplist *pmem_skiplist, uint64_t number,
+                    const Slice& key, const Slice& value,
+                    PMEMoid *key_oid, PMEMoid *value_oid);
+
   // Advanced operation: flush any buffered key/value pairs to file.
   // Can be used to ensure that two adjacent entries never live in
   // the same data block.  Most clients should not need to use this method.
