@@ -89,11 +89,17 @@ skiplist_map_clear(PMEMobjpool *pop, TOID(struct skiplist_map_node) map)
 		free(buf);
 	}
 	*/
+	TOID(struct skiplist_map_node) next = D_RO(map)->next[0];
+	while (!TOID_EQUALS(next, NULL_NODE)) {
+		D_RW(next)->entry.key_len = 0;
+		D_RW(next)->entry.value_len = 0;
+		next = D_RO(next)->next[0];
+	}
 	// TEST: swap k-v oid vs. just insert new k-v
-		std::chrono::steady_clock::time_point begin, end;
-		begin = std::chrono::steady_clock::now();
-		TOID(struct skiplist_map_node) next = (D_RO(map)->next[0]);
-		TOID(struct skiplist_map_node) next_next = D_RO(next)->next[0];
+		// std::chrono::steady_clock::time_point begin, end;
+		// begin = std::chrono::steady_clock::now();
+		// TOID(struct skiplist_map_node) next = (D_RO(map)->next[0]);
+		// TOID(struct skiplist_map_node) next_next = D_RO(next)->next[0];
 		// 1) Key
 		// PMEMoid tmp_oid = next.oid;
 		// if (OID_EQUALS(tmp_oid, D_RO(map)->next[0].oid)) {
@@ -102,10 +108,10 @@ skiplist_map_clear(PMEMobjpool *pop, TOID(struct skiplist_map_node) map)
 		// next.oid = next_next.oid;
 		// next_next.oid = tmp_oid;
 
-		D_RW(map)->next[0] = next_next;
-		TOID(struct skiplist_map_node) next_next_next = D_RO(next_next)->next[0]; // tmp
-		D_RW(next_next)->next[0] = next;
-		D_RW(next)->next[0] = next_next_next;
+		// D_RW(map)->next[0] = next_next;
+		// TOID(struct skiplist_map_node) next_next_next = D_RO(next_next)->next[0]; // tmp
+		// D_RW(next_next)->next[0] = next;
+		// D_RW(next)->next[0] = next_next_next;
 
 		// D_RW(current_node[0])->next[0] = next;
 
@@ -153,18 +159,18 @@ skiplist_map_clear(PMEMobjpool *pop, TOID(struct skiplist_map_node) map)
 		// uint8_t value_len = D_RO(next)->entry.value_len;
 		// D_RW(next)->entry.value_len = D_RO(next_next)->entry.value_len; 
 		// D_RW(next_next)->entry.value_len = value_len;
-		end= std::chrono::steady_clock::now();
-		std::cout << "Deep swap= " << std::chrono::duration_cast<std::chrono::nanoseconds> (end - begin).count() <<"\n";
+		// end= std::chrono::steady_clock::now();
+		// std::cout << "Deep swap= " << std::chrono::duration_cast<std::chrono::nanoseconds> (end - begin).count() <<"\n";
 
-		void *key_ptr1 = pmemobj_direct(D_RO(next)->entry.key);
-		printf("[Next]key '%s'\n", (char *)key_ptr1);
-		void *value_ptr1 = pmemobj_direct(D_RO(next)->entry.value);
-		printf("[Next]value '%s'\n", (char *)value_ptr1);
+		// void *key_ptr1 = pmemobj_direct(D_RO(next)->entry.key);
+		// printf("[Next]key '%s'\n", (char *)key_ptr1);
+		// void *value_ptr1 = pmemobj_direct(D_RO(next)->entry.value);
+		// printf("[Next]value '%s'\n", (char *)value_ptr1);
 
-		void *key_ptr2 = pmemobj_direct(D_RO(next_next)->entry.key);
-		printf("[Next_Next]key '%s'\n", (char *)key_ptr2);
-		void *value_ptr2 = pmemobj_direct(D_RO(next_next)->entry.value);
-		printf("[Next_Next]value '%s'\n", (char *)value_ptr2);
+		// void *key_ptr2 = pmemobj_direct(D_RO(next_next)->entry.key);
+		// printf("[Next_Next]key '%s'\n", (char *)key_ptr2);
+		// void *value_ptr2 = pmemobj_direct(D_RO(next_next)->entry.value);
+		// printf("[Next_Next]value '%s'\n", (char *)value_ptr2);
 
 		// char *key = "key-0-32070";
 		// char *value = "value-0-32076.......................................................................................";

@@ -123,6 +123,13 @@ namespace leveldb {
       for (int i=0; i<SKIPLIST_MANAGER_LIST_SIZE; i++) {
 				map[i] = skiplists[i].map;
       }
+      /* NOTE: Clear and Reset current node */
+      for (int i=0; i<SKIPLIST_MANAGER_LIST_SIZE; i++) {
+        map_clear(mapc, map[i]);
+        int res = map_create(mapc, &map[i], i, nullptr); 
+        if (res) printf("[CREATE RESET ERROR %d] %d\n",i ,res);
+        else if (i==SKIPLIST_MANAGER_LIST_SIZE-1) printf("[CREATE RESET SUCCESS %d]\n",i);	
+      }
     }
   }
   

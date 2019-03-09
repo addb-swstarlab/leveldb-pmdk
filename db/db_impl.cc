@@ -1636,7 +1636,7 @@ Status DestroyDB(const std::string& dbname, const Options& options) {
      * db_bench run open() twice.. 
      * Thus, temp delete 
      */
-    env->DeleteFile("/home/hwan/pmem_dir/skiplist_manager");
+    // env->DeleteFile("/home/hwan/pmem_dir/skiplist_manager");
     env->UnlockFile(lock);  // Ignore error since state is already gone
     env->DeleteFile(lockname);
     env->DeleteDir(dbname);  // Ignore error in case dir contains other files
