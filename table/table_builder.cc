@@ -138,7 +138,7 @@ void TableBuilder::AddToPmem(PmemSkiplist *pmem_skiplist, uint64_t number,
   // pmem_skiplist->Insert(number, (char *)key.data(), (char *)value.data()); 
   // printf("3]\n"); 
   pmem_skiplist->Insert((char *)key.data(), (char *)value.data(), 
-                        key.size(), value.size(), number);
+                        key.size(), value.size(), number/NUM_OF_SKIPLIST_MANAGER);
   // printf("4]\n"); 
 }
 // PROGRESS:
@@ -160,7 +160,7 @@ void TableBuilder::AddToPmemByOID(PmemSkiplist *pmem_skiplist, uint64_t number,
   // pmem_skiplist->Insert(number, (char *)key.data(), (char *)value.data());  
   // printf("3]\n");
   pmem_skiplist->InsertByOID(key_oid, value_oid, 
-                        key.size(), value.size(), number);
+                        key.size(), value.size(), number/NUM_OF_SKIPLIST_MANAGER);
   // printf("4]\n");
 }
 

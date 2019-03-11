@@ -105,11 +105,23 @@ Status BuildTable(const std::string& dbname,
       TableBuilder* builder = new TableBuilder(options, nullptr);
       meta->smallest.DecodeFrom(iter->key());
 
-      PmemSkiplist* pmem_skiplist = options.pmem_skiplist;
       uint64_t file_number;
       FileType type;
       if (ParseFileName(fname.substr(fname.rfind("/")+1, fname.size()), &file_number, &type) &&
             type != kDBLockFile) {
+          PmemSkiplist* pmem_skiplist;
+          switch (file_number %10) {
+            case 0: pmem_skiplist = options.pmem_skiplist[0]; break;
+            case 1: pmem_skiplist = options.pmem_skiplist[1]; break;
+            case 2: pmem_skiplist = options.pmem_skiplist[2]; break;
+            case 3: pmem_skiplist = options.pmem_skiplist[3]; break;
+            case 4: pmem_skiplist = options.pmem_skiplist[4]; break;
+            case 5: pmem_skiplist = options.pmem_skiplist[5]; break;
+            case 6: pmem_skiplist = options.pmem_skiplist[6]; break;
+            case 7: pmem_skiplist = options.pmem_skiplist[7]; break;
+            case 8: pmem_skiplist = options.pmem_skiplist[8]; break;
+            case 9: pmem_skiplist = options.pmem_skiplist[9]; break;
+          }
           // DEBUG:
           // printf("file_number: %d\n", file_number);
           // int i =0;
@@ -118,6 +130,7 @@ Status BuildTable(const std::string& dbname,
             meta->largest.DecodeFrom(key);
             builder->AddToPmem(pmem_skiplist, file_number, key, iter->value());
             // i++;
+            // printf("%d]]\n", i);
           }
           // printf("[DEBUG][builder]i: %d\n",i);
       } else {

@@ -218,7 +218,7 @@ class Version::LevelFilesConcatIteratorFromPmem : public Iterator {
  public:
   LevelFilesConcatIteratorFromPmem(
                        const InternalKeyComparator& icmp,
-                       PmemSkiplist *pmem_skiplist,
+                       PmemSkiplist **pmem_skiplist,
                        const std::vector<FileMetaData*>* flist)
       : icmp_(icmp), flist_(flist), size_(flist->size()), current_(nullptr)
         // ,index_(flist->size()) 
@@ -227,9 +227,32 @@ class Version::LevelFilesConcatIteratorFromPmem : public Iterator {
     pmem_iterator = new PmemIterator*[size_];
     // Make PmemIterators based on each index
     for (int i=0; i<size_; i++) {
+      uint64_t file_number = flist_->at(i)->number;
+      switch (file_number %10) {
+        case 0: pmem_iterator[i] = 
+          new PmemIterator(file_number/NUM_OF_SKIPLIST_MANAGER, pmem_skiplist[0]); break;
+        case 1: pmem_iterator[i] = 
+          new PmemIterator(file_number/NUM_OF_SKIPLIST_MANAGER, pmem_skiplist[1]); break;
+        case 2: pmem_iterator[i] = 
+          new PmemIterator(file_number/NUM_OF_SKIPLIST_MANAGER, pmem_skiplist[2]); break;
+        case 3: pmem_iterator[i] = 
+          new PmemIterator(file_number/NUM_OF_SKIPLIST_MANAGER, pmem_skiplist[3]); break;
+        case 4: pmem_iterator[i] = 
+          new PmemIterator(file_number/NUM_OF_SKIPLIST_MANAGER, pmem_skiplist[4]); break;
+        case 5: pmem_iterator[i] = 
+          new PmemIterator(file_number/NUM_OF_SKIPLIST_MANAGER, pmem_skiplist[5]); break;
+        case 6: pmem_iterator[i] = 
+          new PmemIterator(file_number/NUM_OF_SKIPLIST_MANAGER, pmem_skiplist[6]); break;
+        case 7: pmem_iterator[i] = 
+          new PmemIterator(file_number/NUM_OF_SKIPLIST_MANAGER, pmem_skiplist[7]); break;
+        case 8: pmem_iterator[i] = 
+          new PmemIterator(file_number/NUM_OF_SKIPLIST_MANAGER, pmem_skiplist[8]); break;
+        case 9: pmem_iterator[i] = 
+          new PmemIterator(file_number/NUM_OF_SKIPLIST_MANAGER, pmem_skiplist[9]); break;
+      }
       // printf("i %d, number %d\n", i, flist_->at(i)->number);
       // pmem_iterator[i] = new PmemIterator(flist_->at(i)->number, pmem_skiplist);
-      pmem_iterator[i] = new PmemIterator(flist_->at(i)->number, pmem_skiplist);
+      // pmem_iterator[i] = new PmemIterator(flist_->at(i)->number, pmem_skiplist[0]);
     }
     // printf("Constructor End\n");
   }
@@ -531,7 +554,7 @@ Status Version::Get(const Options& options_,
        */
       // printf("[version_set][Get2]'%s' %d\n",user_key.data(), user_key.size());
       SSTMakerType sst_type = options_.sst_type;
-      // DEBUG:
+      // PROGRESS:
       // printf("version_set: %d\n", f->number);
       // printf("key: '%s'\n",ikey.data());
       if (sst_type == kFileDescriptorSST) {

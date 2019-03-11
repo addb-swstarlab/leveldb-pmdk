@@ -9,6 +9,10 @@
 #include "leveldb/table.h"
 #include "util/coding.h"
 
+// JH
+#include <chrono>
+#include <iostream>
+
 namespace leveldb {
 
 struct TableAndFile {
@@ -107,7 +111,20 @@ Iterator* TableCache::NewIteratorFromPmem(const ReadOptions& options,
                                   uint64_t file_number,
                                   uint64_t file_size,
                                   Table** tableptr) {
-  PmemSkiplist *pmem_skiplist = options_.pmem_skiplist;
+                                    
+  PmemSkiplist* pmem_skiplist;
+  switch (file_number %10) {
+    case 0: pmem_skiplist = options_.pmem_skiplist[0]; break;
+    case 1: pmem_skiplist = options_.pmem_skiplist[1]; break;
+    case 2: pmem_skiplist = options_.pmem_skiplist[2]; break;
+    case 3: pmem_skiplist = options_.pmem_skiplist[3]; break;
+    case 4: pmem_skiplist = options_.pmem_skiplist[4]; break;
+    case 5: pmem_skiplist = options_.pmem_skiplist[5]; break;
+    case 6: pmem_skiplist = options_.pmem_skiplist[6]; break;
+    case 7: pmem_skiplist = options_.pmem_skiplist[7]; break;
+    case 8: pmem_skiplist = options_.pmem_skiplist[8]; break;
+    case 9: pmem_skiplist = options_.pmem_skiplist[9]; break;
+  }
   if (tableptr != nullptr) {
     *tableptr = nullptr;
   }
@@ -119,7 +136,7 @@ Iterator* TableCache::NewIteratorFromPmem(const ReadOptions& options,
   // }
 
   // FIXME: Checks cache logic
-  Iterator* result = new PmemIterator(file_number, pmem_skiplist);
+  Iterator* result = new PmemIterator(file_number/NUM_OF_SKIPLIST_MANAGER, pmem_skiplist);
   result->SeekToFirst();
   // Table* table = reinterpret_cast<TableAndFile*>(cache_->Value(handle))->table;
   // Iterator* result = table->NewIteratorFromPmem(options_, options);
@@ -153,12 +170,29 @@ Status TableCache::GetFromPmem(const Options& options,
                    void (*saver)(void*, const Slice&, const Slice&)) {
   Status s;
   // PmemSkiplist *pmem_skiplist = options.pmem_skiplist;
-  PmemIterator *pmem_iterator = options.pmem_internal_iterator;
+  PmemIterator* pmem_iterator;
+  switch (file_number %10) {
+    case 0: pmem_iterator = options.pmem_internal_iterator[0]; break;
+    case 1: pmem_iterator = options.pmem_internal_iterator[1]; break;
+    case 2: pmem_iterator = options.pmem_internal_iterator[2]; break;
+    case 3: pmem_iterator = options.pmem_internal_iterator[3]; break;
+    case 4: pmem_iterator = options.pmem_internal_iterator[4]; break;
+    case 5: pmem_iterator = options.pmem_internal_iterator[5]; break;
+    case 6: pmem_iterator = options.pmem_internal_iterator[6]; break;
+    case 7: pmem_iterator = options.pmem_internal_iterator[7]; break;
+    case 8: pmem_iterator = options.pmem_internal_iterator[8]; break;
+    case 9: pmem_iterator = options.pmem_internal_iterator[9]; break;
+  }
   // pmem_iterator->SetIndex(file_number);
   // printf("3 %d\n", file_number);
   // PmemIterator *pmem_iterator = new PmemIterator(file_number, pmem_skiplist);
   // printf("1\n");
-  pmem_iterator->SetIndexAndSeek(file_number, k);
+	// std::chrono::steady_clock::time_point begin, end;
+	// begin = std::chrono::steady_clock::now();
+  pmem_iterator->SetIndexAndSeek(file_number/NUM_OF_SKIPLIST_MANAGER, k);
+
+	// end= std::chrono::steady_clock::now();
+	// std::cout << "SetIndexAndSeek = " << std::chrono::duration_cast<std::chrono::nanoseconds> (end - begin).count() <<"\n";
   // printf("2\n");
   // pmem_iterator->Seek(k);
   // Slice key(pmem_iterator->key());

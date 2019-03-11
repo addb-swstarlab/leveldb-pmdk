@@ -44,9 +44,10 @@
 #define SKIPLIST_MAP_TYPE_OFFSET 2020
 #endif
 
+// #define NUM_OF_PRE_ALLOC_NODE 30000 // TODO: Need to adjust
 #define NUM_OF_PRE_ALLOC_NODE 32077 // TODO: Need to adjust
 #define PRE_ALLOC_KEY_SIZE 26 // 16
-#define PRE_ALLOC_VALUE_SIZE 120 // 120
+#define PRE_ALLOC_VALUE_SIZE 130 // 120
 #define STRING_PADDING 0 // \0
 // #define INSERT_PADDING 5 // kHeader, etc.
 #define NUM_OF_TAG_BYTES 8
@@ -62,22 +63,22 @@ TOID_DECLARE(struct skiplist_map_node, SKIPLIST_MAP_TYPE_OFFSET + 0);
 
 int skiplist_map_check(PMEMobjpool *pop, TOID(struct skiplist_map_node) map);
 int skiplist_map_create(PMEMobjpool *pop, TOID(struct skiplist_map_node) *map,
+	TOID(struct skiplist_map_node) current_node,
 	int index, void *arg);
 int skiplist_map_destroy(PMEMobjpool *pop, TOID(struct skiplist_map_node) *map);
-int skiplist_map_insert(PMEMobjpool *pop, TOID(struct skiplist_map_node) map,
+int skiplist_map_insert(PMEMobjpool *pop, 
+		TOID(struct skiplist_map_node) map, 
+		TOID(struct skiplist_map_node) *current_node,
 		char *key, char *value, int key_len, int value_len, int index);
 int skiplist_map_insert_by_oid(PMEMobjpool *pop, 
 		TOID(struct skiplist_map_node) map, 
+		TOID(struct skiplist_map_node) *current_node,
 		PMEMoid *key_oid, PMEMoid *value_oid, int key_len, int value_len,
 		int index);
 int skiplist_map_insert_null_node(PMEMobjpool *pop, 
-		TOID(struct skiplist_map_node) map, int index);
-/* Deprecated function */
-// int skiplist_map_insert_new(PMEMobjpool *pop,
-// 		TOID(struct skiplist_map_node) map, char *key, size_t size,
-// 		unsigned type_num,
-// 		void (*constructor)(PMEMobjpool *pop, void *ptr, void *arg),
-// 		void *arg);
+		TOID(struct skiplist_map_node) map, 
+		TOID(struct skiplist_map_node) *current_node,
+		int index);
 char* skiplist_map_remove(PMEMobjpool *pop,
 		TOID(struct skiplist_map_node) map, char *key);
 int skiplist_map_remove_free(PMEMobjpool *pop,
@@ -88,27 +89,20 @@ char* skiplist_map_get(PMEMobjpool *pop, TOID(struct skiplist_map_node) map,
 int skiplist_map_lookup(PMEMobjpool *pop, TOID(struct skiplist_map_node) map,
 		char *key);
 int skiplist_map_foreach(PMEMobjpool *pop, TOID(struct skiplist_map_node) map,
-	int (*cb)(char *key, char *value, void *arg), void *arg);
+	int (*cb)(char *key, char *value, int key_len, int value_len, void *arg), void *arg);
 int skiplist_map_is_empty(PMEMobjpool *pop, TOID(struct skiplist_map_node) map);
 
 // JH
 const PMEMoid*
 skiplist_map_get_prev_OID(PMEMobjpool *pop, TOID(struct skiplist_map_node) map,
 		char *key);
-const PMEMoid*
+PMEMoid*
 skiplist_map_get_next_OID(PMEMobjpool *pop, TOID(struct skiplist_map_node) map,
 		char *key);
 const PMEMoid*
 skiplist_map_get_first_OID(PMEMobjpool *pop, TOID(struct skiplist_map_node) map);
 const PMEMoid*
 skiplist_map_get_last_OID(PMEMobjpool *pop, TOID(struct skiplist_map_node) map);
-
-void
-skiplist_map_get_next_TOID(PMEMobjpool *pop, 
-		TOID(struct skiplist_map_node) map,
-		char *key, 
-		TOID(struct skiplist_map_node) *prev, 
-		TOID(struct skiplist_map_node) *curr);
 
 } // namespace leveldb
 
