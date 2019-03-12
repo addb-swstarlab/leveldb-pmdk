@@ -116,21 +116,32 @@ TEST (PmemSkiplistTest, Skiplist_manager) {
   // }
 
   // Print all
-  printf("Skip 0\n");
+  // printf("Skip 0\n");
+  // for (int i=0; i<SKIPLIST_MANAGER_LIST_SIZE; i++) {
+  //   printf("<<%d>>\n", i);
+  //   pmem_skiplists[0]->PrintAll(i);
+  // }
+  // printf("Skip 3\n");
+  // for (int i=0; i<SKIPLIST_MANAGER_LIST_SIZE; i++) {
+  //   printf("<<%d>>\n", i);
+  //   pmem_skiplists[3]->PrintAll(i);
+  // }
+  // printf("Skip 5\n");
+  // for (int i=0; i<SKIPLIST_MANAGER_LIST_SIZE; i++) {
+  //   printf("<<%d>>\n", i);
+  //   pmem_skiplists[5]->PrintAll(i);
+  // }
+  printf("Skip 6\n");
   for (int i=0; i<SKIPLIST_MANAGER_LIST_SIZE; i++) {
     printf("<<%d>>\n", i);
-    pmem_skiplists[0]->PrintAll(i);
-  }
-  printf("Skip 5\n");
-  for (int i=0; i<SKIPLIST_MANAGER_LIST_SIZE; i++) {
-    printf("<<%d>>\n", i);
-    pmem_skiplists[5]->PrintAll(i);
+    pmem_skiplists[6]->PrintAll(i);
   }
   printf("Skip 7\n");
   for (int i=0; i<SKIPLIST_MANAGER_LIST_SIZE; i++) {
     printf("<<%d>>\n", i);
     pmem_skiplists[7]->PrintAll(i);
   }
+
   // for (int i=0; i<SKIPLIST_MANAGER_LIST_SIZE; i++) {
   //   printf("<< %d >>\n", i);
   //   printf("skip 0]\n");

@@ -27,7 +27,7 @@ Status BuildTable(const std::string& dbname,
                   Iterator* iter,
                   FileMetaData* meta) {
   SSTMakerType sst_type = options.sst_type;
-  std::chrono::steady_clock::time_point begin = std::chrono::steady_clock::now();
+  // std::chrono::steady_clock::time_point begin = std::chrono::steady_clock::now();
 
   Status s;
   meta->file_size = 0;
@@ -151,8 +151,8 @@ Status BuildTable(const std::string& dbname,
     }
   }
   // TODO: Minimize time to insertion
-  std::chrono::steady_clock::time_point end= std::chrono::steady_clock::now();
-  std::cout << "result = " << std::chrono::duration_cast<std::chrono::nanoseconds> (end - begin).count() <<std::endl;
+  // std::chrono::steady_clock::time_point end= std::chrono::steady_clock::now();
+  // std::cout << "result = " << std::chrono::duration_cast<std::chrono::nanoseconds> (end - begin).count() <<std::endl;
   return s;
 }
 

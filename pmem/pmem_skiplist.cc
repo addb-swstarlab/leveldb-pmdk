@@ -31,6 +31,9 @@ namespace leveldb {
     uint8_t key_len;
     PMEMoid value;
     uint8_t value_len;
+    // TEST:
+    void* key_ptr;
+    void* value_ptr;
   };
   struct skiplist_map_node {
     TOID(struct skiplist_map_node) next[SKIPLIST_LEVELS_NUM];
@@ -46,7 +49,6 @@ namespace leveldb {
   struct root_skiplist_manager {
     // PMEMoid skiplists;
     pobj::persistent_ptr<root_skiplist[]> skiplists;
-    // Offsets
   };
   PmemSkiplist::PmemSkiplist() {
     Init(SKIPLIST_MANAGER_PATH);
@@ -55,7 +57,6 @@ namespace leveldb {
     Init(pool_path);
   }
   PmemSkiplist::~PmemSkiplist() {
-    printf("destructor\n");
     free(skiplists_);
     free(current_node);
     pmemobj_close(GetPool());
@@ -99,9 +100,6 @@ namespace leveldb {
       //   //       pobj::make_persistent<PBACSkiplist>(pool_path);
       //   // }
       // });
-      /* 
-      * 3) map_create for all indices
-      */
       root_skiplist_map_ = (struct root_skiplist *)pmemobj_direct(
          root_skiplist_->skiplists.raw() );
       // root_skiplist_map_ = (struct root_skiplist *)pmemobj_direct(
@@ -121,26 +119,16 @@ namespace leveldb {
         if (res) printf("[CREATE ERROR %d] %d\n",i ,res);
         else if (i==SKIPLIST_MANAGER_LIST_SIZE-1) printf("[CREATE SUCCESS %d]\n",i);	
         skiplists_[i] = root_skiplist_map_[i].head;
-      /* NOTE: Reset current node */
+        /* NOTE: Reset current node */
         current_node[i] = skiplists_[i];
       }
     } 
     else {
-      // pool = pmemobj_open(pool_path.c_str(), 
-                                      // POBJ_LAYOUT_NAME(root_skiplist_manager));
       skiplist_pool = pobj::pool<root_skiplist_manager>::open(pool_path, pool_path);
 
-      // if (pool == NULL) {
-      //   printf("[ERROR] pmemobj_create\n");
-      //   abort();
-		  // }
-      // root = POBJ_ROOT(pool, struct root_skiplist_manager);
       root_skiplist_ = skiplist_pool.get_root();
       root_skiplist_map_ = (struct root_skiplist *)pmemobj_direct(
          root_skiplist_->skiplists.raw() );
-      // root_skiplist_map_ = (struct root_skiplist *)pmemobj_direct(
-      //    class_root_skiplist_->skiplist_ptr.raw() );
-
 
   		skiplists_ = (TOID(struct skiplist_map_node) *) malloc(
             sizeof(TOID(struct skiplist_map_node)) * SKIPLIST_MANAGER_LIST_SIZE);
@@ -159,74 +147,172 @@ namespace leveldb {
   }
 
   void PmemSkiplist::Insert(char *key, char *value, int key_len, 
-                            int value_len, int index) {
+                            int value_len, uint64_t file_number) {
+    uint64_t actual_index = CheckMapValidation(file_number) ? 
+                            GetIndexFromAllocatedMap(file_number) :
+                            AddFileAndGetNewIndex(file_number);
     int result = skiplist_map_insert(GetPool(), 
-                                      skiplists_[index], 
-                                      &current_node[index],
+                                      skiplists_[actual_index], 
+                                      &current_node[actual_index],
                                       key, value,
-                                      key_len, value_len, index);
+                                      key_len, value_len, actual_index);
     if(result) { 
-      fprintf(stderr, "[ERROR] insert %d\n", index);  
+      fprintf(stderr, "[ERROR] insert %d\n", file_number);  
       abort();
     } 
   }
   void PmemSkiplist::InsertByOID(PMEMoid *key_oid, PMEMoid *value_oid, 
-                                      int key_len, int value_len, int index) {
+                                      int key_len, int value_len, 
+                                      uint64_t file_number) {
+    uint64_t actual_index = CheckMapValidation(file_number) ? 
+                            GetIndexFromAllocatedMap(file_number) :
+                            AddFileAndGetNewIndex(file_number);
     int result = skiplist_map_insert_by_oid(GetPool(), 
-                                      skiplists_[index], 
-                                      &current_node[index],
+                                      skiplists_[actual_index], 
+                                      &current_node[actual_index],
                                       key_oid, value_oid,
-                                      key_len, value_len, index);
+                                      key_len, value_len, actual_index);
     if(result) { 
-      fprintf(stderr, "[ERROR] insert_by_oid %d\n", index);  
+      fprintf(stderr, "[ERROR] insert_by_oid %d\n", file_number);  
       abort();
     } 
   }
-  void PmemSkiplist::InsertNullNode(int index) {
+  void PmemSkiplist::InsertByPtr(void* key_ptr, void* value_ptr, 
+                                      int key_len, int value_len, 
+                                      uint64_t file_number) {
+    uint64_t actual_index = CheckMapValidation(file_number) ? 
+                            GetIndexFromAllocatedMap(file_number) :
+                            AddFileAndGetNewIndex(file_number);                                    
+    int result = skiplist_map_insert_by_ptr(GetPool(), 
+                                      skiplists_[actual_index], 
+                                      &current_node[actual_index],
+                                      key_ptr, value_ptr,
+                                      key_len, value_len, actual_index);
+    if(result) { 
+      fprintf(stderr, "[ERROR] insert_by_oid %d\n", file_number);  
+      abort();
+    } 
+  }
+  void PmemSkiplist::InsertNullNode(uint64_t file_number) {
+    uint64_t actual_index = CheckMapValidation(file_number) ? 
+                            GetIndexFromAllocatedMap(file_number) :
+                            AddFileAndGetNewIndex(file_number);   
     int result = skiplist_map_insert_null_node(GetPool(),
-                                skiplists_[index], &current_node[index], index);
+                                skiplists_[actual_index], 
+                                &current_node[actual_index], 
+                                actual_index);
     if(result) {
-      fprintf(stderr, "[ERROR] insert_null_node %d\n", index);  
+      fprintf(stderr, "[ERROR] insert_null_node %d\n", file_number);  
     }
   }
   // NOTE: Will be deprecated.. 
   // char* PmemSkiplist::Get(int index, char *key) {
   //   return skiplist_map_get(GetPool(), skiplists_[index], key);
   // }
-  void PmemSkiplist::Foreach(int index,
+  void PmemSkiplist::Foreach(uint64_t file_number,
         int (*callback)(char *key, char *value, int key_len, int value_len, void *arg)) {
+    uint64_t actual_index = CheckMapValidation(file_number) ? 
+                            GetIndexFromAllocatedMap(file_number) :
+                            AddFileAndGetNewIndex(file_number);
     int res = skiplist_map_foreach(GetPool(), 
-                                  skiplists_[index], callback, nullptr);
+                                  skiplists_[actual_index], callback, nullptr);
   }
-  void PmemSkiplist::PrintAll(int index) {
-    Foreach(index, Print_skiplist);
+  void PmemSkiplist::PrintAll(uint64_t file_number) {
+    Foreach(file_number, Print_skiplist);
   }
   void PmemSkiplist::ClearAll() {
     for (int i=0; i<SKIPLIST_MANAGER_LIST_SIZE; i++) {
       skiplist_map_clear(GetPool(), skiplists_[i]);
+      // DA: Push all to freelist
+      PushFreeList(i);
     }
   }
 
   // SOLVE: Implement Internal GetTOID
-  const PMEMoid* PmemSkiplist::GetPrevOID(int index, char *key) {
-    // int actual_index = index / 10;
-    return skiplist_map_get_prev_OID(GetPool(), skiplists_[index], key);
+  PMEMoid* PmemSkiplist::GetPrevOID(uint64_t file_number, char *key) {
+    uint64_t actual_index = CheckMapValidation(file_number) ? 
+                            GetIndexFromAllocatedMap(file_number) :
+                            AddFileAndGetNewIndex(file_number);
+    return skiplist_map_get_prev_OID(GetPool(), skiplists_[actual_index], key);
   }
-  PMEMoid* PmemSkiplist::GetNextOID(int index, char *key) {
-    // int actual_index = index / 10;
-    return skiplist_map_get_next_OID(GetPool(), skiplists_[index], key);
+  PMEMoid* PmemSkiplist::GetNextOID(uint64_t file_number, char *key) {
+    uint64_t actual_index = CheckMapValidation(file_number) ? 
+                            GetIndexFromAllocatedMap(file_number) :
+                            AddFileAndGetNewIndex(file_number);
+    return skiplist_map_get_next_OID(GetPool(), skiplists_[actual_index], key);
   }
-  const PMEMoid* PmemSkiplist::GetFirstOID(int index) {
-    // int actual_index = index / 10;
-    return skiplist_map_get_first_OID(GetPool(), skiplists_[index]);
+  PMEMoid* PmemSkiplist::GetFirstOID(uint64_t file_number) {
+    uint64_t actual_index = CheckMapValidation(file_number) ? 
+                            GetIndexFromAllocatedMap(file_number) :
+                            AddFileAndGetNewIndex(file_number);
+    return skiplist_map_get_first_OID(GetPool(), skiplists_[actual_index]);
   }
-  const PMEMoid* PmemSkiplist::GetLastOID(int index) {
-    // int actual_index = index / 10;
-    return skiplist_map_get_last_OID(GetPool(), skiplists_[index]);
+  PMEMoid* PmemSkiplist::GetLastOID(uint64_t file_number) {
+    uint64_t actual_index = CheckMapValidation(file_number) ? 
+                            GetIndexFromAllocatedMap(file_number) :
+                            AddFileAndGetNewIndex(file_number);
+    return skiplist_map_get_last_OID(GetPool(), skiplists_[actual_index]);
+  }
+
+  /* PROGRESS: Dynamic allocation */
+  // Free-list
+  void PmemSkiplist::PushFreeList(uint64_t index) {
+    free_list_.push_back(index);
+  } 
+  uint64_t PmemSkiplist::PopFreeList() {
+    // return free_list_
+    if (free_list_.size() == 0) { 
+      printf("[ERROR] free_list is empty... :( \n");
+      abort();
+    }
+    uint16_t res = free_list_.front();
+    free_list_.pop_front();
+    return res;
+  }
+  // Allocated-map
+  void PmemSkiplist::InsertAllocatedMap(uint64_t file_number, uint64_t index) {
+    allocated_map_.emplace(file_number, index);
+    if (allocated_map_.size() >= SKIPLIST_MANAGER_LIST_SIZE) {
+      printf("[WARNING][InsertAllocatedMap] map size is full...\n");
+    }
+  }
+  uint64_t PmemSkiplist::GetIndexFromAllocatedMap(uint64_t file_number) {
+    std::map<uint64_t, uint64_t>::iterator iter = allocated_map_.find(file_number);
+    if (iter == allocated_map_.end()) {
+      printf("[WARNING][GetAllocatedMap] Cannot get %d from allocated map\n", file_number);
+    }
+    return iter->second;
+  }
+  void PmemSkiplist::EraseAllocatedMap(uint64_t file_number) {
+    int res = allocated_map_.erase(file_number);
+    if (!res) {
+      printf("[WARNING][EraseAllocatedMap] fail to erase %d\n", file_number);
+    }
+  }
+  bool PmemSkiplist::CheckMapValidation(uint64_t file_number) {
+    std::map<uint64_t, uint64_t>::iterator iter = allocated_map_.find(file_number);
+    if (iter == allocated_map_.end()) {
+      return false;
+    }
+    return true;
+  }
+  // Control functions
+  uint64_t PmemSkiplist::AddFileAndGetNewIndex(uint64_t file_number) {
+    uint64_t new_index = PopFreeList();
+    InsertAllocatedMap(file_number, new_index);
+    return new_index;
+  }
+  void PmemSkiplist::DeleteFile(uint64_t file_number) {
+    uint64_t old_index = GetIndexFromAllocatedMap(file_number);
+    EraseAllocatedMap(file_number);
+    PushFreeList(old_index);
   }
 
 
-  /* SOLVE: Pmem-based Iterator */
+  /* 
+   * Pmem-based Iterator 
+   * NOTE: Do not touch iterator's index.
+   */
   PmemIterator::PmemIterator(PmemSkiplist *pmem_skiplist) 
     : index_(0), pmem_skiplist_(pmem_skiplist) {
   }
@@ -244,16 +330,16 @@ namespace leveldb {
     current_node_ = (struct skiplist_map_node *)pmemobj_direct(*current_);
   }
   void PmemIterator::Seek(const Slice& target) {
-    current_ = const_cast<PMEMoid *>(pmem_skiplist_->GetNextOID(index_, (char *)target.data()));
+    current_ = (pmem_skiplist_->GetNextOID(index_, (char *)target.data()));
     current_node_ = (struct skiplist_map_node *)pmemobj_direct(*current_);
   }
   void PmemIterator::SeekToFirst() {
-    current_ = const_cast<PMEMoid *>(pmem_skiplist_->GetFirstOID(index_));
+    current_ = (pmem_skiplist_->GetFirstOID(index_));
     current_node_ = (struct skiplist_map_node *)pmemobj_direct(*current_);
     assert(!OID_IS_NULL(*current_));
   }
   void PmemIterator::SeekToLast() {
-    current_ = const_cast<PMEMoid *>(pmem_skiplist_->GetLastOID(index_));
+    current_ = (pmem_skiplist_->GetLastOID(index_));
     current_node_ = (struct skiplist_map_node *)pmemobj_direct(*current_);
     assert(!OID_IS_NULL(*current_));
   }
@@ -266,9 +352,8 @@ namespace leveldb {
   }
   void PmemIterator::Prev() {
     char *key =  (char *)pmemobj_direct(current_node_->entry.key);
-    current_ = const_cast<PMEMoid *>(pmem_skiplist_->GetPrevOID(index_, key));
+    current_ = (pmem_skiplist_->GetPrevOID(index_, key));
     current_node_ = (struct skiplist_map_node *)pmemobj_direct(*current_);
-    // FIXME: check Prev() to -1
     if (OID_IS_NULL(*current_)) {
       printf("[ERROR][PmemIterator][Prev] OID IS NULL\n");
     }
@@ -287,17 +372,35 @@ namespace leveldb {
   Slice PmemIterator::key() const {
     assert(!OID_IS_NULL(*current_));
     uint8_t key_len = current_node_->entry.key_len;
-    key_oid_ = &(current_node_->entry.key); // mutable
-    void *ptr = pmemobj_direct(*key_oid_);
+    void *ptr;
+    if (current_node_->entry.key_ptr != nullptr &&
+        current_node_->entry.value_ptr != nullptr) {
+      key_ptr_ = current_node_->entry.key_ptr;
+      ptr = key_ptr_;
+    } else {
+      key_oid_ = &(current_node_->entry.key); // mutable
+      key_ptr_ = pmemobj_direct(*key_oid_);
+      ptr = key_ptr_;
+    }
     Slice res((char *)ptr, key_len);
+    // printf("key:'%s'\n", res.data());
     return res;
   }
   Slice PmemIterator::value() const {
     assert(!OID_IS_NULL(*current_));
     uint8_t value_len = current_node_->entry.value_len;
-    value_oid_ = &(current_node_->entry.value); // mutable
-    void *ptr = pmemobj_direct(*value_oid_);
+    void *ptr;
+    if (current_node_->entry.key_ptr != nullptr &&
+        current_node_->entry.value_ptr != nullptr) {
+      value_ptr_ = current_node_->entry.value_ptr;
+      ptr = value_ptr_;
+    } else {
+      value_oid_ = &(current_node_->entry.value); // mutable
+      value_ptr_ = pmemobj_direct(*value_oid_); 
+      ptr = value_ptr_;
+    }
     Slice res((char *)ptr, value_len);
+    // printf("value:'%s'\n", res.data());
     return res;
   }
   Status PmemIterator::status() const {
@@ -308,6 +411,12 @@ namespace leveldb {
   }
   PMEMoid* PmemIterator::value_oid() const {
     return value_oid_;
+  }
+  void* PmemIterator::key_ptr() const {
+    return key_ptr_;
+  }
+  void* PmemIterator::value_ptr() const {
+    return value_ptr_;
   }
 
   PMEMoid* PmemIterator::GetCurrentOID() {

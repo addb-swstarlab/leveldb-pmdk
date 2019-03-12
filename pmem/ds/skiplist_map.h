@@ -75,6 +75,12 @@ int skiplist_map_insert_by_oid(PMEMobjpool *pop,
 		TOID(struct skiplist_map_node) *current_node,
 		PMEMoid *key_oid, PMEMoid *value_oid, int key_len, int value_len,
 		int index);
+int skiplist_map_insert_by_ptr(PMEMobjpool *pop, 
+		TOID(struct skiplist_map_node) map, 
+		TOID(struct skiplist_map_node) *current_node,
+		// PMEMoid *key_oid, PMEMoid *value_oid, int key_len, int value_len,
+		void* key_ptr, void* value_ptr, int key_len, int value_len,
+		int index);
 int skiplist_map_insert_null_node(PMEMobjpool *pop, 
 		TOID(struct skiplist_map_node) map, 
 		TOID(struct skiplist_map_node) *current_node,
@@ -93,15 +99,15 @@ int skiplist_map_foreach(PMEMobjpool *pop, TOID(struct skiplist_map_node) map,
 int skiplist_map_is_empty(PMEMobjpool *pop, TOID(struct skiplist_map_node) map);
 
 // JH
-const PMEMoid*
+PMEMoid*
 skiplist_map_get_prev_OID(PMEMobjpool *pop, TOID(struct skiplist_map_node) map,
 		char *key);
 PMEMoid*
 skiplist_map_get_next_OID(PMEMobjpool *pop, TOID(struct skiplist_map_node) map,
 		char *key);
-const PMEMoid*
+PMEMoid*
 skiplist_map_get_first_OID(PMEMobjpool *pop, TOID(struct skiplist_map_node) map);
-const PMEMoid*
+PMEMoid*
 skiplist_map_get_last_OID(PMEMobjpool *pop, TOID(struct skiplist_map_node) map);
 
 } // namespace leveldb

@@ -52,8 +52,8 @@ Status TableCache::FindTable(uint64_t file_number, uint64_t file_size,
   char buf[sizeof(file_number)];
   EncodeFixed64(buf, file_number);
   Slice key(buf, sizeof(buf));
-  *handle = cache_->Lookup(key);
-  if (*handle == nullptr) {
+  // *handle = cache_->Lookup(key);
+  // if (*handle == nullptr) {
     std::string fname = TableFileName(dbname_, file_number);
     RandomAccessFile* file = nullptr;
     Table* table = nullptr;
@@ -79,7 +79,7 @@ Status TableCache::FindTable(uint64_t file_number, uint64_t file_size,
       tf->table = table;
       *handle = cache_->Insert(key, tf, 1, &DeleteEntry);
     }
-  }
+  // }
   return s;
 }
 
@@ -135,9 +135,12 @@ Iterator* TableCache::NewIteratorFromPmem(const ReadOptions& options,
   //   return NewErrorIterator(s);
   // }
 
+  // printf("Get 1\n");
   // FIXME: Checks cache logic
-  Iterator* result = new PmemIterator(file_number/NUM_OF_SKIPLIST_MANAGER, pmem_skiplist);
+  // Iterator* result = new PmemIterator(file_number/NUM_OF_SKIPLIST_MANAGER, pmem_skiplist);
+  Iterator* result = new PmemIterator(file_number, pmem_skiplist);
   result->SeekToFirst();
+  // printf("Get 2\n");
   // Table* table = reinterpret_cast<TableAndFile*>(cache_->Value(handle))->table;
   // Iterator* result = table->NewIteratorFromPmem(options_, options);
   // result->RegisterCleanup(&UnrefEntry, cache_, handle);
@@ -189,7 +192,8 @@ Status TableCache::GetFromPmem(const Options& options,
   // printf("1\n");
 	// std::chrono::steady_clock::time_point begin, end;
 	// begin = std::chrono::steady_clock::now();
-  pmem_iterator->SetIndexAndSeek(file_number/NUM_OF_SKIPLIST_MANAGER, k);
+  // pmem_iterator->SetIndexAndSeek(file_number/NUM_OF_SKIPLIST_MANAGER, k);
+  pmem_iterator->SetIndexAndSeek(file_number, k);
 
 	// end= std::chrono::steady_clock::now();
 	// std::cout << "SetIndexAndSeek = " << std::chrono::duration_cast<std::chrono::nanoseconds> (end - begin).count() <<"\n";
@@ -199,6 +203,7 @@ Status TableCache::GetFromPmem(const Options& options,
   // Slice value(pmem_iterator->value());
   // (*saver)(arg, key, value);
   (*saver)(arg, pmem_iterator->key(), pmem_iterator->value());
+  // printf("Get 2\n");
   // printf("key1:'%s'\n", pmem_iterator->key());
   // printf("value1:'%s'\n", pmem_iterator->value());
 

@@ -230,25 +230,45 @@ class Version::LevelFilesConcatIteratorFromPmem : public Iterator {
       uint64_t file_number = flist_->at(i)->number;
       switch (file_number %10) {
         case 0: pmem_iterator[i] = 
-          new PmemIterator(file_number/NUM_OF_SKIPLIST_MANAGER, pmem_skiplist[0]); break;
+          new PmemIterator(file_number, pmem_skiplist[0]); break;
         case 1: pmem_iterator[i] = 
-          new PmemIterator(file_number/NUM_OF_SKIPLIST_MANAGER, pmem_skiplist[1]); break;
+          new PmemIterator(file_number, pmem_skiplist[1]); break;
         case 2: pmem_iterator[i] = 
-          new PmemIterator(file_number/NUM_OF_SKIPLIST_MANAGER, pmem_skiplist[2]); break;
+          new PmemIterator(file_number, pmem_skiplist[2]); break;
         case 3: pmem_iterator[i] = 
-          new PmemIterator(file_number/NUM_OF_SKIPLIST_MANAGER, pmem_skiplist[3]); break;
+          new PmemIterator(file_number, pmem_skiplist[3]); break;
         case 4: pmem_iterator[i] = 
-          new PmemIterator(file_number/NUM_OF_SKIPLIST_MANAGER, pmem_skiplist[4]); break;
+          new PmemIterator(file_number, pmem_skiplist[4]); break;
         case 5: pmem_iterator[i] = 
-          new PmemIterator(file_number/NUM_OF_SKIPLIST_MANAGER, pmem_skiplist[5]); break;
+          new PmemIterator(file_number, pmem_skiplist[5]); break;
         case 6: pmem_iterator[i] = 
-          new PmemIterator(file_number/NUM_OF_SKIPLIST_MANAGER, pmem_skiplist[6]); break;
+          new PmemIterator(file_number, pmem_skiplist[6]); break;
         case 7: pmem_iterator[i] = 
-          new PmemIterator(file_number/NUM_OF_SKIPLIST_MANAGER, pmem_skiplist[7]); break;
+          new PmemIterator(file_number, pmem_skiplist[7]); break;
         case 8: pmem_iterator[i] = 
-          new PmemIterator(file_number/NUM_OF_SKIPLIST_MANAGER, pmem_skiplist[8]); break;
+          new PmemIterator(file_number, pmem_skiplist[8]); break;
         case 9: pmem_iterator[i] = 
-          new PmemIterator(file_number/NUM_OF_SKIPLIST_MANAGER, pmem_skiplist[9]); break;
+          new PmemIterator(file_number, pmem_skiplist[9]); break;
+        // case 0: pmem_iterator[i] = 
+        //   new PmemIterator(file_number/NUM_OF_SKIPLIST_MANAGER, pmem_skiplist[0]); break;
+        // case 1: pmem_iterator[i] = 
+        //   new PmemIterator(file_number/NUM_OF_SKIPLIST_MANAGER, pmem_skiplist[1]); break;
+        // case 2: pmem_iterator[i] = 
+        //   new PmemIterator(file_number/NUM_OF_SKIPLIST_MANAGER, pmem_skiplist[2]); break;
+        // case 3: pmem_iterator[i] = 
+        //   new PmemIterator(file_number/NUM_OF_SKIPLIST_MANAGER, pmem_skiplist[3]); break;
+        // case 4: pmem_iterator[i] = 
+        //   new PmemIterator(file_number/NUM_OF_SKIPLIST_MANAGER, pmem_skiplist[4]); break;
+        // case 5: pmem_iterator[i] = 
+        //   new PmemIterator(file_number/NUM_OF_SKIPLIST_MANAGER, pmem_skiplist[5]); break;
+        // case 6: pmem_iterator[i] = 
+        //   new PmemIterator(file_number/NUM_OF_SKIPLIST_MANAGER, pmem_skiplist[6]); break;
+        // case 7: pmem_iterator[i] = 
+        //   new PmemIterator(file_number/NUM_OF_SKIPLIST_MANAGER, pmem_skiplist[7]); break;
+        // case 8: pmem_iterator[i] = 
+        //   new PmemIterator(file_number/NUM_OF_SKIPLIST_MANAGER, pmem_skiplist[8]); break;
+        // case 9: pmem_iterator[i] = 
+        //   new PmemIterator(file_number/NUM_OF_SKIPLIST_MANAGER, pmem_skiplist[9]); break;
       }
       // printf("i %d, number %d\n", i, flist_->at(i)->number);
       // pmem_iterator[i] = new PmemIterator(flist_->at(i)->number, pmem_skiplist);
@@ -339,6 +359,12 @@ class Version::LevelFilesConcatIteratorFromPmem : public Iterator {
   }
   PMEMoid* value_oid() const {
     return current_->value_oid();
+  }
+  void* key_ptr() const {
+    return current_->key_ptr();
+  }
+  void* value_ptr() const {
+    return current_->value_ptr();
   }
  private:
   InternalKeyComparator icmp_;

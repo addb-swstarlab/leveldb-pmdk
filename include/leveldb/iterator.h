@@ -74,6 +74,8 @@ class LEVELDB_EXPORT Iterator {
   // JH
   virtual PMEMoid* key_oid() const {return nullptr;};
   virtual PMEMoid* value_oid() const {return nullptr;};
+  virtual void* key_ptr() const {return nullptr;};
+  virtual void* value_ptr() const {return nullptr;};
 
   // If an error has occurred, return it.  Else return an ok status.
   virtual Status status() const = 0;

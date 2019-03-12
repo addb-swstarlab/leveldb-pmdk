@@ -58,6 +58,10 @@ class LEVELDB_EXPORT TableBuilder {
                     const Slice& key, const Slice& value,
                     PMEMoid *key_oid, PMEMoid *value_oid);
 
+  void AddToPmemByPtr(PmemSkiplist *pmem_skiplist, uint64_t number,
+                    const Slice& key, const Slice& value,
+                    void* key_ptr, void* value_ptr);
+
   // Advanced operation: flush any buffered key/value pairs to file.
   // Can be used to ensure that two adjacent entries never live in
   // the same data block.  Most clients should not need to use this method.
@@ -85,6 +89,9 @@ class LEVELDB_EXPORT TableBuilder {
   // Size of the file generated so far.  If invoked after a successful
   // Finish() call, returns the size of the final generated file.
   uint64_t FileSize() const;
+
+  // PROGRESS: JH
+  uint64_t NumAddEntries() const;
 
  private:
   bool ok() const { return status().ok(); }

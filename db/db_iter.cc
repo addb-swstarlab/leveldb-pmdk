@@ -88,6 +88,8 @@ class DBIter: public Iterator {
   // JH
   virtual PMEMoid* key_oid();
   virtual PMEMoid* value_oid();
+  virtual void* key_ptr();
+  virtual void* value_ptr();
 
  private:
   void FindNextUserEntry(bool skipping, std::string* skip);
@@ -311,6 +313,12 @@ PMEMoid* DBIter::key_oid() {
   return nullptr;
 }
 PMEMoid* DBIter::value_oid() {
+  return nullptr;
+}
+void* DBIter::key_ptr() {
+  return nullptr;
+}
+void* DBIter::value_ptr() {
   return nullptr;
 }
 }  // anonymous namespace
