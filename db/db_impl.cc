@@ -116,7 +116,7 @@ Options SanitizeOptions(const std::string& dbname,
   if (result.block_cache == nullptr) {
     result.block_cache = NewLRUCache(8 << 20);
   }
-    // PROGRESS: JH
+    // SOLVE: JH
   if (result.sst_type == kPmemSST) {
     result.pmem_skiplist = new PmemSkiplist*[NUM_OF_SKIPLIST_MANAGER];
     result.pmem_skiplist[0] = new PmemSkiplist(SKIPLIST_MANAGER_PATH_0);
@@ -135,6 +135,9 @@ Options SanitizeOptions(const std::string& dbname,
       result.pmem_skiplist[i]->ClearAll();
     }
 
+    // NOTE: FIXME: [190313] use this as cache iterator.. 
+    // actual skiplist_cache has ordering problem on compaction
+    // Smallest and largest key are invalid..
     result.pmem_internal_iterator = new PmemIterator*[NUM_OF_SKIPLIST_MANAGER];
     result.pmem_internal_iterator[0] = new PmemIterator(0, result.pmem_skiplist[0]);
     result.pmem_internal_iterator[1] = new PmemIterator(1, result.pmem_skiplist[1]);
@@ -146,6 +149,10 @@ Options SanitizeOptions(const std::string& dbname,
     result.pmem_internal_iterator[7] = new PmemIterator(7, result.pmem_skiplist[7]);
     result.pmem_internal_iterator[8] = new PmemIterator(8, result.pmem_skiplist[8]);
     result.pmem_internal_iterator[9] = new PmemIterator(9, result.pmem_skiplist[9]);
+
+    // PROGRESS:
+    // result.pmem_buffer = new PmemBuffer*[1]; // tmp
+    // result.pmem_buffer[0] = new PmemBuffer();
   }
   return result;
 }
@@ -299,7 +306,7 @@ void DBImpl::DeleteObsoleteFiles() {
 
       if (!keep) {
         if (type == kTableFile) {
-          // PROGRESS: evict from table_cache
+          // SOLVE: evict from table_cache in DoCompactionWork()
           table_cache_->Evict(number);
         }
         Log(options_.info_log, "Delete type=%d #%lld\n",
@@ -309,6 +316,8 @@ void DBImpl::DeleteObsoleteFiles() {
       }
     }
   }
+  
+
 }
 
 Status DBImpl::Recover(VersionEdit* edit, bool *save_manifest) {
@@ -790,8 +799,7 @@ void DBImpl::BackgroundCompaction() {
       DeleteObsoleteFiles();
     } else if (options_.sst_type == kPmemSST) {
       // Done
-      // DEBUG:
-      DeleteObsoleteFiles();
+      // DeleteObsoleteFiles();
     }
   }
   delete c;
@@ -873,11 +881,12 @@ Status DBImpl::FinishCompactionOutputFile(CompactionState* compact,
   assert(compact != nullptr);
   assert(compact->outfile != nullptr);
   assert(compact->builder != nullptr);
-
   // JH
   SSTMakerType sst_type = options_.sst_type;
 
   const uint64_t output_number = compact->current_output()->number;
+  // printf("FinishCompaction: %d\n", output_number);
+  printf("FinishCompaction: %d\n", compact->builder->FileSize());
   assert(output_number != 0);
 
   // Check for iterator errors
@@ -891,22 +900,17 @@ Status DBImpl::FinishCompactionOutputFile(CompactionState* compact,
       compact->builder->Abandon();
     }
   } else if (sst_type == kPmemSST) {
+    s = compact->builder->FinishPmem();
+    // printf("[DEBUG][FinishCompaction]'%s' , '%s'\n",
+    //   compact->current_output()->smallest.user_key().data(),
+    //   compact->current_output()->largest.user_key().data());
+    // printf("[DEBUG][FinishCompaction1] num:%d\n",output_number);
+
     // Done
+
     // PROGRESS:
-    PmemSkiplist* pmem_skiplist;
-    uint64_t file_number = output_number;
-    switch (file_number %10) {
-      case 0: pmem_skiplist = options_.pmem_skiplist[0]; break;
-      case 1: pmem_skiplist = options_.pmem_skiplist[1]; break;
-      case 2: pmem_skiplist = options_.pmem_skiplist[2]; break;
-      case 3: pmem_skiplist = options_.pmem_skiplist[3]; break;
-      case 4: pmem_skiplist = options_.pmem_skiplist[4]; break;
-      case 5: pmem_skiplist = options_.pmem_skiplist[5]; break;
-      case 6: pmem_skiplist = options_.pmem_skiplist[6]; break;
-      case 7: pmem_skiplist = options_.pmem_skiplist[7]; break;
-      case 8: pmem_skiplist = options_.pmem_skiplist[8]; break;
-      case 9: pmem_skiplist = options_.pmem_skiplist[9]; break;
-    }
+    // uint64_t file_number = output_number;
+    // PmemSkiplist* pmem_skiplist = options_.pmem_skiplist[file_number%10];
     // pmem_skiplist->InsertNullNode(file_number/NUM_OF_SKIPLIST_MANAGER);
     // printf("Delete 1\n");
     // pmem_skiplist->DeleteFile(file_number);
@@ -933,6 +937,8 @@ Status DBImpl::FinishCompactionOutputFile(CompactionState* compact,
     compact->outfile = nullptr;
   } else if (sst_type == kPmemSST) {
     // Done
+    delete compact->outfile;
+    compact->outfile = nullptr;
   }
 
   if (s.ok() && current_entries > 0) {
@@ -942,13 +948,15 @@ Status DBImpl::FinishCompactionOutputFile(CompactionState* compact,
       iter = table_cache_->NewIterator(ReadOptions(),
                                        output_number,
                                        current_bytes);
+      s = iter->status();
+      delete iter;
     } else if (sst_type == kPmemSST) {
       iter = table_cache_->NewIteratorFromPmem(ReadOptions(),
                                                 output_number,
                                                 current_bytes);
+      s = iter->status();
+      iter->RunCleanupFunc();
     }
-    s = iter->status();
-    delete iter;
     if (s.ok()) {
       Log(options_.info_log,
           "Generated table #%llu@%d: %lld keys, %lld bytes",
@@ -1014,7 +1022,7 @@ Status DBImpl::DoCompactionWork(CompactionState* compact) {
   SequenceNumber last_sequence_for_key = kMaxSequenceNumber;
   // printf("Start iteration\n");
   SSTMakerType sst_type = options_.sst_type;
-  int i=0;
+  // int i=0;
   for (; input->Valid() && !shutting_down_.Acquire_Load(); ) {
     // printf("key:'%s'\n", input->key());
     // Prioritize immutable compaction work
@@ -1095,41 +1103,30 @@ Status DBImpl::DoCompactionWork(CompactionState* compact) {
       }
       if (compact->builder->NumEntries() == 0) {
         compact->current_output()->smallest.DecodeFrom(key);
+        // printf("[DEBUG smallest] '%s'\n", compact->current_output()->smallest.user_key().data());
       }
       compact->current_output()->largest.DecodeFrom(key);
+        // printf("[DEBUG largest] '%s'\n", compact->current_output()->largest.user_key().data());
+
       // PROGRESS:
       if (sst_type == kFileDescriptorSST) {
         compact->builder->Add(key, input->value());
-        i++;
+        // i++;
         // Close output file if it is big enough
         if (compact->builder->FileSize() >=
             compact->compaction->MaxOutputFileSize()) {
           status = FinishCompactionOutputFile(compact, input);
-          printf("fd] %d\n", i);
-          i = 0;
+          // printf("fd] %d\n", i);
+          // i = 0;
           
           if (!status.ok()) {
             break;
           }
         }
       } else if (sst_type == kPmemSST) {
-        // printf("1]\n");
-        
         Slice value = input->value();
-        PmemSkiplist* pmem_skiplist;
         uint64_t file_number = compact->current_output()->number;
-        switch (file_number %10) {
-          case 0: pmem_skiplist = options_.pmem_skiplist[0]; break;
-          case 1: pmem_skiplist = options_.pmem_skiplist[1]; break;
-          case 2: pmem_skiplist = options_.pmem_skiplist[2]; break;
-          case 3: pmem_skiplist = options_.pmem_skiplist[3]; break;
-          case 4: pmem_skiplist = options_.pmem_skiplist[4]; break;
-          case 5: pmem_skiplist = options_.pmem_skiplist[5]; break;
-          case 6: pmem_skiplist = options_.pmem_skiplist[6]; break;
-          case 7: pmem_skiplist = options_.pmem_skiplist[7]; break;
-          case 8: pmem_skiplist = options_.pmem_skiplist[8]; break;
-          case 9: pmem_skiplist = options_.pmem_skiplist[9]; break;
-        }
+        PmemSkiplist* pmem_skiplist = options_.pmem_skiplist[file_number%10];
         // NOTE: Option1: BA
         // compact->builder->AddToPmem(pmem_skiplist, 
         //               file_number, key, value);
@@ -1143,15 +1140,14 @@ Status DBImpl::DoCompactionWork(CompactionState* compact) {
         compact->builder->AddToPmemByPtr(pmem_skiplist, 
                       file_number, key, value,
                       input->key_ptr(), input->value_ptr());
-        i++;
-        // printf("Compaction] '%s'\n", key);
+        // i++;
 
         // Close output file if it is big enough
-        if (compact->builder->NumAddEntries() >=
+        if (compact->builder->NumEntries() >=
             compact->compaction->MaxOutputEntriesNum() -1 ) {
           status = FinishCompactionOutputFile(compact, input);
-          printf("sst] %d\n", i);
-          i = 0;
+          // printf("pmem] %d\n", i);
+          // i = 0;
           
           if (!status.ok()) {
             break;
@@ -1173,8 +1169,20 @@ Status DBImpl::DoCompactionWork(CompactionState* compact) {
   if (status.ok()) {
     status = input->status();
   }
-  delete input;
-  input = nullptr;
+
+  // PROGRESS: NOTE:
+  if(options_.skiplist_cache) {
+    if (sst_type == kFileDescriptorSST) {
+      delete input;
+      input = nullptr;
+    } else {
+      input->RunCleanupFunc();
+      input = nullptr;
+    }
+  } else {
+    delete input;
+    input = nullptr;
+  }
 
   // Make compaction-stats
   CompactionStats stats;
@@ -1187,7 +1195,8 @@ Status DBImpl::DoCompactionWork(CompactionState* compact) {
   for (size_t i = 0; i < compact->outputs.size(); i++) {
     stats.bytes_written += compact->outputs[i].file_size;
   }
-  // [JH] Delete files from allocated_map
+
+  // TODO: [JH] Delete files from allocated_map
   // PmemSkiplist* pmem_skiplist;
   // // L(i)
   // for (int i=0; i<compact->compaction->num_input_files(0); i++) {
@@ -1237,6 +1246,25 @@ Status DBImpl::DoCompactionWork(CompactionState* compact) {
   VersionSet::LevelSummaryStorage tmp;
   Log(options_.info_log,
       "compacted to: %s", versions_->LevelSummary(&tmp));
+
+  // PROGRESS: Evict from table_cache
+  if (options_.sst_type == kPmemSST && options_.skiplist_cache) {
+    PmemSkiplist* pmem_skiplist;
+    // L(i)
+    for (int i=0; i<compact->compaction->num_input_files(0); i++) {
+      uint64_t file_number = compact->compaction->input(0, i)->number;
+      // printf("L0 %d\n", file_number);
+      pmem_skiplist = options_.pmem_skiplist[file_number%10];
+      table_cache_->Evict(file_number);
+    }
+    // L(i+1)
+    for (int i=0; i<compact->compaction->num_input_files(1); i++) {
+      uint64_t file_number = compact->compaction->input(1, i)->number;
+      // printf("L1 %d\n", file_number);
+      pmem_skiplist = options_.pmem_skiplist[file_number%10];
+      table_cache_->Evict(file_number);
+    }
+  }
   return status;
 }
 
@@ -1338,7 +1366,6 @@ Status DBImpl::Get(const ReadOptions& options,
       /* SOLVE: Get based on pmem */
       // s = current->Get(options, lkey, value, &stats);
       s = current->Get(options_, options, lkey, value, &stats);
-      // printf("Version Get\n");
       have_stat_update = true;
     }
     mutex_.Lock();

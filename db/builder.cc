@@ -109,19 +109,7 @@ Status BuildTable(const std::string& dbname,
       FileType type;
       if (ParseFileName(fname.substr(fname.rfind("/")+1, fname.size()), &file_number, &type) &&
             type != kDBLockFile) {
-          PmemSkiplist* pmem_skiplist;
-          switch (file_number %10) {
-            case 0: pmem_skiplist = options.pmem_skiplist[0]; break;
-            case 1: pmem_skiplist = options.pmem_skiplist[1]; break;
-            case 2: pmem_skiplist = options.pmem_skiplist[2]; break;
-            case 3: pmem_skiplist = options.pmem_skiplist[3]; break;
-            case 4: pmem_skiplist = options.pmem_skiplist[4]; break;
-            case 5: pmem_skiplist = options.pmem_skiplist[5]; break;
-            case 6: pmem_skiplist = options.pmem_skiplist[6]; break;
-            case 7: pmem_skiplist = options.pmem_skiplist[7]; break;
-            case 8: pmem_skiplist = options.pmem_skiplist[8]; break;
-            case 9: pmem_skiplist = options.pmem_skiplist[9]; break;
-          }
+          PmemSkiplist* pmem_skiplist = options.pmem_skiplist[file_number%10];
           // DEBUG:
           // printf("file_number: %d\n", file_number);
           // int i =0;
@@ -133,10 +121,22 @@ Status BuildTable(const std::string& dbname,
             // printf("%d]]\n", i);
           }
           // printf("[DEBUG][builder]i: %d\n",i);
+          printf("[DEBUG][builder]file_size: %d\n",builder->FileSize());
+          // PROGRESS:
+          if(options.skiplist_cache) {
+            Iterator* it = table_cache->NewIteratorFromPmem(ReadOptions(),
+                                                  meta->number,
+                                                  meta->file_size);
+            s = it->status();
+            it->RunCleanupFunc();
+            // delete it;
+          }
+
       } else {
         printf("[ERROR] Invalid filename '%s' '%d'\n", fname.c_str(), file_number);
         s = Status::InvalidArgument(Slice());
       }
+      s = builder->FinishPmem();
       meta->file_size = builder->FileSize();
       assert(meta->file_size > 0);
       delete builder;

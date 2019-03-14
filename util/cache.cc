@@ -228,11 +228,14 @@ void LRUCache::Ref(LRUHandle* e) {
 void LRUCache::Unref(LRUHandle* e) {
   assert(e->refs > 0);
   e->refs--;
+  // printf("Unref %d\n", e->refs);
   if (e->refs == 0) {  // Deallocate.
+    // printf("opt1\n");
     assert(!e->in_cache);
     (*e->deleter)(e->key(), e->value);
     free(e);
   } else if (e->in_cache && e->refs == 1) {
+    // printf("opt2\n");
     // No longer in use; move to lru_ list.
     LRU_Remove(e);
     LRU_Append(&lru_, e);

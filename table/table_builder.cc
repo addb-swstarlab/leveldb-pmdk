@@ -22,8 +22,6 @@ struct TableBuilder::Rep {
   Options index_block_options;
   WritableFile* file;
   uint64_t offset;
-  // PROGRESS: JH
-  uint64_t num_add_entries;
   Status status;
   BlockBuilder data_block;
   BlockBuilder index_block;
@@ -51,8 +49,6 @@ struct TableBuilder::Rep {
         index_block_options(opt),
         file(f),
         offset(0),
-        // JH
-        num_add_entries(0),
         data_block(&options),
         index_block(&index_block_options),
         num_entries(0),
@@ -135,19 +131,11 @@ void TableBuilder::AddToPmem(PmemSkiplist *pmem_skiplist, uint64_t number,
   }
   r->last_key.assign(key.data(), key.size());
   r->num_entries++;
-  // FIXME: Adjust estimated-size(offset) 
   r->offset += (key.size() + value.size() );
-  r->num_add_entries += 1;
-  // r->offset += (value.size() / 2);
-  // printf("%d] %s\n", number, key.ToString().c_str());
-  // pmem_skiplist->Insert(number, (char *)key.data(), (char *)value.data()); 
-  // printf("3]\n"); 
   pmem_skiplist->Insert((char *)key.data(), (char *)value.data(), 
                         key.size(), value.size(), number);
-                        // key.size(), value.size(), number/NUM_OF_SKIPLIST_MANAGER);
-  // printf("4]\n"); 
 }
-// PROGRESS:
+// [Deprecated Function]
 void TableBuilder::AddToPmemByOID(PmemSkiplist *pmem_skiplist, uint64_t number,
                               const Slice& key, const Slice& value,
                               PMEMoid *key_oid, PMEMoid *value_oid) {
@@ -159,20 +147,9 @@ void TableBuilder::AddToPmemByOID(PmemSkiplist *pmem_skiplist, uint64_t number,
   }
   r->last_key.assign(key.data(), key.size());
   r->num_entries++;
-  // FIXME: Adjust estimated-size(offset) 
-  r->offset += (key.size() + value.size() / 2);
-  r->num_add_entries += 1;
-  // r->offset += (value.size() / 2);
-  // printf("%d] %s\n", number, key.ToString().c_str());
-  // pmem_skiplist->Insert(number, (char *)key.data(), (char *)value.data());  
-  // printf("3]\n");
-  // TEST:
+  r->offset += (key.size() + value.size());
   pmem_skiplist->InsertByOID(key_oid, value_oid, 
                         key.size(), value.size(), number);
-                        // key.size(), value.size(), number/NUM_OF_SKIPLIST_MANAGER);
-  // pmem_skiplist->InsertByPtr(key_oid, value_oid, 
-  //                       key.size(), value.size(), number/NUM_OF_SKIPLIST_MANAGER);
-  // printf("4]\n");
 }
 void TableBuilder::AddToPmemByPtr(PmemSkiplist *pmem_skiplist, uint64_t number,
                               const Slice& key, const Slice& value,
@@ -185,20 +162,9 @@ void TableBuilder::AddToPmemByPtr(PmemSkiplist *pmem_skiplist, uint64_t number,
   }
   r->last_key.assign(key.data(), key.size());
   r->num_entries++;
-  // FIXME: Adjust estimated-size(offset) 
-  r->offset += (key.size() + value.size() / 2);
-  r->num_add_entries += 1;
-  // r->offset += (value.size() / 2);
-  // printf("%d] %s\n", number, key.ToString().c_str());
-  // pmem_skiplist->Insert(number, (char *)key.data(), (char *)value.data());  
-  // printf("3]\n");
-  // TEST:
-  // printf("This 1\n");
+  r->offset += (key.size() + value.size());
   pmem_skiplist->InsertByPtr(key_ptr, value_ptr, 
                         key.size(), value.size(), number);
-                        // key.size(), value.size(), number/NUM_OF_SKIPLIST_MANAGER);
-  // printf("This 2\n");
-  // printf("4]\n");
 }
 
 void TableBuilder::Flush() {
@@ -277,6 +243,16 @@ Status TableBuilder::status() const {
   return rep_->status;
 }
 
+// PROGRESS: JH
+Status TableBuilder::FinishPmem() {
+  Rep* r = rep_;
+  r->pending_index_entry = true;
+  r->status = Status::OK();
+  assert(!r->closed);
+  r->closed = true;
+  return r->status;
+}
+
 Status TableBuilder::Finish() {
   Rep* r = rep_;
   // const size_t estimated_block_size = r->data_block.CurrentSizeEstimate();
@@ -348,10 +324,6 @@ uint64_t TableBuilder::NumEntries() const {
 
 uint64_t TableBuilder::FileSize() const {
   return rep_->offset;
-}
-// JH
-uint64_t TableBuilder::NumAddEntries() const {
-  return rep_->num_add_entries;
 }
 
 }  // namespace leveldb

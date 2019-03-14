@@ -365,8 +365,8 @@ if(LEVELDB_BUILD_TESTS)
     leveldb_test("${PROJECT_SOURCE_DIR}/util/logging_test.cc")
 
     # JH
-    #leveldb_test("${PROJECT_SOURCE_DIR}/pmem/pmem_map_test.cc")
     leveldb_test("${PROJECT_SOURCE_DIR}/pmem/pmem_skiplist_test.cc")
+    leveldb_test("${PROJECT_SOURCE_DIR}/pmem/pmem_buffer_test.cc")
     #leveldb_test("${PROJECT_SOURCE_DIR}/pmem/pmem_PBAC_test.cc")
 
     # TODO(costan): This test also uses

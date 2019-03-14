@@ -72,7 +72,7 @@ struct store_last_node {
 };
 struct store_last_node last_node;
 // TOID(struct skiplist_map_node) current_node[NUM_OF_PRE_ALLOC_NODE];
-
+int common_constant;
 
 /*
  * skiplist_map_clear -- removes all elements from the map
@@ -137,12 +137,29 @@ skiplist_map_insert_node(TOID(struct skiplist_map_node) new_node,
 {
 	// std::chrono::steady_clock::time_point begin = std::chrono::steady_clock::now();
 	unsigned current_level = 0;
+	// FIXME: modify random addtion logic
+	common_constant++; // Make distribution logic
 	do {
-		TX_ADD_FIELD(path[current_level], next[current_level]);
-		D_RW(new_node)->next[current_level] =
-			D_RO(path[current_level])->next[current_level];
-		D_RW(path[current_level])->next[current_level] = new_node;
-	} while (++current_level < SKIPLIST_LEVELS_NUM && rand() % 2 == 0);
+		if (current_level == 0 ||
+				(current_level == 1 && common_constant % LEVEL_1_POINT == 0 ) ||
+				(current_level == 2 && common_constant % LEVEL_2_POINT == 0 ) ||
+				(current_level == 3 && common_constant % LEVEL_3_POINT == 0 ) ||
+				(current_level == 4 && common_constant % LEVEL_4_POINT == 0 ) ||
+				(current_level == 5 && common_constant % LEVEL_5_POINT == 0 ) ||
+				(current_level == 6 && common_constant % LEVEL_6_POINT == 0 ) ||
+				(current_level == 7 && common_constant % LEVEL_7_POINT == 0 ) ||
+				(current_level == 8 && common_constant % LEVEL_8_POINT == 0 ) ||
+				(current_level == 9 && common_constant % LEVEL_9_POINT == 0 ) ||
+				(current_level == 10 && common_constant % LEVEL_10_POINT == 0 ) ||
+				(current_level == 11 && common_constant % LEVEL_11_POINT == 0 )
+				) {
+			TX_ADD_FIELD(path[current_level], next[current_level]);
+			D_RW(new_node)->next[current_level] =
+				D_RO(path[current_level])->next[current_level];
+			D_RW(path[current_level])->next[current_level] = new_node;
+		}
+	// } while (++current_level < SKIPLIST_LEVELS_NUM && rand() % 2 == 0);
+	} while (++current_level < SKIPLIST_LEVELS_NUM);
 
 	// std::chrono::steady_clock::time_point end= std::chrono::steady_clock::now();
 	// std::cout << "insert-node = " << std::chrono::duration_cast<std::chrono::nanoseconds> (end - begin).count() <<"\n";
@@ -352,7 +369,7 @@ skiplist_map_insert_by_ptr(PMEMobjpool *pop, TOID(struct skiplist_map_node) map,
 	TOID(struct skiplist_map_node) new_node = D_RW(*current_node)->next[0];
 	// TOID(struct skiplist_map_node) new_node = current_node[index];
 	if (TOID_IS_NULL(new_node) || TOID_EQUALS(new_node, NULL_NODE)) {
-		printf("[ERROR][Skiplist][insertionByOID] Out of bound \n");
+		printf("[ERROR][Skiplist][insertionByPTR] Out of bound \n");
 	}
 	// new_node.oid = *key_oid;
 	// pmemobj_free(&D_RW(new_node)->entry.key);
@@ -466,7 +483,8 @@ skiplist_map_create(PMEMobjpool *pop, TOID(struct skiplist_map_node) *map,
 	int index, void *arg)
 {
 	int ret = 0;
-
+	// NOTE: initialize common_constant
+	common_constant = 0;
 	TX_BEGIN(pop) {
 		// printf("[DEBUG1]");
 		/* Head node */
@@ -596,8 +614,8 @@ skiplist_map_get_find(PMEMobjpool *pop, char *key,
 	for (current_level = SKIPLIST_LEVELS_NUM - 1;
 			current_level >= 0; current_level--) {
 
-		void *key_ptr = pmemobj_direct(D_RO(active)->entry.key);
-		// printf("[Before DEBUG %d] key:'%s' ptr:'%s'\n", current_level, key, (char *)key_ptr);
+		// void *key_ptr = pmemobj_direct(D_RO(active)->entry.key);
+		// printf("[Before DEBUG %d] key:'%s' ptr:'%s' \n", current_level, key, (char *)key_ptr);
 
 		TOID(struct skiplist_map_node) next = D_RO(active)->next[current_level];
 		for ( void *ptr ;

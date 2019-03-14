@@ -166,6 +166,9 @@ struct LEVELDB_EXPORT Options {
   PmemSkiplist **pmem_skiplist;
   PmemIterator **pmem_internal_iterator;
   SSTMakerType sst_type;
+  bool skiplist_cache;
+  
+  PmemBuffer **pmem_buffer;
 
   // Create an Options object with default values for all fields.
   Options();

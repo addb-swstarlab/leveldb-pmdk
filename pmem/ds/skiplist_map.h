@@ -45,12 +45,26 @@
 #endif
 
 // #define NUM_OF_PRE_ALLOC_NODE 30000 // TODO: Need to adjust
-#define NUM_OF_PRE_ALLOC_NODE 32077 // TODO: Need to adjust
+// #define NUM_OF_PRE_ALLOC_NODE 20480 // TODO: Need to adjust
+#define NUM_OF_PRE_ALLOC_NODE 30720 // = Just pre-alloc
+#define NUM_OF_USE_ALLOC_NODE 30720 // = MAX_SKIPLIST_NODE_SIZE
 #define PRE_ALLOC_KEY_SIZE 26 // 16
 #define PRE_ALLOC_VALUE_SIZE 130 // 120
 #define STRING_PADDING 0 // \0
 // #define INSERT_PADDING 5 // kHeader, etc.
 #define NUM_OF_TAG_BYTES 8
+
+#define LEVEL_11_POINT ( NUM_OF_USE_ALLOC_NODE / 2 )
+#define LEVEL_10_POINT ( LEVEL_11_POINT / 2)
+#define LEVEL_9_POINT ( LEVEL_10_POINT / 2)
+#define LEVEL_8_POINT ( LEVEL_9_POINT / 2)
+#define LEVEL_7_POINT ( LEVEL_8_POINT / 2)
+#define LEVEL_6_POINT ( LEVEL_7_POINT / 2)
+#define LEVEL_5_POINT ( LEVEL_6_POINT / 2)
+#define LEVEL_4_POINT ( LEVEL_5_POINT / 2)
+#define LEVEL_3_POINT ( LEVEL_4_POINT / 2)
+#define LEVEL_2_POINT ( LEVEL_3_POINT / 2)
+#define LEVEL_1_POINT ( LEVEL_2_POINT / 2)
 
 // #ifndef STRING_TYPE_OFFSET
 // #define STRING_TYPE_OFFSET 2020

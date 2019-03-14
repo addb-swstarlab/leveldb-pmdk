@@ -90,8 +90,8 @@ class LEVELDB_EXPORT TableBuilder {
   // Finish() call, returns the size of the final generated file.
   uint64_t FileSize() const;
 
-  // PROGRESS: JH
-  uint64_t NumAddEntries() const;
+  // JH
+  Status FinishPmem();
 
  private:
   bool ok() const { return status().ok(); }

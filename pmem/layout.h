@@ -34,15 +34,28 @@
 #define SKIPLIST_MANAGER_POOL_SIZE 2 * (1 << 30)
 #define SKIPLIST_MANAGER_LIST_SIZE 100
 // #define SKIPLIST_MANAGER_LIST_SIZE 10
-#define MAX_SKIPLIST_NODE_SIZE 32077
+#define MAX_SKIPLIST_NODE_SIZE 30720 // Compaction Output file max
 // #define SKIPLIST_BULK_INSERT_NUM 10
 #define NUM_OF_SKIPLIST_MANAGER 10
 
-#define SKIPLIST_OFFSET_PATH "/home/hwan/pmem_dir/skiplist_offset"
-#define SKIPLIST_OFFSET_SIZE 100 * (1<< 20)
-#define SKIPLIST_OFFSET_LAYOUT "skiplist_offset"
-#define NUM_OF_SKIPLIST_OFFSET \
-(SKIPLIST_MANAGER_LIST_SIZE * NUM_OF_SKIPLIST_MANAGER)
+#define BUFFER_PATH "/home/hwan/pmem_dir/pmem_buffer"
+#define BUFFER_PATH_0 "/home/hwan/pmem_dir/pmem_buffer_0"
+#define BUFFER_PATH_1 "/home/hwan/pmem_dir/pmem_buffer_1"
+#define BUFFER_PATH_2 "/home/hwan/pmem_dir/pmem_buffer_2"
+#define BUFFER_PATH_3 "/home/hwan/pmem_dir/pmem_buffer_3"
+#define BUFFER_PATH_4 "/home/hwan/pmem_dir/pmem_buffer_4"
+#define BUFFER_PATH_5 "/home/hwan/pmem_dir/pmem_buffer_5"
+#define BUFFER_PATH_6 "/home/hwan/pmem_dir/pmem_buffer_6"
+#define BUFFER_PATH_7 "/home/hwan/pmem_dir/pmem_buffer_7"
+#define BUFFER_PATH_8 "/home/hwan/pmem_dir/pmem_buffer_8"
+#define BUFFER_PATH_9 "/home/hwan/pmem_dir/pmem_buffer_9"
+
+#define BUFFER_POOL_SIZE 2 * (1 << 30)
+#define NUM_OF_BUFFER 10
+#define NUM_OF_CONTENTS 300
+#define EACH_CONTENT_SIZE 4 << 20 // FIXME: 4MB
+#define MAX_CONTENTS_SIZE (NUM_OF_CONTENTS * EACH_CONTENT_SIZE)
+
 
 namespace levedb {
 

@@ -26,6 +26,11 @@ static void DeleteEntry(const Slice& key, void* value) {
   delete tf->file;
   delete tf;
 }
+// JH
+static void DeletePmemEntry(const Slice& key, void* value) {
+  PmemIterator* pmem_iterator = reinterpret_cast<PmemIterator*>(value);
+  delete pmem_iterator;
+}
 
 static void UnrefEntry(void* arg1, void* arg2) {
   Cache* cache = reinterpret_cast<Cache*>(arg1);
@@ -52,8 +57,8 @@ Status TableCache::FindTable(uint64_t file_number, uint64_t file_size,
   char buf[sizeof(file_number)];
   EncodeFixed64(buf, file_number);
   Slice key(buf, sizeof(buf));
-  // *handle = cache_->Lookup(key);
-  // if (*handle == nullptr) {
+  *handle = cache_->Lookup(key);
+  if (*handle == nullptr) {
     std::string fname = TableFileName(dbname_, file_number);
     RandomAccessFile* file = nullptr;
     Table* table = nullptr;
@@ -79,7 +84,27 @@ Status TableCache::FindTable(uint64_t file_number, uint64_t file_size,
       tf->table = table;
       *handle = cache_->Insert(key, tf, 1, &DeleteEntry);
     }
-  // }
+  }
+  return s;
+}
+// PROGRESS:
+Status TableCache::FindSkiplist(uint64_t file_number, Cache::Handle** handle) {
+  Status s;
+  char buf[sizeof(file_number)];
+  EncodeFixed64(buf, file_number);
+  Slice key(buf, sizeof(buf));
+  *handle = cache_->Lookup(key);
+  if (*handle == nullptr) {
+    // printf("Cache Insert %d\n", file_number);
+    PmemSkiplist* pmem_skiplist = options_.pmem_skiplist[file_number%10];
+    PmemIterator* pmem_iterator = new PmemIterator(file_number, pmem_skiplist); 
+    *handle = cache_->Insert(key, 
+          pmem_iterator, 
+          1, 
+          &DeletePmemEntry);
+  } else {
+    // printf("Cache Lookup success! %d\n", file_number);
+  }
   return s;
 }
 
@@ -112,41 +137,26 @@ Iterator* TableCache::NewIteratorFromPmem(const ReadOptions& options,
                                   uint64_t file_size,
                                   Table** tableptr) {
                                     
-  PmemSkiplist* pmem_skiplist;
-  switch (file_number %10) {
-    case 0: pmem_skiplist = options_.pmem_skiplist[0]; break;
-    case 1: pmem_skiplist = options_.pmem_skiplist[1]; break;
-    case 2: pmem_skiplist = options_.pmem_skiplist[2]; break;
-    case 3: pmem_skiplist = options_.pmem_skiplist[3]; break;
-    case 4: pmem_skiplist = options_.pmem_skiplist[4]; break;
-    case 5: pmem_skiplist = options_.pmem_skiplist[5]; break;
-    case 6: pmem_skiplist = options_.pmem_skiplist[6]; break;
-    case 7: pmem_skiplist = options_.pmem_skiplist[7]; break;
-    case 8: pmem_skiplist = options_.pmem_skiplist[8]; break;
-    case 9: pmem_skiplist = options_.pmem_skiplist[9]; break;
-  }
-  if (tableptr != nullptr) {
-    *tableptr = nullptr;
-  }
-  
-  // Cache::Handle* handle = nullptr;
-  // Status s = FindTable(file_number, file_size, &handle);
-  // if (!s.ok()) {
-  //   return NewErrorIterator(s);
-  // }
+  bool on_cache =true;
+  Iterator* result;
+  if (options_.skiplist_cache) {
+    if (tableptr != nullptr) {
+      *tableptr = nullptr;
+    }
+    Cache::Handle* handle = nullptr;
+    Status s = FindSkiplist(file_number, &handle); 
 
-  // printf("Get 1\n");
-  // FIXME: Checks cache logic
-  // Iterator* result = new PmemIterator(file_number/NUM_OF_SKIPLIST_MANAGER, pmem_skiplist);
-  Iterator* result = new PmemIterator(file_number, pmem_skiplist);
-  result->SeekToFirst();
-  // printf("Get 2\n");
-  // Table* table = reinterpret_cast<TableAndFile*>(cache_->Value(handle))->table;
-  // Iterator* result = table->NewIteratorFromPmem(options_, options);
-  // result->RegisterCleanup(&UnrefEntry, cache_, handle);
-  // if (tableptr != nullptr) {
-  //   *tableptr = table;
-  // }
+    result = reinterpret_cast<Iterator*>(cache_->Value(handle));
+    result->SeekToFirst();
+    
+    result->RegisterCleanup(&UnrefEntry, cache_, handle);
+
+  } else {
+    PmemSkiplist* pmem_skiplist = options_.pmem_skiplist[file_number%10];
+    result = new PmemIterator(file_number, pmem_skiplist);
+    result->SeekToFirst();
+  }
+
   return result;
 }
 Status TableCache::Get(const ReadOptions& options,
@@ -171,55 +181,35 @@ Status TableCache::GetFromPmem(const Options& options,
                    const Slice& k,
                    void* arg,
                    void (*saver)(void*, const Slice&, const Slice&)) {
-  Status s;
-  // PmemSkiplist *pmem_skiplist = options.pmem_skiplist;
-  PmemIterator* pmem_iterator;
-  switch (file_number %10) {
-    case 0: pmem_iterator = options.pmem_internal_iterator[0]; break;
-    case 1: pmem_iterator = options.pmem_internal_iterator[1]; break;
-    case 2: pmem_iterator = options.pmem_internal_iterator[2]; break;
-    case 3: pmem_iterator = options.pmem_internal_iterator[3]; break;
-    case 4: pmem_iterator = options.pmem_internal_iterator[4]; break;
-    case 5: pmem_iterator = options.pmem_internal_iterator[5]; break;
-    case 6: pmem_iterator = options.pmem_internal_iterator[6]; break;
-    case 7: pmem_iterator = options.pmem_internal_iterator[7]; break;
-    case 8: pmem_iterator = options.pmem_internal_iterator[8]; break;
-    case 9: pmem_iterator = options.pmem_internal_iterator[9]; break;
+  Status s; 
+  // FIXME: Checks cache logic
+  // bool on_cache = true;
+  bool on_cache = false;
+  if (on_cache) {
+    Cache::Handle* handle = nullptr;
+    s = FindSkiplist(file_number, &handle); 
+
+    PmemIterator* pmem_iterator = 
+                          reinterpret_cast<PmemIterator*>(cache_->Value(handle));
+    pmem_iterator->Seek(k);
+    (*saver)(arg, pmem_iterator->key(), pmem_iterator->value());
+    cache_->Release(handle);
+
+  } else {
+    PmemIterator* pmem_iterator = options.pmem_internal_iterator[file_number%10]; 
+    pmem_iterator->SetIndexAndSeek(file_number, k);
+    (*saver)(arg, pmem_iterator->key(), pmem_iterator->value());
   }
-  // pmem_iterator->SetIndex(file_number);
-  // printf("3 %d\n", file_number);
-  // PmemIterator *pmem_iterator = new PmemIterator(file_number, pmem_skiplist);
-  // printf("1\n");
-	// std::chrono::steady_clock::time_point begin, end;
-	// begin = std::chrono::steady_clock::now();
-  // pmem_iterator->SetIndexAndSeek(file_number/NUM_OF_SKIPLIST_MANAGER, k);
-  pmem_iterator->SetIndexAndSeek(file_number, k);
-
-	// end= std::chrono::steady_clock::now();
-	// std::cout << "SetIndexAndSeek = " << std::chrono::duration_cast<std::chrono::nanoseconds> (end - begin).count() <<"\n";
-  // printf("2\n");
-  // pmem_iterator->Seek(k);
-  // Slice key(pmem_iterator->key());
-  // Slice value(pmem_iterator->value());
-  // (*saver)(arg, key, value);
-  (*saver)(arg, pmem_iterator->key(), pmem_iterator->value());
-  // printf("Get 2\n");
-  // printf("key1:'%s'\n", pmem_iterator->key());
-  // printf("value1:'%s'\n", pmem_iterator->value());
-
-  // TEST:
-  // pmem_iterator->SeekToLast();
-  // printf("key2:'%s'\n", pmem_iterator->key());
-  // printf("value2:'%s'\n", pmem_iterator->value());
-
   return s;
 }
 
 
 void TableCache::Evict(uint64_t file_number) {
+  // printf("TableCache Eviction 1\n");
   char buf[sizeof(file_number)];
   EncodeFixed64(buf, file_number);
   cache_->Erase(Slice(buf, sizeof(buf)));
+  // printf("TableCache Eviction 2\n");
 }
 
 }  // namespace leveldb

@@ -65,6 +65,8 @@ class TableCache {
   Cache* cache_;
 
   Status FindTable(uint64_t file_number, uint64_t file_size, Cache::Handle**);
+  // JH 
+  Status FindSkiplist(uint64_t file_number, Cache::Handle**);
 };
 
 }  // namespace leveldb
