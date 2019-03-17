@@ -29,6 +29,10 @@ struct TableBuilder::Rep {
   int64_t num_entries;
   bool closed;          // Either Finish() or Abandon() has been called.
   FilterBlockBuilder* filter_block;
+  // JH
+  char* start_offset;
+  bool first_addition_flag;
+  std::string buffer;
 
   // We do not emit the index entry for a block until we have seen the
   // first key for the next data block.  This allows us to use shorter
@@ -53,6 +57,10 @@ struct TableBuilder::Rep {
         index_block(&index_block_options),
         num_entries(0),
         closed(false),
+        // JH
+        start_offset(nullptr),
+        first_addition_flag(true),
+
         filter_block(opt.filter_policy == nullptr ? nullptr
                      : new FilterBlockBuilder(opt.filter_policy)),
         pending_index_entry(false) {
@@ -121,39 +129,118 @@ void TableBuilder::Add(const Slice& key, const Slice& value) {
   }
 }
 // JH
-void TableBuilder::AddToPmem(PmemSkiplist *pmem_skiplist, uint64_t number,
+void TableBuilder::AddToPmem(PmemSkiplist* pmem_skiplist, uint64_t number,
                               const Slice& key, const Slice& value) {
-  Rep* r = rep_;
-  assert(!r->closed);
-  if (!ok()) return;
-  if (r->num_entries > 0) {
-    assert(r->options.comparator->Compare(key, Slice(r->last_key)) > 0);
-  }
-  r->last_key.assign(key.data(), key.size());
-  r->num_entries++;
-  r->offset += (key.size() + value.size() );
-  pmem_skiplist->Insert((char *)key.data(), (char *)value.data(), 
-                        key.size(), value.size(), number);
+  // Rep* r = rep_;
+  // assert(!r->closed);
+  // if (!ok()) return;
+  // if (r->num_entries > 0) {
+  //   assert(r->options.comparator->Compare(key, Slice(r->last_key)) > 0);
+  // }
+  // r->last_key.assign(key.data(), key.size());
+  // r->num_entries++;
+  // r->offset += (key.size() + value.size() );
+  // pmem_skiplist->Insert((char *)key.data(), (char *)value.data(), 
+  //                       key.size(), value.size(), number);
+  printf("[ERROR][Deprecated function] AddToPmem()\n");
+  abort();
 }
 // [Deprecated Function]
-void TableBuilder::AddToPmemByOID(PmemSkiplist *pmem_skiplist, uint64_t number,
-                              const Slice& key, const Slice& value,
-                              PMEMoid *key_oid, PMEMoid *value_oid) {
-  Rep* r = rep_;
-  assert(!r->closed);
-  if (!ok()) return;
-  if (r->num_entries > 0) {
-    assert(r->options.comparator->Compare(key, Slice(r->last_key)) > 0);
-  }
-  r->last_key.assign(key.data(), key.size());
-  r->num_entries++;
-  r->offset += (key.size() + value.size());
-  pmem_skiplist->InsertByOID(key_oid, value_oid, 
-                        key.size(), value.size(), number);
-}
-void TableBuilder::AddToPmemByPtr(PmemSkiplist *pmem_skiplist, uint64_t number,
+// void TableBuilder::AddToPmemByOID(PmemSkiplist* pmem_skiplist, uint64_t number,
+//                               const Slice& key, const Slice& value,
+//                               PMEMoid* key_oid, PMEMoid* value_oid) {
+//   Rep* r = rep_;
+//   assert(!r->closed);
+//   if (!ok()) return;
+//   if (r->num_entries > 0) {
+//     assert(r->options.comparator->Compare(key, Slice(r->last_key)) > 0);
+//   }
+//   r->last_key.assign(key.data(), key.size());
+//   r->num_entries++;
+//   r->offset += (key.size() + value.size());
+//   pmem_skiplist->InsertByOID(key_oid, value_oid, 
+//                         key.size(), value.size(), number);
+// }
+void TableBuilder::AddToPmemByPtr(PmemSkiplist* pmem_skiplist, uint64_t number,
                               const Slice& key, const Slice& value,
                               void* key_ptr, void* value_ptr) {
+  // Rep* r = rep_;
+  // assert(!r->closed);
+  // if (!ok()) return;
+  // if (r->num_entries > 0) {
+  //   assert(r->options.comparator->Compare(key, Slice(r->last_key)) > 0);
+  // }
+  // r->last_key.assign(key.data(), key.size());
+  // r->num_entries++;
+  // r->offset += (key.size() + value.size());
+  // pmem_skiplist->InsertByPtr(key_ptr, value_ptr, 
+  //                       key.size(), value.size(), number);
+  printf("[ERROR][Deprecated function] AddToPmemByPtr()\n");
+  abort();
+}
+/* use_pmem_buffer */
+void TableBuilder::AddToBufferAndSkiplist(
+                        PmemBuffer* pmem_buffer, PmemSkiplist* pmem_skiplist, 
+                        uint64_t number, const Slice& key, const Slice& value) {
+  Rep* r = rep_;
+  assert(!r->closed);
+  if (!ok()) return;
+  if (r->num_entries > 0) {
+    assert(r->options.comparator->Compare(key, Slice(r->last_key)) > 0);
+  }
+  r->last_key.assign(key.data(), key.size());
+  r->num_entries++;
+
+  // NOTE: Set and Get start-offset at first
+  if (r->first_addition_flag) {
+    // printf("[SetAndGetStartOffset]\n");
+    r->start_offset = pmem_buffer->SetAndGetStartOffset(number);
+    r->first_addition_flag = false;
+  }
+
+  // Add to buffer
+
+  // char buf[r->options.write_buffer_size];
+  EncodeToBuffer(&r->buffer, key, value);
+  // printf("[BUFFER] %s\n", buffer.c_str());
+  // PutLengthPrefixedSlice(&r->buffer, key);
+  // PutLengthPrefixedSlice(&r->buffer, value);
+  // PutVarint32(&r->buffer, key.size());
+  // r->buffer.append(key.data(), key.size());
+  // printf("[BUFFER %d] %s\n", r->buffer.size(), r->buffer.c_str());
+  // PutVarint32(&r->buffer, value.size());
+  // r->buffer.append(value.data(), value.size());
+  // PutVarint32(&r->buffer, 0);
+  // printf("[DEBUG]:");
+  // for (auto c : r->buffer) {
+  //   printf("%c", c);
+  // }
+  // int encoded_key_size = key.size() + VarintLength(key.size());
+  // int encoded_value_size = value.size() + VarintLength(value.size());
+  int total_length = GetEncodedLength(key.size(), value.size());
+  // printf("%d %d] total_length %d\n", key.size(), value.size(), total_length);
+  // Add to pmem_skiplist
+  pmem_skiplist->Insert((char *)key.data(), r->start_offset + r->offset, 
+                        key.size(), number);
+
+  // r->offset += (key.size() + value.size() );
+  r->offset += (total_length);
+}
+void TableBuilder::FlushBufferToPmemBuffer(PmemBuffer* pmem_buffer, uint64_t number) {
+  Rep* r = rep_;
+  assert(!r->closed);
+  if (!ok()) return;
+  if (r->buffer.size() >= r->options.write_buffer_size) {
+    printf("[ERROR] table_builder buffer size is over!! '%d'\n", r->buffer.size());
+    abort();
+  }
+  Slice buffer_wrapper(r->buffer);
+  // printf("[DEBUG %d] '%s'\n",buffer_wrapper.size(), buffer_wrapper.data()); // 3,555,846
+  pmem_buffer->SequentialWrite(number, buffer_wrapper);
+}
+void TableBuilder::AddToSkiplistByPtr(PmemSkiplist* pmem_skiplist, uint64_t number,
+                    const Slice& key, const Slice& value,
+                    void* key_ptr, char* buffer_ptr) {
   Rep* r = rep_;
   assert(!r->closed);
   if (!ok()) return;
@@ -163,10 +250,8 @@ void TableBuilder::AddToPmemByPtr(PmemSkiplist *pmem_skiplist, uint64_t number,
   r->last_key.assign(key.data(), key.size());
   r->num_entries++;
   r->offset += (key.size() + value.size());
-  pmem_skiplist->InsertByPtr(key_ptr, value_ptr, 
-                        key.size(), value.size(), number);
+  pmem_skiplist->InsertByPtr(key_ptr, buffer_ptr, key.size(), number);
 }
-
 void TableBuilder::Flush() {
   Rep* r = rep_;
   assert(!r->closed);

@@ -76,6 +76,7 @@ class LEVELDB_EXPORT Iterator {
   virtual PMEMoid* value_oid() const {return nullptr;};
   virtual void* key_ptr() const {return nullptr;};
   virtual void* value_ptr() const {return nullptr;};
+  virtual char* buffer_ptr() const {return nullptr;};
   void RunCleanupFunc();
   // FIXME: skiplist_cache is invalid state..
   bool use_skiplist_cache;

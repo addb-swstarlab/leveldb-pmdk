@@ -39,6 +39,10 @@ Options::Options()
       /* Addtional cache option */
       , skiplist_cache(true)
       // , skiplist_cache(false)
+
+      /* Pmem-buffer option */
+      , use_pmem_buffer(true)
+      // , use_pmem_buffer(false)
        {
 }
 

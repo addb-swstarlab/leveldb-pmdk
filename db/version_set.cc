@@ -321,6 +321,9 @@ class Version::LevelFilesConcatIteratorFromPmem : public Iterator {
   void* value_ptr() const {
     return current_->value_ptr();
   }
+  char* buffer_ptr() const {
+    return current_->buffer_ptr();
+  }
  private:
   InternalKeyComparator icmp_;
   PmemIterator **pmem_iterator;

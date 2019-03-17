@@ -184,6 +184,7 @@ Status TableCache::GetFromPmem(const Options& options,
   Status s; 
   // FIXME: Checks cache logic
   // bool on_cache = true;
+  // printf("Start GetFromPmem\n");
   bool on_cache = false;
   if (on_cache) {
     Cache::Handle* handle = nullptr;
@@ -197,9 +198,19 @@ Status TableCache::GetFromPmem(const Options& options,
 
   } else {
     PmemIterator* pmem_iterator = options.pmem_internal_iterator[file_number%10]; 
+    // printf("1]\n");
     pmem_iterator->SetIndexAndSeek(file_number, k);
-    (*saver)(arg, pmem_iterator->key(), pmem_iterator->value());
+    // printf("2]\n");
+    // printf("key:'%s'\n", pmem_iterator->key());
+    Slice res_key = pmem_iterator->key();
+    // Slice res_value = pmem_iterator->value();
+    // printf("value:'%s'\n", pmem_iterator->value());
+    // (*saver)(arg, pmem_iterator->key(), pmem_iterator->value());
+    // (*saver)(arg, res_key, res_value);
+    (*saver)(arg, res_key, pmem_iterator->value());
+    // printf("3]\n");
   }
+  // printf("End GetFromPmem\n");
   return s;
 }
 

@@ -51,6 +51,7 @@ class IteratorWrapper {
   PMEMoid* value_oid() const { assert(iter_); return iter_->value_oid();}
   void* key_ptr() const { assert(iter_);  return iter_->key_ptr(); }
   void* value_ptr() const { assert(iter_); return iter_->value_ptr();}
+  char* buffer_ptr() const { assert(iter_); return iter_->buffer_ptr();}
  private:
   void Update() {
     valid_ = iter_->Valid();

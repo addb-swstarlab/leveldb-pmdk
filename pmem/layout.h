@@ -56,6 +56,9 @@
 #define EACH_CONTENT_SIZE 4 << 20 // FIXME: 4MB
 #define MAX_CONTENTS_SIZE (NUM_OF_CONTENTS * EACH_CONTENT_SIZE)
 
+// TEST:
+#define HASHMAP_PATH "/home/hwan/pmem_dir/pmem_hashmap"
+#define HASHMAP_POOL_SIZE 3 * (1 << 20)
 
 namespace levedb {
 

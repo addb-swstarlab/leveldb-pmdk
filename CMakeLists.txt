@@ -189,16 +189,25 @@ target_sources(leveldb
     #"${PROJECT_SOURCE_DIR}/pmem/pmem_map.cc"
     #"${PROJECT_SOURCE_DIR}/pmem/pmem_map.h"
     "${PROJECT_SOURCE_DIR}/pmem/layout.h"
-    "${PROJECT_SOURCE_DIR}/pmem/ds/skiplist_map.cc"
-    "${PROJECT_SOURCE_DIR}/pmem/ds/skiplist_map.h"
+    #"${PROJECT_SOURCE_DIR}/pmem/ds/skiplist_map.cc"
+    #"${PROJECT_SOURCE_DIR}/pmem/ds/skiplist_map.h"
+    "${PROJECT_SOURCE_DIR}/pmem/ds/skiplist_key_ptr.cc"
+    "${PROJECT_SOURCE_DIR}/pmem/ds/skiplist_key_ptr.h"
     "${PROJECT_SOURCE_DIR}/pmem/map/map_skiplist.cc"
     "${PROJECT_SOURCE_DIR}/pmem/map/map_skiplist.h"
     "${PROJECT_SOURCE_DIR}/pmem/map/map.cc"
     "${PROJECT_SOURCE_DIR}/pmem/map/map.h"
     "${PROJECT_SOURCE_DIR}/pmem/pmem_skiplist.cc"
     "${PROJECT_SOURCE_DIR}/pmem/pmem_skiplist.h"
-    #"${PROJECT_SOURCE_DIR}/pmem/pmem_PBAC.cc"
-    #"${PROJECT_SOURCE_DIR}/pmem/pmem_PBAC.h"
+    #"${PROJECT_SOURCE_DIR}/pmem/pmem_skiplist_key_ptr.cc"
+    #"${PROJECT_SOURCE_DIR}/pmem/pmem_skiplist_key_ptr.h"
+
+    # hash_map
+    "${PROJECT_SOURCE_DIR}/pmem/ds/hashmap_atomic.cc"
+    "${PROJECT_SOURCE_DIR}/pmem/ds/hashmap_atomic.h"
+    "${PROJECT_SOURCE_DIR}/pmem/ds/hashmap_internal.h"
+    "${PROJECT_SOURCE_DIR}/pmem/map/hashmap.h"
+
 
   # Only CMake 3.3+ supports PUBLIC sources in targets exported by "install".
   $<$<VERSION_GREATER:CMAKE_VERSION,3.2>:PUBLIC>
@@ -367,7 +376,7 @@ if(LEVELDB_BUILD_TESTS)
     # JH
     leveldb_test("${PROJECT_SOURCE_DIR}/pmem/pmem_skiplist_test.cc")
     leveldb_test("${PROJECT_SOURCE_DIR}/pmem/pmem_buffer_test.cc")
-    #leveldb_test("${PROJECT_SOURCE_DIR}/pmem/pmem_PBAC_test.cc")
+    leveldb_test("${PROJECT_SOURCE_DIR}/pmem/pmem_hashmap_test.cc")
 
     # TODO(costan): This test also uses
     #               "${PROJECT_SOURCE_DIR}/util/env_posix_test_helper.h"

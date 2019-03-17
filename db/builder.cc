@@ -56,16 +56,16 @@ Status BuildTable(const std::string& dbname,
       TableBuilder* builder = new TableBuilder(options, file);
       meta->smallest.DecodeFrom(iter->key());
 
-      // int i = 0;
+      int i = 0;
       for (; iter->Valid(); iter->Next()) {
         Slice key = iter->key();
         meta->largest.DecodeFrom(key);
         builder->Add(key, iter->value());
         // 24, 100
         // printf("'%s'-'%s', '%d' '%d'\n", key.data(), iter->value().data(), key.size(), iter->value().size());
-        // i++;
+        i++;
       }
-        // printf("[%s]i: %d\n", fname.c_str(), i);
+        printf("[%s]i: %d\n", fname.c_str(), i);
 
       // Finish and check for builder errors
       s = builder->Finish();
@@ -110,18 +110,28 @@ Status BuildTable(const std::string& dbname,
       if (ParseFileName(fname.substr(fname.rfind("/")+1, fname.size()), &file_number, &type) &&
             type != kDBLockFile) {
           PmemSkiplist* pmem_skiplist = options.pmem_skiplist[file_number%10];
+          PmemBuffer* pmem_buffer = options.pmem_buffer[file_number%10];
           // DEBUG:
           // printf("file_number: %d\n", file_number);
-          // int i =0;
+          int i =0;
           for (; iter->Valid(); iter->Next()) {
             Slice key = iter->key();
             meta->largest.DecodeFrom(key);
-            builder->AddToPmem(pmem_skiplist, file_number, key, iter->value());
-            // i++;
+            if (options.use_pmem_buffer) {
+              builder->AddToBufferAndSkiplist(pmem_buffer, pmem_skiplist, 
+                                              file_number, key, iter->value());
+            } else {
+              builder->AddToPmem(pmem_skiplist, file_number, key, iter->value());
+            }
+            i++;
             // printf("%d]]\n", i);
           }
-          // printf("[DEBUG][builder]i: %d\n",i);
-          printf("[DEBUG][builder]file_size: %d\n",builder->FileSize());
+          // printf("[DEBUG][builder]num_entries: %d\n",i);
+          // printf("[DEBUG][builder]file_size: %d\n",builder->FileSize());
+          // PROGRESS:
+          if(options.use_pmem_buffer) {
+            builder->FlushBufferToPmemBuffer(pmem_buffer, file_number);
+          }
           // PROGRESS:
           if(options.skiplist_cache) {
             Iterator* it = table_cache->NewIteratorFromPmem(ReadOptions(),

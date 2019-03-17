@@ -150,9 +150,26 @@ Options SanitizeOptions(const std::string& dbname,
     result.pmem_internal_iterator[8] = new PmemIterator(8, result.pmem_skiplist[8]);
     result.pmem_internal_iterator[9] = new PmemIterator(9, result.pmem_skiplist[9]);
 
+  }
+  if (result.use_pmem_buffer) {
     // PROGRESS:
+    result.pmem_buffer = new PmemBuffer*[NUM_OF_BUFFER]; // tmp
     // result.pmem_buffer = new PmemBuffer*[1]; // tmp
-    // result.pmem_buffer[0] = new PmemBuffer();
+    result.pmem_buffer[0] = new PmemBuffer(BUFFER_PATH_0);
+    result.pmem_buffer[1] = new PmemBuffer(BUFFER_PATH_1);
+    result.pmem_buffer[2] = new PmemBuffer(BUFFER_PATH_2);
+    result.pmem_buffer[3] = new PmemBuffer(BUFFER_PATH_3);
+    result.pmem_buffer[4] = new PmemBuffer(BUFFER_PATH_4);
+    result.pmem_buffer[5] = new PmemBuffer(BUFFER_PATH_5);
+    result.pmem_buffer[6] = new PmemBuffer(BUFFER_PATH_6);
+    result.pmem_buffer[7] = new PmemBuffer(BUFFER_PATH_7);
+    result.pmem_buffer[8] = new PmemBuffer(BUFFER_PATH_8);
+    result.pmem_buffer[9] = new PmemBuffer(BUFFER_PATH_9);
+
+    // Initialize
+    for (int i=0; i<NUM_OF_BUFFER; i++) {
+      result.pmem_buffer[i]->ClearAll();
+    }
   }
   return result;
 }
@@ -885,13 +902,13 @@ Status DBImpl::FinishCompactionOutputFile(CompactionState* compact,
   SSTMakerType sst_type = options_.sst_type;
 
   const uint64_t output_number = compact->current_output()->number;
-  // printf("FinishCompaction: %d\n", output_number);
-  printf("FinishCompaction: %d\n", compact->builder->FileSize());
+  // printf("FinishCompaction: %d\n", compact->builder->FileSize());
   assert(output_number != 0);
 
   // Check for iterator errors
   Status s = input->status();
   const uint64_t current_entries = compact->builder->NumEntries();
+  printf("FinishCompaction: %d\n", current_entries);
   // Builder
   if (sst_type == kFileDescriptorSST) {
     if (s.ok()) {
@@ -1137,9 +1154,15 @@ Status DBImpl::DoCompactionWork(CompactionState* compact) {
         //               input->key_oid(), input->value_oid());
 
         // NOTE: Option3: BAC by Pointer
-        compact->builder->AddToPmemByPtr(pmem_skiplist, 
-                      file_number, key, value,
-                      input->key_ptr(), input->value_ptr());
+        if (options_.use_pmem_buffer) {
+          compact->builder->AddToSkiplistByPtr (pmem_skiplist,
+                        file_number, key, value,
+                        input->key_ptr(), input->buffer_ptr());
+        } else {
+          compact->builder->AddToPmemByPtr(pmem_skiplist, 
+                        file_number, key, value,
+                        input->key_ptr(), input->value_ptr());
+        }
         // i++;
 
         // Close output file if it is big enough

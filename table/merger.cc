@@ -146,6 +146,9 @@ class MergingIterator : public Iterator {
   void* value_ptr() const {
     return current_->value_ptr();
   }
+  char* buffer_ptr() const {
+    return current_->buffer_ptr();
+  }
  private:
   void FindSmallest();
   void FindLargest();

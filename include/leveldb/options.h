@@ -167,6 +167,7 @@ struct LEVELDB_EXPORT Options {
   PmemIterator **pmem_internal_iterator;
   SSTMakerType sst_type;
   bool skiplist_cache;
+  bool use_pmem_buffer;
   
   PmemBuffer **pmem_buffer;
 

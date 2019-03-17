@@ -29,22 +29,20 @@
  * (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
  * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  */
-#ifndef HASHMAP_H
-#define HASHMAP_H
 
-/* common API provided by both implementations */
+#ifndef HASHSET_INTERNAL_H
+#define HASHSET_INTERNAL_H
 
-#include <stddef.h>
-#include <stdint.h>
+/* large prime number used as a hashing function coefficient */
+#define HASH_FUNC_COEFF_P 32212254719ULL
 
-namespace leveldb {
-struct hashmap_args {
-	uint32_t seed;
-};
+/* initial number of buckets */
+#define INIT_BUCKETS_NUM 10
 
-// enum hashmap_cmd {
-// 	HASHMAP_CMD_REBUILD,
-// 	HASHMAP_CMD_DEBUG,
-// };
-}
-#endif /* HASHMAP_H */
+/* number of values in a bucket which trigger hashtable rebuild check */
+#define MIN_HASHSET_THRESHOLD 5
+
+/* number of values in a bucket which force hashtable rebuild */
+#define MAX_HASHSET_THRESHOLD 10
+
+#endif

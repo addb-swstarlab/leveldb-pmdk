@@ -51,16 +51,25 @@ class LEVELDB_EXPORT TableBuilder {
   void Add(const Slice& key, const Slice& value);
   
   /* [JH][Pmem] */
-  void AddToPmem(PmemSkiplist *pmem_skiplist, uint64_t number,
+  void AddToPmem(PmemSkiplist* pmem_skiplist, uint64_t number,
                     const Slice& key, const Slice& value);
 
-  void AddToPmemByOID(PmemSkiplist *pmem_skiplist, uint64_t number,
-                    const Slice& key, const Slice& value,
-                    PMEMoid *key_oid, PMEMoid *value_oid);
+  // [Deprecated function]
+  // void AddToPmemByOID(PmemSkiplist* pmem_skiplist, uint64_t number,
+  //                   const Slice& key, const Slice& value,
+  //                   PMEMoid* key_oid, PMEMoid* value_oid);
 
-  void AddToPmemByPtr(PmemSkiplist *pmem_skiplist, uint64_t number,
-                    const Slice& key, const Slice& value,
-                    void* key_ptr, void* value_ptr);
+  void AddToPmemByPtr(PmemSkiplist* pmem_skiplist, uint64_t number,
+                      const Slice& key, const Slice& value,
+                      void* key_ptr, void* value_ptr);
+  // Pmem-buffer
+  void AddToBufferAndSkiplist(
+                        PmemBuffer* pmem_buffer, PmemSkiplist* pmem_skiplist, 
+                        uint64_t number, const Slice& key, const Slice& value); 
+  void FlushBufferToPmemBuffer(PmemBuffer* pmem_buffer, uint64_t number);
+  void AddToSkiplistByPtr(PmemSkiplist* pmem_skiplist, uint64_t number,
+                          const Slice& key, const Slice& value,
+                          void* key_ptr, char* buffer_ptr);
 
   // Advanced operation: flush any buffered key/value pairs to file.
   // Can be used to ensure that two adjacent entries never live in
