@@ -109,7 +109,16 @@ Status BuildTable(const std::string& dbname,
       FileType type;
       if (ParseFileName(fname.substr(fname.rfind("/")+1, fname.size()), &file_number, &type) &&
             type != kDBLockFile) {
-          PmemSkiplist* pmem_skiplist = options.pmem_skiplist[file_number%10];
+          PmemSkiplist* pmem_skiplist;
+          PmemHashmap* pmem_hashmap;
+          switch (options.ds_type) {
+            case kSkiplist:
+              pmem_skiplist = options.pmem_skiplist[file_number%10];
+              break;
+            case kHashmap:
+              pmem_hashmap = options.pmem_hashmap[file_number%10];
+              break;
+          }
           PmemBuffer* pmem_buffer = options.pmem_buffer[file_number%10];
           // DEBUG:
           // printf("file_number: %d\n", file_number);
@@ -118,8 +127,16 @@ Status BuildTable(const std::string& dbname,
             Slice key = iter->key();
             meta->largest.DecodeFrom(key);
             if (options.use_pmem_buffer) {
-              builder->AddToBufferAndSkiplist(pmem_buffer, pmem_skiplist, 
+              switch (options.ds_type) {
+                case kSkiplist:
+                  builder->AddToBufferAndSkiplist(pmem_buffer, pmem_skiplist, 
                                               file_number, key, iter->value());
+                  break;
+                case kHashmap:
+                  builder->AddToBufferAndHashmap(pmem_buffer, pmem_hashmap,
+                                              file_number, key, iter->value());
+                  break;
+              }
             } else {
               builder->AddToPmem(pmem_skiplist, file_number, key, iter->value());
             }
@@ -133,7 +150,7 @@ Status BuildTable(const std::string& dbname,
             builder->FlushBufferToPmemBuffer(pmem_buffer, file_number);
           }
           // PROGRESS:
-          if(options.skiplist_cache) {
+          if(options.ds_type == kSkiplist && options.skiplist_cache) {
             Iterator* it = table_cache->NewIteratorFromPmem(ReadOptions(),
                                                   meta->number,
                                                   meta->file_size);

@@ -165,6 +165,8 @@ Status TableCache::Get(const ReadOptions& options,
                        const Slice& k,
                        void* arg,
                        void (*saver)(void*, const Slice&, const Slice&)) {
+	// std::chrono::steady_clock::time_point begin = std::chrono::steady_clock::now();
+                  
   Cache::Handle* handle = nullptr;
   Status s = FindTable(file_number, file_size, &handle);
   if (s.ok()) {
@@ -172,6 +174,9 @@ Status TableCache::Get(const ReadOptions& options,
     s = t->InternalGet(options, k, arg, saver);
     cache_->Release(handle);
   }
+  // 	std::chrono::steady_clock::time_point end= std::chrono::steady_clock::now();
+	// std::cout << "Get " << k.data() << "= " << std::chrono::duration_cast<std::chrono::nanoseconds> (end - begin).count() <<"\n";
+
   return s;
 }
 // JH
@@ -182,6 +187,7 @@ Status TableCache::GetFromPmem(const Options& options,
                    void* arg,
                    void (*saver)(void*, const Slice&, const Slice&)) {
   Status s; 
+	// std::chrono::steady_clock::time_point begin = std::chrono::steady_clock::now();
   // FIXME: Checks cache logic
   // bool on_cache = true;
   // printf("Start GetFromPmem\n");
@@ -210,7 +216,9 @@ Status TableCache::GetFromPmem(const Options& options,
     (*saver)(arg, res_key, pmem_iterator->value());
     // printf("3]\n");
   }
-  // printf("End GetFromPmem\n");
+  // 	std::chrono::steady_clock::time_point end= std::chrono::steady_clock::now();
+	// std::cout << "GetFromPmem " << k.data() << "= " << std::chrono::duration_cast<std::chrono::nanoseconds> (end - begin).count() <<"\n";
+// printf("End GetFromPmem\n");
   return s;
 }
 

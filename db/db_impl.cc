@@ -118,38 +118,78 @@ Options SanitizeOptions(const std::string& dbname,
   }
     // SOLVE: JH
   if (result.sst_type == kPmemSST) {
-    result.pmem_skiplist = new PmemSkiplist*[NUM_OF_SKIPLIST_MANAGER];
-    result.pmem_skiplist[0] = new PmemSkiplist(SKIPLIST_MANAGER_PATH_0);
-    result.pmem_skiplist[1] = new PmemSkiplist(SKIPLIST_MANAGER_PATH_1);
-    result.pmem_skiplist[2] = new PmemSkiplist(SKIPLIST_MANAGER_PATH_2);
-    result.pmem_skiplist[3] = new PmemSkiplist(SKIPLIST_MANAGER_PATH_3);
-    result.pmem_skiplist[4] = new PmemSkiplist(SKIPLIST_MANAGER_PATH_4);
-    result.pmem_skiplist[5] = new PmemSkiplist(SKIPLIST_MANAGER_PATH_5);
-    result.pmem_skiplist[6] = new PmemSkiplist(SKIPLIST_MANAGER_PATH_6);
-    result.pmem_skiplist[7] = new PmemSkiplist(SKIPLIST_MANAGER_PATH_7);
-    result.pmem_skiplist[8] = new PmemSkiplist(SKIPLIST_MANAGER_PATH_8);
-    result.pmem_skiplist[9] = new PmemSkiplist(SKIPLIST_MANAGER_PATH_9);
-    
-    // Initialize
-    for (int i=0; i<NUM_OF_SKIPLIST_MANAGER; i++) {
-      result.pmem_skiplist[i]->ClearAll();
+    switch (result.ds_type) {
+      // DS_Option1: Skiplist
+      case kSkiplist:
+        result.pmem_skiplist = new PmemSkiplist*[NUM_OF_SKIPLIST_MANAGER];
+        result.pmem_skiplist[0] = new PmemSkiplist(SKIPLIST_MANAGER_PATH_0);
+        result.pmem_skiplist[1] = new PmemSkiplist(SKIPLIST_MANAGER_PATH_1);
+        result.pmem_skiplist[2] = new PmemSkiplist(SKIPLIST_MANAGER_PATH_2);
+        result.pmem_skiplist[3] = new PmemSkiplist(SKIPLIST_MANAGER_PATH_3);
+        result.pmem_skiplist[4] = new PmemSkiplist(SKIPLIST_MANAGER_PATH_4);
+        result.pmem_skiplist[5] = new PmemSkiplist(SKIPLIST_MANAGER_PATH_5);
+        result.pmem_skiplist[6] = new PmemSkiplist(SKIPLIST_MANAGER_PATH_6);
+        result.pmem_skiplist[7] = new PmemSkiplist(SKIPLIST_MANAGER_PATH_7);
+        result.pmem_skiplist[8] = new PmemSkiplist(SKIPLIST_MANAGER_PATH_8);
+        result.pmem_skiplist[9] = new PmemSkiplist(SKIPLIST_MANAGER_PATH_9);
+        
+        // Initialize
+        for (int i=0; i<NUM_OF_SKIPLIST_MANAGER; i++) {
+          result.pmem_skiplist[i]->ClearAll();
+        }
+
+        // NOTE: FIXME: [190313] use this as cache iterator.. 
+        // actual skiplist_cache has ordering problem on compaction
+        // Smallest and largest key are invalid..
+        result.pmem_internal_iterator = new PmemIterator*[NUM_OF_BUFFER];
+        result.pmem_internal_iterator[0] = new PmemIterator(0, result.pmem_skiplist[0]);
+        result.pmem_internal_iterator[1] = new PmemIterator(1, result.pmem_skiplist[1]);
+        result.pmem_internal_iterator[2] = new PmemIterator(2, result.pmem_skiplist[2]);
+        result.pmem_internal_iterator[3] = new PmemIterator(3, result.pmem_skiplist[3]);
+        result.pmem_internal_iterator[4] = new PmemIterator(4, result.pmem_skiplist[4]);
+        result.pmem_internal_iterator[5] = new PmemIterator(5, result.pmem_skiplist[5]);
+        result.pmem_internal_iterator[6] = new PmemIterator(6, result.pmem_skiplist[6]);
+        result.pmem_internal_iterator[7] = new PmemIterator(7, result.pmem_skiplist[7]);
+        result.pmem_internal_iterator[8] = new PmemIterator(8, result.pmem_skiplist[8]);
+        result.pmem_internal_iterator[9] = new PmemIterator(9, result.pmem_skiplist[9]);
+        break;
+      // DS_Option2: Hashmap
+      case kHashmap:
+        
+
+        result.pmem_hashmap = new PmemHashmap*[NUM_OF_HASHMAP];
+        result.pmem_hashmap[0] = new PmemHashmap(HASHMAP_PATH_0);
+        result.pmem_hashmap[1] = new PmemHashmap(HASHMAP_PATH_1);
+        result.pmem_hashmap[2] = new PmemHashmap(HASHMAP_PATH_2);
+        result.pmem_hashmap[3] = new PmemHashmap(HASHMAP_PATH_3);
+        result.pmem_hashmap[4] = new PmemHashmap(HASHMAP_PATH_4);
+        result.pmem_hashmap[5] = new PmemHashmap(HASHMAP_PATH_5);
+        result.pmem_hashmap[6] = new PmemHashmap(HASHMAP_PATH_6);
+        result.pmem_hashmap[7] = new PmemHashmap(HASHMAP_PATH_7);
+        result.pmem_hashmap[8] = new PmemHashmap(HASHMAP_PATH_8);
+        result.pmem_hashmap[9] = new PmemHashmap(HASHMAP_PATH_9);
+
+        // Initialize
+        for (int i=0; i<NUM_OF_HASHMAP; i++) {
+          result.pmem_hashmap[i]->ClearAll();
+        }
+
+        // NOTE: FIXME: [190313] use this as cache iterator.. 
+        // actual skiplist_cache has ordering problem on compaction
+        // Smallest and largest key are invalid..
+        result.pmem_internal_iterator = new PmemIterator*[NUM_OF_BUFFER];
+        result.pmem_internal_iterator[0] = new PmemIterator(0, result.pmem_hashmap[0]);
+        result.pmem_internal_iterator[1] = new PmemIterator(1, result.pmem_hashmap[1]);
+        result.pmem_internal_iterator[2] = new PmemIterator(2, result.pmem_hashmap[2]);
+        result.pmem_internal_iterator[3] = new PmemIterator(3, result.pmem_hashmap[3]);
+        result.pmem_internal_iterator[4] = new PmemIterator(4, result.pmem_hashmap[4]);
+        result.pmem_internal_iterator[5] = new PmemIterator(5, result.pmem_hashmap[5]);
+        result.pmem_internal_iterator[6] = new PmemIterator(6, result.pmem_hashmap[6]);
+        result.pmem_internal_iterator[7] = new PmemIterator(7, result.pmem_hashmap[7]);
+        result.pmem_internal_iterator[8] = new PmemIterator(8, result.pmem_hashmap[8]);
+        result.pmem_internal_iterator[9] = new PmemIterator(9, result.pmem_hashmap[9]);
+        break;
     }
-
-    // NOTE: FIXME: [190313] use this as cache iterator.. 
-    // actual skiplist_cache has ordering problem on compaction
-    // Smallest and largest key are invalid..
-    result.pmem_internal_iterator = new PmemIterator*[NUM_OF_SKIPLIST_MANAGER];
-    result.pmem_internal_iterator[0] = new PmemIterator(0, result.pmem_skiplist[0]);
-    result.pmem_internal_iterator[1] = new PmemIterator(1, result.pmem_skiplist[1]);
-    result.pmem_internal_iterator[2] = new PmemIterator(2, result.pmem_skiplist[2]);
-    result.pmem_internal_iterator[3] = new PmemIterator(3, result.pmem_skiplist[3]);
-    result.pmem_internal_iterator[4] = new PmemIterator(4, result.pmem_skiplist[4]);
-    result.pmem_internal_iterator[5] = new PmemIterator(5, result.pmem_skiplist[5]);
-    result.pmem_internal_iterator[6] = new PmemIterator(6, result.pmem_skiplist[6]);
-    result.pmem_internal_iterator[7] = new PmemIterator(7, result.pmem_skiplist[7]);
-    result.pmem_internal_iterator[8] = new PmemIterator(8, result.pmem_skiplist[8]);
-    result.pmem_internal_iterator[9] = new PmemIterator(9, result.pmem_skiplist[9]);
-
   }
   if (result.use_pmem_buffer) {
     // PROGRESS:
@@ -967,7 +1007,9 @@ Status DBImpl::FinishCompactionOutputFile(CompactionState* compact,
                                        current_bytes);
       s = iter->status();
       delete iter;
-    } else if (sst_type == kPmemSST) {
+      // FIXME:
+    // } else if (sst_type == kPmemSST ) {
+    } else if (sst_type == kPmemSST && options_.ds_type == kSkiplist) {
       iter = table_cache_->NewIteratorFromPmem(ReadOptions(),
                                                 output_number,
                                                 current_bytes);
@@ -1143,7 +1185,35 @@ Status DBImpl::DoCompactionWork(CompactionState* compact) {
       } else if (sst_type == kPmemSST) {
         Slice value = input->value();
         uint64_t file_number = compact->current_output()->number;
-        PmemSkiplist* pmem_skiplist = options_.pmem_skiplist[file_number%10];
+        PmemSkiplist* pmem_skiplist;
+        PmemHashmap* pmem_hashmap;
+        switch (options_.ds_type) {
+          case kSkiplist:
+            pmem_skiplist = options_.pmem_skiplist[file_number%10];
+            if (options_.use_pmem_buffer) {
+              compact->builder->AddToSkiplistByPtr (pmem_skiplist,
+                            file_number, key, value,
+                            input->key_ptr(), input->buffer_ptr());
+            } else {
+              compact->builder->AddToPmemByPtr(pmem_skiplist, 
+                            file_number, key, value,
+                            input->key_ptr(), input->value_ptr());
+            }
+            break;
+          case kHashmap:
+            pmem_hashmap = options_.pmem_hashmap[file_number%10];
+            if (options_.use_pmem_buffer) {
+              compact->builder->AddToHashmapByPtr (pmem_hashmap,
+                            file_number, key, value,
+                            input->key_ptr(), input->buffer_ptr());
+            } else {
+              // FIXME:
+              compact->builder->AddToPmemByPtr(pmem_skiplist, 
+                            file_number, key, value,
+                            input->key_ptr(), input->value_ptr());
+            }
+            break;
+        }
         // NOTE: Option1: BA
         // compact->builder->AddToPmem(pmem_skiplist, 
         //               file_number, key, value);
@@ -1154,15 +1224,6 @@ Status DBImpl::DoCompactionWork(CompactionState* compact) {
         //               input->key_oid(), input->value_oid());
 
         // NOTE: Option3: BAC by Pointer
-        if (options_.use_pmem_buffer) {
-          compact->builder->AddToSkiplistByPtr (pmem_skiplist,
-                        file_number, key, value,
-                        input->key_ptr(), input->buffer_ptr());
-        } else {
-          compact->builder->AddToPmemByPtr(pmem_skiplist, 
-                        file_number, key, value,
-                        input->key_ptr(), input->value_ptr());
-        }
         // i++;
 
         // Close output file if it is big enough
@@ -1220,41 +1281,43 @@ Status DBImpl::DoCompactionWork(CompactionState* compact) {
   }
 
   // TODO: [JH] Delete files from allocated_map
-  // PmemSkiplist* pmem_skiplist;
-  // // L(i)
-  // for (int i=0; i<compact->compaction->num_input_files(0); i++) {
-  //   uint64_t file_number = compact->compaction->input(0, i)->number;
-  //   switch (file_number %10) {
-  //     case 0: pmem_skiplist = options_.pmem_skiplist[0]; break;
-  //     case 1: pmem_skiplist = options_.pmem_skiplist[1]; break;
-  //     case 2: pmem_skiplist = options_.pmem_skiplist[2]; break;
-  //     case 3: pmem_skiplist = options_.pmem_skiplist[3]; break;
-  //     case 4: pmem_skiplist = options_.pmem_skiplist[4]; break;
-  //     case 5: pmem_skiplist = options_.pmem_skiplist[5]; break;
-  //     case 6: pmem_skiplist = options_.pmem_skiplist[6]; break;
-  //     case 7: pmem_skiplist = options_.pmem_skiplist[7]; break;
-  //     case 8: pmem_skiplist = options_.pmem_skiplist[8]; break;
-  //     case 9: pmem_skiplist = options_.pmem_skiplist[9]; break;
-  //   }
-  //   pmem_skiplist->DeleteFile(file_number);
-  // }
-  // // L(i+1)
-  //   for (int i=0; i<compact->compaction->num_input_files(1); i++) {
-  //   uint64_t file_number = compact->compaction->input(1, i)->number;
-  //   switch (file_number %10) {
-  //     case 0: pmem_skiplist = options_.pmem_skiplist[0]; break;
-  //     case 1: pmem_skiplist = options_.pmem_skiplist[1]; break;
-  //     case 2: pmem_skiplist = options_.pmem_skiplist[2]; break;
-  //     case 3: pmem_skiplist = options_.pmem_skiplist[3]; break;
-  //     case 4: pmem_skiplist = options_.pmem_skiplist[4]; break;
-  //     case 5: pmem_skiplist = options_.pmem_skiplist[5]; break;
-  //     case 6: pmem_skiplist = options_.pmem_skiplist[6]; break;
-  //     case 7: pmem_skiplist = options_.pmem_skiplist[7]; break;
-  //     case 8: pmem_skiplist = options_.pmem_skiplist[8]; break;
-  //     case 9: pmem_skiplist = options_.pmem_skiplist[9]; break;
-  //   }
-  //   pmem_skiplist->DeleteFile(file_number);
-  // }
+  PmemSkiplist* pmem_skiplist;
+  // L(i)
+  for (int i=0; i<compact->compaction->num_input_files(0); i++) {
+    uint64_t file_number = compact->compaction->input(0, i)->number;
+    switch (file_number %10) {
+      case 0: pmem_skiplist = options_.pmem_skiplist[0]; break;
+      case 1: pmem_skiplist = options_.pmem_skiplist[1]; break;
+      case 2: pmem_skiplist = options_.pmem_skiplist[2]; break;
+      case 3: pmem_skiplist = options_.pmem_skiplist[3]; break;
+      case 4: pmem_skiplist = options_.pmem_skiplist[4]; break;
+      case 5: pmem_skiplist = options_.pmem_skiplist[5]; break;
+      case 6: pmem_skiplist = options_.pmem_skiplist[6]; break;
+      case 7: pmem_skiplist = options_.pmem_skiplist[7]; break;
+      case 8: pmem_skiplist = options_.pmem_skiplist[8]; break;
+      case 9: pmem_skiplist = options_.pmem_skiplist[9]; break;
+    }
+    // PROGRESS:
+    // pmem_skiplist->DeleteFile(file_number);
+  }
+  // L(i+1)
+    for (int i=0; i<compact->compaction->num_input_files(1); i++) {
+    uint64_t file_number = compact->compaction->input(1, i)->number;
+    switch (file_number %10) {
+      case 0: pmem_skiplist = options_.pmem_skiplist[0]; break;
+      case 1: pmem_skiplist = options_.pmem_skiplist[1]; break;
+      case 2: pmem_skiplist = options_.pmem_skiplist[2]; break;
+      case 3: pmem_skiplist = options_.pmem_skiplist[3]; break;
+      case 4: pmem_skiplist = options_.pmem_skiplist[4]; break;
+      case 5: pmem_skiplist = options_.pmem_skiplist[5]; break;
+      case 6: pmem_skiplist = options_.pmem_skiplist[6]; break;
+      case 7: pmem_skiplist = options_.pmem_skiplist[7]; break;
+      case 8: pmem_skiplist = options_.pmem_skiplist[8]; break;
+      case 9: pmem_skiplist = options_.pmem_skiplist[9]; break;
+    }
+    // PROGRESS:
+    // pmem_skiplist->DeleteFile(file_number);
+  }
 
   mutex_.Lock();
   stats_[compact->compaction->level() + 1].Add(stats);
@@ -1822,6 +1885,18 @@ Status DestroyDB(const std::string& dbname, const Options& options) {
     // env->DeleteFile("/home/hwan/pmem_dir/skiplist_manager_7");
     // env->DeleteFile("/home/hwan/pmem_dir/skiplist_manager_8");
     // env->DeleteFile("/home/hwan/pmem_dir/skiplist_manager_9");
+
+    // Clear all
+    env->DeleteFile("/home/hwan/pmem_dir/pmem_hashmap_0");
+    env->DeleteFile("/home/hwan/pmem_dir/pmem_hashmap_1");
+    env->DeleteFile("/home/hwan/pmem_dir/pmem_hashmap_2");
+    env->DeleteFile("/home/hwan/pmem_dir/pmem_hashmap_3");
+    env->DeleteFile("/home/hwan/pmem_dir/pmem_hashmap_4");
+    env->DeleteFile("/home/hwan/pmem_dir/pmem_hashmap_5");
+    env->DeleteFile("/home/hwan/pmem_dir/pmem_hashmap_6");
+    env->DeleteFile("/home/hwan/pmem_dir/pmem_hashmap_7");
+    env->DeleteFile("/home/hwan/pmem_dir/pmem_hashmap_8");
+    env->DeleteFile("/home/hwan/pmem_dir/pmem_hashmap_9");
 
     env->UnlockFile(lock);  // Ignore error since state is already gone
     env->DeleteFile(lockname);

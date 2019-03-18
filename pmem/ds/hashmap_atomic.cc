@@ -39,14 +39,18 @@
 #include <inttypes.h>
 
 #include <string>
+#include <chrono>
+#include <iostream>
 
 #include <libpmemobj.h>
 #include "pmem/ds/hashmap_atomic.h"
 #include "pmem/ds/hashmap_internal.h"
 
+namespace leveldb {
+
 /* layout definition */
-TOID_DECLARE(struct buckets, HASHMAP_ATOMIC_TYPE_OFFSET + 1);
-TOID_DECLARE(struct entry, HASHMAP_ATOMIC_TYPE_OFFSET + 2);
+// TOID_DECLARE(struct buckets, HASHMAP_ATOMIC_TYPE_OFFSET + 1);
+// TOID_DECLARE(struct entry, HASHMAP_ATOMIC_TYPE_OFFSET + 2);
 
 enum hashmap_cmd {
 	HASHMAP_CMD_REBUILD,
@@ -81,6 +85,8 @@ POBJ_LIST_HEAD(entries_head, struct entry);
 struct buckets {
 	/* number of buckets */
 	size_t nbuckets;
+	/* array_size of buckets */
+	size_t buckets_size[];
 	/* array of lists */
 	struct entries_head bucket[];
 };
@@ -141,6 +147,10 @@ create_buckets(PMEMobjpool *pop, void *ptr, void *arg)
 	struct buckets *b = (struct buckets *)ptr;
 
 	b->nbuckets = *((size_t *)arg);
+	// TEST:
+	// pmemobj_memset_persist(pop, &b->buckets_size, 0, 
+	// 		b->nbuckets * sizeof(b->buckets_size[0]));
+
 	pmemobj_memset_persist(pop, &b->bucket, 0,
 			b->nbuckets * sizeof(b->bucket[0]));
 	pmemobj_persist(pop, &b->nbuckets, sizeof(b->nbuckets));
@@ -167,11 +177,18 @@ create_hashmap(PMEMobjpool *pop, TOID(struct hashmap_atomic) hashmap,
 	size_t sz = sizeof(struct buckets) +
 			len * sizeof(struct entries_head);
 
+
 	if (POBJ_ALLOC(pop, &D_RW(hashmap)->buckets, struct buckets, sz,
 			create_buckets, &len)) {
 		fprintf(stderr, "root alloc failed: %s\n", pmemobj_errormsg());
 		abort();
 	}
+
+	// TEST: iniailize array_size
+	// for (int i=0; i<len; i++) {
+	// 	// printf("i %d\n", i);
+	// 	D_RW(D_RW(hashmap)->buckets)->buckets_size[i] = 0;
+	// }
 
 	pmemobj_persist(pop, D_RW(hashmap), sizeof(*D_RW(hashmap)));
 }
@@ -251,6 +268,7 @@ static void
 hm_atomic_rebuild(PMEMobjpool *pop, TOID(struct hashmap_atomic) hashmap,
 		size_t new_len)
 {
+	printf("rebuild\n");
 	if (new_len == 0)
 		new_len = D_RO(D_RO(hashmap)->buckets)->nbuckets;
 
@@ -284,9 +302,15 @@ hm_atomic_insert(PMEMobjpool *pop, TOID(struct hashmap_atomic) hashmap,
 	TOID(struct buckets) buckets = D_RO(hashmap)->buckets;
 	TOID(struct entry) var;
 
-
+	std::chrono::steady_clock::time_point begin = std::chrono::steady_clock::now();
+  // printf("1\n");
 	uint64_t h = hash(&hashmap, &buckets, key, key_len);
 	int num = 0;
+	std::chrono::steady_clock::time_point end= std::chrono::steady_clock::now();
+	std::cout << "hash = " << std::chrono::duration_cast<std::chrono::nanoseconds> (end - begin).count() <<"\n";
+	begin = std::chrono::steady_clock::now();
+	// int num =	D_RO(buckets)->buckets_size[h];
+  // printf("2\n");
 
   // FIXME: Count same bucket's entries
 	POBJ_LIST_FOREACH(var, &D_RO(buckets)->bucket[h], list) {
@@ -294,12 +318,16 @@ hm_atomic_insert(PMEMobjpool *pop, TOID(struct hashmap_atomic) hashmap,
 		// 	return 1;
 		num++;
 	}
+	end= std::chrono::steady_clock::now();
+	std::cout << "num_foreach = " << std::chrono::duration_cast<std::chrono::nanoseconds> (end - begin).count() <<"\n";
+	begin = std::chrono::steady_clock::now();
 
   // TEST:
 	// D_RW(hashmap)->count_dirty = 1;
 	// pmemobj_persist(pop, &D_RW(hashmap)->count_dirty,
 	// 		sizeof(D_RW(hashmap)->count_dirty));
 
+  // printf("3\n");
 	struct entry_args args;
 	// args.key = key;
 	// args.value = value;
@@ -313,7 +341,11 @@ hm_atomic_insert(PMEMobjpool *pop, TOID(struct hashmap_atomic) hashmap,
   args.key_len = key_len;
   args.key_ptr = nullptr; // default
   args.buffer_ptr = buffer_ptr;
-
+	end= std::chrono::steady_clock::now();
+	std::cout << "alloc_copy = " << std::chrono::duration_cast<std::chrono::nanoseconds> (end - begin).count() <<"\n";
+	begin = std::chrono::steady_clock::now();
+	
+  // printf("4\n");
   // For specific bucket
 	PMEMoid oid = POBJ_LIST_INSERT_NEW_HEAD(pop,
 			&D_RW(buckets)->bucket[h],
@@ -323,6 +355,11 @@ hm_atomic_insert(PMEMobjpool *pop, TOID(struct hashmap_atomic) hashmap,
 			pmemobj_errormsg());
 		return -1;
 	}
+	end= std::chrono::steady_clock::now();
+	std::cout << "hash_list = " << std::chrono::duration_cast<std::chrono::nanoseconds> (end - begin).count() <<"\n";
+	begin = std::chrono::steady_clock::now();
+	
+  // printf("5\n");
   // For total entries
   PMEMoid oid2 = POBJ_LIST_INSERT_NEW_TAIL(pop,
 			&D_RW(hashmap)->entries ,
@@ -332,22 +369,33 @@ hm_atomic_insert(PMEMobjpool *pop, TOID(struct hashmap_atomic) hashmap,
 			pmemobj_errormsg());
 		return -1;
 	}
+	end= std::chrono::steady_clock::now();
+	std::cout << "iterator = " << std::chrono::duration_cast<std::chrono::nanoseconds> (end - begin).count() <<"\n";
+	begin = std::chrono::steady_clock::now();
+	
 
+  // printf("6\n");
 	D_RW(hashmap)->count++;
-	pmemobj_persist(pop, &D_RW(hashmap)->count,
-			sizeof(D_RW(hashmap)->count));
+	// pmemobj_persist(pop, &D_RW(hashmap)->count,
+	// 		sizeof(D_RW(hashmap)->count));
 
   // TEST:
 	// D_RW(hashmap)->count_dirty = 0;
 	// pmemobj_persist(pop, &D_RW(hashmap)->count_dirty,
 	// 		sizeof(D_RW(hashmap)->count_dirty));
 
+  // printf("7\n");
 	num++;
+	// printf("num %d]\n", num);
 	if (num > MAX_HASHSET_THRESHOLD ||
 			(num > MIN_HASHSET_THRESHOLD &&
 			D_RO(hashmap)->count > 2 * D_RO(buckets)->nbuckets))
 		hm_atomic_rebuild(pop, hashmap, D_RW(buckets)->nbuckets * 2);
 
+	end= std::chrono::steady_clock::now();
+	std::cout << "rebuild checking = " << std::chrono::duration_cast<std::chrono::nanoseconds> (end - begin).count() <<"\n";
+	
+  // printf("8\n");
 	return 0;
 }
 
@@ -475,7 +523,6 @@ hm_atomic_foreach(PMEMobjpool *pop, TOID(struct hashmap_atomic) hashmap,
 {
 	TOID(struct buckets) buckets = D_RO(hashmap)->buckets;
 	TOID(struct entry) var;
-
 	int ret = 0;
     // TEST:
 	// for (size_t i = 0; i < D_RO(buckets)->nbuckets; ++i)
@@ -489,13 +536,18 @@ hm_atomic_foreach(PMEMobjpool *pop, TOID(struct hashmap_atomic) hashmap,
     // TOID(struct entry) first = POBJ_LIST_FIRST(&D_RO(hashmap)->entries);
     // TOID(struct entry) next = POBJ_LIST_NEXT(first, iterator);
 
+	printf("1\n");
 		POBJ_LIST_FOREACH(var, &D_RO(hashmap)->entries, iterator) {
+	printf("2\n");
 			ret = cb((char *)pmemobj_direct(D_RO(var)->key), D_RO(var)->buffer_ptr, 
                 D_RO(var)->key_ptr, D_RO(var)->key_len, arg);
+	printf("3\n");
 			if (ret)
 				return ret;
+	printf("4\n");
 		}
 
+	printf("5\n");
 	return 0;
 }
 
@@ -638,6 +690,20 @@ hm_atomic_init(PMEMobjpool *pop, TOID(struct hashmap_atomic) hashmap)
 		pmemobj_persist(pop, &D_RW(hashmap)->count_dirty,
 				sizeof(D_RW(hashmap)->count_dirty));
 	}
+  
+  // NOTE: ClearAll to iterator
+  // TOID(struct entry)* var;
+  // TOID(struct buckets) buckets = D_RO(hashmap)->buckets;
+  // for (size_t i = 0; i < D_RO(buckets)->nbuckets; ++i) {
+  //   POBJ_LIST_FOREACH(*var, &D_RW(buckets)->bucket[i], iterator) {
+      
+  //     POBJ_LIST_REMOVE_FREE(pop, &D_RW(hashmap)->entries, *var, iterator);
+  //     // void* key_ptr = (void *)pmemobj_direct(D_RO(var)->key);
+  //     // if (memcmp(key_ptr, key, key_len) == 0)
+  //     //   // return &(var.oid);
+  //     //   return &var->oid;
+  //   }
+  // }
 
 	return 0;
 }
@@ -648,11 +714,12 @@ hm_atomic_init(PMEMobjpool *pop, TOID(struct hashmap_atomic) hashmap)
 PMEMoid*
 hm_atomic_get_prev_OID(PMEMobjpool* pop, TOID(struct entry) current_entry)
 {	
-	// PMEMoid* res;
-  TOID(struct entry) prev = POBJ_LIST_PREV(current_entry, iterator);
+	PMEMoid* prev = 
+  // TOID(struct entry)* prev = 
+  const_cast<PMEMoid *>(&POBJ_LIST_PREV(current_entry, iterator).oid);
 
-  if (!TOID_IS_NULL(prev)) {
-    return &prev.oid;
+  if (!OID_IS_NULL(*prev)) {
+    return prev;
   } 
   return const_cast<PMEMoid *>(&OID_NULL);
 }
@@ -662,10 +729,12 @@ hm_atomic_get_prev_OID(PMEMobjpool* pop, TOID(struct entry) current_entry)
 PMEMoid*
 hm_atomic_get_next_OID(PMEMobjpool* pop, TOID(struct entry) current_entry)
 {	
-	TOID(struct entry) next = POBJ_LIST_NEXT(current_entry, iterator);
+  PMEMoid* next = 
+	// TOID(struct entry) next = 
+  const_cast<PMEMoid *>(&POBJ_LIST_NEXT(current_entry, iterator).oid);
 
-  if (!TOID_IS_NULL(next)) {
-    return &next.oid;
+  if (!OID_IS_NULL(*next)) {
+    return next;
   } 
   return const_cast<PMEMoid *>(&OID_NULL);
 }
@@ -682,9 +751,11 @@ hm_atomic_get_first_OID(PMEMobjpool* pop, TOID(struct hashmap_atomic) hashmap)
 	// 	res = &(D_RW(map)->next[0].oid);
 	// }
 	// return res;
-  TOID(struct entry) first = POBJ_LIST_FIRST(&D_RO(hashmap)->entries);
-  if (!TOID_IS_NULL(first)) {
-    return &first.oid;
+  // TOID(struct entry) first = 
+  PMEMoid* first = 
+  const_cast<PMEMoid *>(&POBJ_LIST_FIRST(&D_RO(hashmap)->entries).oid);
+  if (!OID_IS_NULL(*first)) {
+    return first;
   } 
   return const_cast<PMEMoid *>(&OID_NULL);
 }
@@ -694,16 +765,16 @@ hm_atomic_get_first_OID(PMEMobjpool* pop, TOID(struct hashmap_atomic) hashmap)
 PMEMoid*
 hm_atomic_get_last_OID(PMEMobjpool* pop, TOID(struct hashmap_atomic) hashmap)
 {	
-	PMEMoid* res;
-
 	// TOID(struct skiplist_map_node) path[SKIPLIST_LEVELS_NUM];
 	// // Seek non-empty node
 	// skiplist_map_get_last_find(pop, map, path);
 	// res = &(path[0].oid);
 	// return res;
-  TOID(struct entry) last = POBJ_LIST_LAST(&D_RO(hashmap)->entries, iterator);
-  if (!TOID_IS_NULL(last)) {
-    return &last.oid;
+  PMEMoid* last =
+  // TOID(struct entry) last = 
+  const_cast<PMEMoid *>(&POBJ_LIST_LAST(&D_RO(hashmap)->entries, iterator).oid);
+  if (!OID_IS_NULL(*last)) {
+    return last;
   } 
   return const_cast<PMEMoid *>(&OID_NULL);
 }
@@ -727,8 +798,10 @@ hm_atomic_seek_OID(PMEMobjpool* pop, TOID(struct hashmap_atomic) hashmap,
 
   POBJ_LIST_FOREACH(var, &D_RO(buckets)->bucket[h], list) {
     void* key_ptr = (void *)pmemobj_direct(D_RO(var)->key);
-    if (memcmp(key_ptr, key, key_len) == 0)
-      return &(var.oid);
+    if (memcmp(key_ptr, key, key_len) == 0) {
+		  // return &(var.oid);
+      return &var.oid;
+		}
   }
   return const_cast<PMEMoid *>(&OID_NULL);
 }
@@ -771,3 +844,5 @@ hm_atomic_cmd(PMEMobjpool *pop, TOID(struct hashmap_atomic) hashmap,
 			return -EINVAL;
 	}
 }
+
+} // namespace leveldb

@@ -186,8 +186,6 @@ target_sources(leveldb
     "${PROJECT_SOURCE_DIR}/util/random.h"
     "${PROJECT_SOURCE_DIR}/util/status.cc"
     # JH
-    #"${PROJECT_SOURCE_DIR}/pmem/pmem_map.cc"
-    #"${PROJECT_SOURCE_DIR}/pmem/pmem_map.h"
     "${PROJECT_SOURCE_DIR}/pmem/layout.h"
     #"${PROJECT_SOURCE_DIR}/pmem/ds/skiplist_map.cc"
     #"${PROJECT_SOURCE_DIR}/pmem/ds/skiplist_map.h"
@@ -202,11 +200,22 @@ target_sources(leveldb
     #"${PROJECT_SOURCE_DIR}/pmem/pmem_skiplist_key_ptr.cc"
     #"${PROJECT_SOURCE_DIR}/pmem/pmem_skiplist_key_ptr.h"
 
+    # Iterator
+    "${PROJECT_SOURCE_DIR}/pmem/pmem_iterator.cc"
+    "${PROJECT_SOURCE_DIR}/pmem/pmem_iterator.h"
+
+    # Buffer
+    "${PROJECT_SOURCE_DIR}/pmem/pmem_buffer.cc"
+    "${PROJECT_SOURCE_DIR}/pmem/pmem_buffer.h"
+
     # hash_map
     "${PROJECT_SOURCE_DIR}/pmem/ds/hashmap_atomic.cc"
     "${PROJECT_SOURCE_DIR}/pmem/ds/hashmap_atomic.h"
     "${PROJECT_SOURCE_DIR}/pmem/ds/hashmap_internal.h"
     "${PROJECT_SOURCE_DIR}/pmem/map/hashmap.h"
+    "${PROJECT_SOURCE_DIR}/pmem/pmem_hashmap.cc"
+    "${PROJECT_SOURCE_DIR}/pmem/pmem_hashmap.h"
+    
 
 
   # Only CMake 3.3+ supports PUBLIC sources in targets exported by "install".

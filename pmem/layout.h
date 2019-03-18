@@ -32,9 +32,12 @@
  */
 // #define SKIPLIST_MANAGER_POOL_SIZE 300 * (1 << 20)
 #define SKIPLIST_MANAGER_POOL_SIZE 2 * (1 << 30)
-#define SKIPLIST_MANAGER_LIST_SIZE 100
+#define SKIPLIST_MANAGER_LIST_SIZE 190
 // #define SKIPLIST_MANAGER_LIST_SIZE 10
-#define MAX_SKIPLIST_NODE_SIZE 30720 // Compaction Output file max
+// #define MAX_SKIPLIST_NODE_SIZE 51200 // Compaction Output file max
+// #define MAX_SKIPLIST_NODE_SIZE 40960 // Compaction Output file max
+// #define MAX_SKIPLIST_NODE_SIZE 18432 // Compaction Output file max
+#define MAX_SKIPLIST_NODE_SIZE 28300 // Compaction Output file max
 // #define SKIPLIST_BULK_INSERT_NUM 10
 #define NUM_OF_SKIPLIST_MANAGER 10
 
@@ -56,9 +59,22 @@
 #define EACH_CONTENT_SIZE 4 << 20 // FIXME: 4MB
 #define MAX_CONTENTS_SIZE (NUM_OF_CONTENTS * EACH_CONTENT_SIZE)
 
-// TEST:
+// PROGRESS: Hashmap
 #define HASHMAP_PATH "/home/hwan/pmem_dir/pmem_hashmap"
-#define HASHMAP_POOL_SIZE 3 * (1 << 20)
+#define HASHMAP_PATH_0 "/home/hwan/pmem_dir/pmem_hashmap_0"
+#define HASHMAP_PATH_1 "/home/hwan/pmem_dir/pmem_hashmap_1"
+#define HASHMAP_PATH_2 "/home/hwan/pmem_dir/pmem_hashmap_2"
+#define HASHMAP_PATH_3 "/home/hwan/pmem_dir/pmem_hashmap_3"
+#define HASHMAP_PATH_4 "/home/hwan/pmem_dir/pmem_hashmap_4"
+#define HASHMAP_PATH_5 "/home/hwan/pmem_dir/pmem_hashmap_5"
+#define HASHMAP_PATH_6 "/home/hwan/pmem_dir/pmem_hashmap_6"
+#define HASHMAP_PATH_7 "/home/hwan/pmem_dir/pmem_hashmap_7"
+#define HASHMAP_PATH_8 "/home/hwan/pmem_dir/pmem_hashmap_8"
+#define HASHMAP_PATH_9 "/home/hwan/pmem_dir/pmem_hashmap_9"
+
+#define HASHMAP_POOL_SIZE 2 * (1 << 20)
+#define HASHMAP_LIST_SIZE 100
+#define NUM_OF_HASHMAP 10
 
 namespace levedb {
 

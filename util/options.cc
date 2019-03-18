@@ -33,16 +33,20 @@ Options::Options()
       filter_policy(nullptr)
 
       /* sst implementation option */
-      , sst_type(kPmemSST) // option 1
-      // , sst_type(kFileDescriptorSST) // option 2
-
-      /* Addtional cache option */
-      , skiplist_cache(true)
-      // , skiplist_cache(false)
+      // , sst_type(kPmemSST) // option 1
+      , sst_type(kFileDescriptorSST) // option 2
 
       /* Pmem-buffer option */
       , use_pmem_buffer(true)
       // , use_pmem_buffer(false)
+
+      /* Addtional cache option */
+      , skiplist_cache(true) // NOTE: Only ds_type is "kSkiplist"
+      // , skiplist_cache(false)
+
+      /* Data-Structure option */
+      , ds_type(kSkiplist)
+      // , ds_type(kHashmap)
        {
 }
 

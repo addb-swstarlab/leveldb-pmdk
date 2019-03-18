@@ -39,7 +39,7 @@ SPDX-License-Identifier: BSD-3-Clause
 #include <chrono>
 // #include "pmem/layout.h"
 // #include "pmem/ds/hashmap_atomic.h"
-#include "pmem/pmem_skiplist.h"
+#include "pmem/pmem_hashmap.h"
 
 
 
@@ -49,6 +49,16 @@ namespace pobj = pmem::obj;
 
 namespace leveldb {
 
+struct entry {
+  PMEMoid key;
+  uint8_t key_len;
+  void* key_ptr;
+  char* buffer_ptr;
+
+  /* list pointer */
+  POBJ_LIST_ENTRY(struct entry) list;
+  POBJ_LIST_ENTRY(struct entry) iterator;
+};
 
 class PmemHashmapTest { };
 
@@ -59,88 +69,60 @@ file_exists (const std::string &name)
 	return f.good ();
 }
 
-// struct entry {
-// 	uint64_t key;
-// 	PMEMoid value;
-
-// 	/* list pointer */
-// 	POBJ_LIST_ENTRY(struct entry) list;
-// };
-
-// struct entry_args {
-// 	uint64_t key;
-// 	PMEMoid value;
-// };
-
-// POBJ_LIST_HEAD(entries_head, struct entry);
-// struct buckets {
-// 	/* number of buckets */
-// 	size_t nbuckets;
-// 	/* array of lists */
-// 	struct entries_head bucket[];
-// };
-
-// struct hashmap_atomic {
-// 	/* random number generator seed */
-// 	uint32_t seed;
-
-// 	/* hash function coefficients */
-// 	uint32_t hash_fun_a;
-// 	uint32_t hash_fun_b;
-// 	uint64_t hash_fun_p;
-
-// 	/* number of values inserted */
-// 	uint64_t count;
-// 	/* whether "count" should be updated */
-// 	uint32_t count_dirty;
-
-// 	/* buckets */
-// 	TOID(struct buckets) buckets;
-// 	/* buckets, used during rehashing, null otherwise */
-// 	TOID(struct buckets) buckets_tmp;
-// };
-
 TEST (PmemHashmapTest, HashMap) {
   
   printf("# Start Hashmap\n");
 
-  PmemHashmap* pmem_hashmap = new PmemHashmap(HASHMAP_PATH);
+  PmemHashmap* pmem_hashmap = new PmemHashmap(HASHMAP_PATH_5);
+
+  // pmem_hashmap->ClearAll();
 
   // for (int i=0; i<10; i++) {
-  printf("## Start Insertion\n");
+  // printf("## Start Insertion\n");
 
-    char* tmp = "12345";
-    TX_BEGIN(pmem_hashmap->GetPool()) {
-      PMEMoid value1 = pmemobj_tx_zalloc(5, 501);
-      PMEMoid value2 = pmemobj_tx_zalloc(5, 501);
-      PMEMoid value3 = pmemobj_tx_zalloc(5, 501);
-      PMEMoid value4 = pmemobj_tx_zalloc(5, 501);
-      PMEMoid value5 = pmemobj_tx_zalloc(5, 501);
+  // char* tmp = "1234512345123451234512345123451234512345123451234512345123451234512345123451234512345123451234512345";
+  // pmem_hashmap->Insert("1111111111111111111111111", tmp, 25, 0);
+  // pmem_hashmap->Insert("4444444444444444444444444", tmp, 25, 0);
+  // pmem_hashmap->Insert("3333333333333333333333333", tmp, 25, 0);
+  // pmem_hashmap->Insert("2222222222222222222222222", tmp, 25, 0);
+  // pmem_hashmap->Insert("5555555555555555555555555", tmp, 25, 0);
 
-      pmemobj_memcpy_persist(pmem_hashmap->GetPool(), pmemobj_direct(value1), tmp, 5);
-      pmemobj_memcpy_persist(pmem_hashmap->GetPool(), pmemobj_direct(value2), tmp, 5);
-      pmemobj_memcpy_persist(pmem_hashmap->GetPool(), pmemobj_direct(value3), tmp, 5);
-      pmemobj_memcpy_persist(pmem_hashmap->GetPool(), pmemobj_direct(value4), tmp, 5);
-      pmemobj_memcpy_persist(pmem_hashmap->GetPool(), pmemobj_direct(value5), tmp, 5);
-
-      pmem_hashmap->Insert(0, 0, value1);
-      pmem_hashmap->Insert(0, 1, value2);
-      pmem_hashmap->Insert(0, 2, value3);
-      pmem_hashmap->Insert(0, 4, value3);
-      pmem_hashmap->Insert(0, 5, value3);
-    } TX_END
-
-  printf("## End Insertion\n");
+  // printf("## End Insertion\n");
 
   printf("## Start PrintAll\n");
   pmem_hashmap->PrintAll(0);
 
   printf("## End PrintAll\n");
 
-  // }
+
+  // printf("## Start next test\n");
+  // PMEMoid* first = pmem_hashmap->GetFirstOID(0);
+  // TOID(struct entry) first_toid(*first);
+  // struct entry* first_tmp = (struct entry *)pmemobj_direct(*first);
+  // PMEMoid first_key = first_tmp->key;
+  // uint8_t key_len = first_tmp->key_len;
+  // std::string str_key((char *)pmemobj_direct(first_key), key_len);
+  // printf("First key %d] %s\n", key_len, str_key.c_str());
+
+  // PMEMoid* next = pmem_hashmap->GetNextOID(0, first_toid);
+  // struct entry* next_tmp = (struct entry *)pmemobj_direct(*next);
+  // PMEMoid next_key = next_tmp->key;
+  // uint8_t key_len2 = next_tmp->key_len;
+  // std::string str_key2((char *)pmemobj_direct(next_key), key_len2);
+  // printf("Next key %d] %s\n", key_len2, str_key2.c_str());
+
+  // PMEMoid* seek = pmem_hashmap->SeekOID(0, "2222222222222222222222222", 25);
+  // struct entry* seek_tmp = (struct entry *)pmemobj_direct(*seek);
+  // PMEMoid seek_key = seek_tmp->key;
+  // uint8_t key_len3 = seek_tmp->key_len;
+  // std::string str_key3((char *)pmemobj_direct(seek_key), key_len3);
+  // printf("Seek key %d] %s\n", key_len3, str_key3.c_str());
+
+  // printf("## End next test\n");
 
   // hm_atomic_create(hashmap_pool.get_handle(), &(root_hashmap_[0].head), nullptr);
 
+  // TEST: Hashmap-size test
   
 	printf("# End Hashmap\n");
 }

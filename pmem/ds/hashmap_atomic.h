@@ -43,7 +43,13 @@
 #define HASHMAP_ATOMIC_TYPE_OFFSET 1000
 #endif
 
+namespace leveldb {
+
+struct entry;
+struct buckets;
 struct hashmap_atomic;
+TOID_DECLARE(struct entry, HASHMAP_ATOMIC_TYPE_OFFSET + 2);
+TOID_DECLARE(struct buckets, HASHMAP_ATOMIC_TYPE_OFFSET + 1);
 TOID_DECLARE(struct hashmap_atomic, HASHMAP_ATOMIC_TYPE_OFFSET + 0);
 
 int hm_atomic_check(PMEMobjpool *pop, TOID(struct hashmap_atomic) hashmap);
@@ -81,6 +87,7 @@ hm_atomic_get_last_OID(PMEMobjpool* pop, TOID(struct hashmap_atomic) hashmap);
 PMEMoid*
 hm_atomic_seek_OID(PMEMobjpool* pop, TOID(struct hashmap_atomic) hashmap,
 		char* key, int key_len);
+} // namespace leveldb
 
 
 #endif /* HASHMAP_ATOMIC_H */

@@ -39,7 +39,9 @@ namespace leveldb {
 namespace {
 
 static int open_read_only_file_limit = -1;
-static int mmap_limit = -1;
+// static int mmap_limit = -1;
+// JH
+static int mmap_limit = 0;
 
 static const size_t kBufSize = 65536;
 

@@ -8,7 +8,11 @@
 #include <stddef.h>
 #include "leveldb/export.h"
 // JH
+// #pragma once
 #include "pmem/pmem_skiplist.h"
+#include "pmem/pmem_iterator.h"
+#include "pmem/pmem_buffer.h"
+#include "pmem/pmem_hashmap.h"
 
 namespace leveldb {
 
@@ -165,11 +169,15 @@ struct LEVELDB_EXPORT Options {
   // JH 
   PmemSkiplist **pmem_skiplist;
   PmemIterator **pmem_internal_iterator;
+  PmemBuffer **pmem_buffer;
+  PmemHashmap **pmem_hashmap;
+
   SSTMakerType sst_type;
+  PmemDataStructrueType ds_type;
+
   bool skiplist_cache;
   bool use_pmem_buffer;
   
-  PmemBuffer **pmem_buffer;
 
   // Create an Options object with default values for all fields.
   Options();

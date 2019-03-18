@@ -46,10 +46,14 @@
 
 // #define NUM_OF_PRE_ALLOC_NODE 30000 // TODO: Need to adjust
 // #define NUM_OF_PRE_ALLOC_NODE 20480 // TODO: Need to adjust
-#define NUM_OF_PRE_ALLOC_NODE 30720 // = Just pre-alloc
-#define NUM_OF_USE_ALLOC_NODE 30720 // = MAX_SKIPLIST_NODE_SIZE
+// #define NUM_OF_PRE_ALLOC_NODE 51200 // = Just pre-alloc
+// #define NUM_OF_USE_ALLOC_NODE 51200 // = MAX_SKIPLIST_NODE_SIZE
+// #define NUM_OF_PRE_ALLOC_NODE 40960 // = Just pre-alloc
+// #define NUM_OF_USE_ALLOC_NODE 40960 // = MAX_SKIPLIST_NODE_SIZE
+#define NUM_OF_PRE_ALLOC_NODE 28300 // = Just pre-alloc
+#define NUM_OF_USE_ALLOC_NODE 28300 // = MAX_SKIPLIST_NODE_SIZE
 #define PRE_ALLOC_KEY_SIZE 26 // 16
-#define PRE_ALLOC_VALUE_SIZE 130 // 120
+// #define PRE_ALLOC_VALUE_SIZE 130 // 120
 #define STRING_PADDING 0 // \0
 #define NUM_OF_TAG_BYTES 8
 

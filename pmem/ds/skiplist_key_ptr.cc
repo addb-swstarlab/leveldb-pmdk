@@ -212,6 +212,8 @@ skiplist_map_insert(PMEMobjpool* pop,
 	TOID(struct skiplist_map_node)* current_node,
 	char* key, char* buffer_ptr, int key_len, int index)
 {
+	// std::chrono::steady_clock::time_point begin = std::chrono::steady_clock::now();
+	
 	int ret = 0;
 	TOID(struct skiplist_map_node) new_node = D_RW(*current_node)->next[0];
 	if (TOID_IS_NULL(new_node) || TOID_EQUALS(new_node, NULL_NODE)) {
@@ -223,6 +225,8 @@ skiplist_map_insert(PMEMobjpool* pop,
 	D_RW(new_node)->entry.key_len = (uint8_t)key_len; 
 	// PROGRESS: set buffer_ptr
 	D_RW(new_node)->entry.buffer_ptr = buffer_ptr;
+	// std::chrono::steady_clock::time_point end= std::chrono::steady_clock::now();
+	// std::cout << "Insert = " << std::chrono::duration_cast<std::chrono::nanoseconds> (end - begin).count() <<"\n";
 
 	return ret;
 }
@@ -625,10 +629,10 @@ skiplist_map_get_next_OID(PMEMobjpool* pop, TOID(struct skiplist_map_node) map,
 
 	skiplist_map_get_find(pop, key, map, path, &exactly_found_level);
 	if (exactly_found_level != -1) {
-		res = &(D_RW(path[exactly_found_level])->next[exactly_found_level].oid);
+		res = const_cast<PMEMoid *>(&(D_RO(path[exactly_found_level])->next[exactly_found_level].oid));
 	} else {
 		if (!TOID_EQUALS(path[0], NULL_NODE)) {
-			res = &(D_RW(path[0])->next[0].oid);
+			res = const_cast<PMEMoid *>(&(D_RO(path[0])->next[0].oid));
 		} else {
 			res = const_cast<PMEMoid *>(&OID_NULL);
 		}

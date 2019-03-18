@@ -178,7 +178,7 @@ void TableBuilder::AddToPmemByPtr(PmemSkiplist* pmem_skiplist, uint64_t number,
   printf("[ERROR][Deprecated function] AddToPmemByPtr()\n");
   abort();
 }
-/* use_pmem_buffer */
+/* Skiplist + use_pmem_buffer */
 void TableBuilder::AddToBufferAndSkiplist(
                         PmemBuffer* pmem_buffer, PmemSkiplist* pmem_skiplist, 
                         uint64_t number, const Slice& key, const Slice& value) {
@@ -193,37 +193,18 @@ void TableBuilder::AddToBufferAndSkiplist(
 
   // NOTE: Set and Get start-offset at first
   if (r->first_addition_flag) {
-    // printf("[SetAndGetStartOffset]\n");
     r->start_offset = pmem_buffer->SetAndGetStartOffset(number);
     r->first_addition_flag = false;
   }
 
   // Add to buffer
-
-  // char buf[r->options.write_buffer_size];
   EncodeToBuffer(&r->buffer, key, value);
-  // printf("[BUFFER] %s\n", buffer.c_str());
-  // PutLengthPrefixedSlice(&r->buffer, key);
-  // PutLengthPrefixedSlice(&r->buffer, value);
-  // PutVarint32(&r->buffer, key.size());
-  // r->buffer.append(key.data(), key.size());
-  // printf("[BUFFER %d] %s\n", r->buffer.size(), r->buffer.c_str());
-  // PutVarint32(&r->buffer, value.size());
-  // r->buffer.append(value.data(), value.size());
-  // PutVarint32(&r->buffer, 0);
-  // printf("[DEBUG]:");
-  // for (auto c : r->buffer) {
-  //   printf("%c", c);
-  // }
-  // int encoded_key_size = key.size() + VarintLength(key.size());
-  // int encoded_value_size = value.size() + VarintLength(value.size());
   int total_length = GetEncodedLength(key.size(), value.size());
   // printf("%d %d] total_length %d\n", key.size(), value.size(), total_length);
   // Add to pmem_skiplist
   pmem_skiplist->Insert((char *)key.data(), r->start_offset + r->offset, 
                         key.size(), number);
 
-  // r->offset += (key.size() + value.size() );
   r->offset += (total_length);
 }
 void TableBuilder::FlushBufferToPmemBuffer(PmemBuffer* pmem_buffer, uint64_t number) {
@@ -251,6 +232,49 @@ void TableBuilder::AddToSkiplistByPtr(PmemSkiplist* pmem_skiplist, uint64_t numb
   r->num_entries++;
   r->offset += (key.size() + value.size());
   pmem_skiplist->InsertByPtr(key_ptr, buffer_ptr, key.size(), number);
+}
+/* Hashmap + use_pmem_buffer */
+void TableBuilder::AddToBufferAndHashmap(
+                        PmemBuffer* pmem_buffer, PmemHashmap* pmem_hashmap, 
+                        uint64_t number, const Slice& key, const Slice& value) {
+  Rep* r = rep_;
+  assert(!r->closed);
+  if (!ok()) return;
+  if (r->num_entries > 0) {
+    assert(r->options.comparator->Compare(key, Slice(r->last_key)) > 0);
+  }
+  r->last_key.assign(key.data(), key.size());
+  r->num_entries++;
+
+  // NOTE: Set and Get start-offset at first
+  if (r->first_addition_flag) {
+    r->start_offset = pmem_buffer->SetAndGetStartOffset(number);
+    r->first_addition_flag = false;
+  }
+
+  // Add to buffer
+  EncodeToBuffer(&r->buffer, key, value);
+  int total_length = GetEncodedLength(key.size(), value.size());
+  // printf("%d %d] total_length %d\n", key.size(), value.size(), total_length);
+  // Add to pmem_skiplist
+  pmem_hashmap->Insert((char *)key.data(), r->start_offset + r->offset, 
+                        key.size(), number);
+
+  r->offset += (total_length);
+}
+void TableBuilder::AddToHashmapByPtr(PmemHashmap* pmem_hashmap, uint64_t number,
+                    const Slice& key, const Slice& value,
+                    void* key_ptr, char* buffer_ptr) {
+  Rep* r = rep_;
+  assert(!r->closed);
+  if (!ok()) return;
+  if (r->num_entries > 0) {
+    assert(r->options.comparator->Compare(key, Slice(r->last_key)) > 0);
+  }
+  r->last_key.assign(key.data(), key.size());
+  r->num_entries++;
+  r->offset += (key.size() + value.size());
+  pmem_hashmap->InsertByPtr(key_ptr, buffer_ptr, key.size(), number);
 }
 void TableBuilder::Flush() {
   Rep* r = rep_;

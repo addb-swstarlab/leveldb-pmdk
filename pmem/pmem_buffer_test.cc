@@ -37,7 +37,7 @@ SPDX-License-Identifier: BSD-3-Clause
 #include <iostream>
 #include <fstream> //file_exists
 #include <chrono>
-#include "pmem/pmem_skiplist.h"
+#include "pmem/pmem_buffer.h"
 
 
 using namespace std;
