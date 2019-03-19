@@ -231,6 +231,7 @@ void TableBuilder::AddToSkiplistByPtr(PmemSkiplist* pmem_skiplist, uint64_t numb
   r->last_key.assign(key.data(), key.size());
   r->num_entries++;
   r->offset += (key.size() + value.size());
+  // printf("num_entries %d\n", r->num_entries);
   pmem_skiplist->InsertByPtr(key_ptr, buffer_ptr, key.size(), number);
 }
 /* Hashmap + use_pmem_buffer */

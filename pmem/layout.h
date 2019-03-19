@@ -37,7 +37,7 @@
 // #define MAX_SKIPLIST_NODE_SIZE 51200 // Compaction Output file max
 // #define MAX_SKIPLIST_NODE_SIZE 40960 // Compaction Output file max
 // #define MAX_SKIPLIST_NODE_SIZE 18432 // Compaction Output file max
-#define MAX_SKIPLIST_NODE_SIZE 28300 // Compaction Output file max
+#define MAX_SKIPLIST_NODE_SIZE 30720 // Compaction Output file max
 // #define SKIPLIST_BULK_INSERT_NUM 10
 #define NUM_OF_SKIPLIST_MANAGER 10
 

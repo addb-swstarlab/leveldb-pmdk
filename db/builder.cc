@@ -56,16 +56,16 @@ Status BuildTable(const std::string& dbname,
       TableBuilder* builder = new TableBuilder(options, file);
       meta->smallest.DecodeFrom(iter->key());
 
-      int i = 0;
+      // int i = 0;
       for (; iter->Valid(); iter->Next()) {
         Slice key = iter->key();
         meta->largest.DecodeFrom(key);
         builder->Add(key, iter->value());
         // 24, 100
         // printf("'%s'-'%s', '%d' '%d'\n", key.data(), iter->value().data(), key.size(), iter->value().size());
-        i++;
+        // i++;
       }
-        printf("[%s]i: %d\n", fname.c_str(), i);
+        // printf("[%s]i: %d\n", fname.c_str(), i);
 
       // Finish and check for builder errors
       s = builder->Finish();

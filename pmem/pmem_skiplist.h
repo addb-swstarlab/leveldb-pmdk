@@ -57,7 +57,6 @@ namespace leveldb {
   uint64_t SetAndGetActualIndex(std::list<uint64_t>* free_list,
             std::map<uint64_t, uint64_t>* allocated_map, uint64_t file_number);
 
-
   class PmemSkiplist {
    public:
     PmemSkiplist();
@@ -68,6 +67,8 @@ namespace leveldb {
     
     /* Getter */
     PMEMobjpool* GetPool();
+    size_t GetFreeListSize();
+    size_t GetAllocatedMapSize();
 
     /* Wrapper functions */
     void Insert(char* key, char* buffer_ptr, 
@@ -88,6 +89,7 @@ namespace leveldb {
     PMEMoid* GetNextOID(uint64_t file_number, char* key);
     PMEMoid* GetFirstOID(uint64_t file_number);    
     PMEMoid* GetLastOID(uint64_t file_number);
+
 
    private:
     struct root_skiplist* root_skiplist_map_;

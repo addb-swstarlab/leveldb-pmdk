@@ -37,8 +37,8 @@ namespace leveldb {
   uint32_t PrintKVAndReturnLength(char* buf);
   void GetAndPrintAll(PmemBuffer* pmem_buffer, uint64_t file_number);
   uint32_t SkipNEntriesAndGetOffset(const char* buf, uint64_t file_number, uint8_t n);
-  std::string GetKeyFromBuffer(char* buf);
-  char* GetValueFromBuffer(char* buf, uint32_t* value_length);
+  // std::string GetKeyFromBuffer(char* buf);
+  // char* GetValueFromBuffer(char* buf, uint32_t* value_length);
   int GetEncodedLength(const size_t key_size, const size_t value_size);
 
   class PmemBuffer {

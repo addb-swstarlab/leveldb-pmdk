@@ -281,10 +281,23 @@ namespace leveldb {
                                                   file_number);
     return skiplist_map_get_last_OID(GetPool(), skiplists_[actual_index]);
   }
+  size_t PmemSkiplist::GetFreeListSize() {
+    return free_list_.size();
+  }
+  size_t PmemSkiplist::GetAllocatedMapSize() {
+    return allocated_map_.size();
+  }
   void PmemSkiplist::DeleteFile(uint64_t file_number) {
+    // printf("Start DeleteFile\n");
     uint64_t old_index = GetIndexFromAllocatedMap(&allocated_map_, file_number);
+    // Clear buffer_ptr to nullptr
+    skiplist_map_clear(GetPool(), skiplists_[old_index]);
+    // Reset current_node
+    current_node[old_index] = skiplists_[old_index];
+    // Map & List
     EraseAllocatedMap(&allocated_map_, file_number);
     PushFreeList(&free_list_, old_index);
+    // printf("End DeleteFile\n");
   }
 
 } // namespace leveldb 

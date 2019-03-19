@@ -202,26 +202,26 @@ namespace leveldb {
     }
     return skip_length;
   }
-  std::string GetKeyFromBuffer(char* buf) {
-    // Read encoded key-length
-    uint32_t key_length;
-    const char* key_ptr = GetVarint32Ptr(buf, buf+5, &key_length);
-    // Get key
-    return std::string(key_ptr, key_length);
-  }
-  char* GetValueFromBuffer(char* buf, uint32_t* value_len) {
-    // Read encoded key-length
-    uint32_t key_length, value_length;
-    // Skip key-part
-    const char* key_ptr = GetVarint32Ptr(buf, buf+5, &key_length);
-    // Read encoded value-length
-    const char* value_ptr = GetVarint32Ptr(
-                                    buf+key_length+VarintLength(key_length),
-                                    buf+key_length+VarintLength(key_length)+5,
-                                    value_len);
-    // Get value
-    return const_cast<char *>(value_ptr);                 
-  }
+  // std::string GetKeyFromBuffer(char* buf) {
+  //   // Read encoded key-length
+  //   uint32_t key_length;
+  //   const char* key_ptr = GetVarint32Ptr(buf, buf+5, &key_length);
+  //   // Get key
+  //   return std::string(key_ptr, key_length);
+  // }
+  // char* GetValueFromBuffer(char* buf, uint32_t* value_len) {
+  //   // Read encoded key-length
+  //   uint32_t key_length, value_length;
+  //   // Skip key-part
+  //   const char* key_ptr = GetVarint32Ptr(buf, buf+5, &key_length);
+  //   // Read encoded value-length
+  //   const char* value_ptr = GetVarint32Ptr(
+  //                                   buf+key_length+VarintLength(key_length),
+  //                                   buf+key_length+VarintLength(key_length)+5,
+  //                                   value_len);
+  //   // Get value
+  //   return const_cast<char *>(value_ptr);                 
+  // }
   int GetEncodedLength(const size_t key_size, const size_t value_size) {
     return VarintLength(key_size) + key_size + VarintLength(value_size) + value_size;
   }

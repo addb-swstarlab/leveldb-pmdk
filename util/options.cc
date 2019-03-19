@@ -33,8 +33,8 @@ Options::Options()
       filter_policy(nullptr)
 
       /* sst implementation option */
-      // , sst_type(kPmemSST) // option 1
-      , sst_type(kFileDescriptorSST) // option 2
+      , sst_type(kPmemSST) // ozption 1
+      // , sst_type(kFileDescriptorSST) // option 2
 
       /* Pmem-buffer option */
       , use_pmem_buffer(true)
@@ -50,4 +50,4 @@ Options::Options()
        {
 }
 
-}  // namespace leveldb
+}  // namespace leveldbf

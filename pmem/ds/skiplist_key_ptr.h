@@ -50,8 +50,8 @@
 // #define NUM_OF_USE_ALLOC_NODE 51200 // = MAX_SKIPLIST_NODE_SIZE
 // #define NUM_OF_PRE_ALLOC_NODE 40960 // = Just pre-alloc
 // #define NUM_OF_USE_ALLOC_NODE 40960 // = MAX_SKIPLIST_NODE_SIZE
-#define NUM_OF_PRE_ALLOC_NODE 28300 // = Just pre-alloc
-#define NUM_OF_USE_ALLOC_NODE 28300 // = MAX_SKIPLIST_NODE_SIZE
+#define NUM_OF_PRE_ALLOC_NODE 30720 // = Just pre-alloc
+#define NUM_OF_USE_ALLOC_NODE 30720 // = MAX_SKIPLIST_NODE_SIZE
 #define PRE_ALLOC_KEY_SIZE 26 // 16
 // #define PRE_ALLOC_VALUE_SIZE 130 // 120
 #define STRING_PADDING 0 // \0
@@ -74,6 +74,12 @@
 // #endif
 
 namespace leveldb{
+
+uint32_t GetKeyLengthFromBuffer(char* buf);
+char* GetKeyFromBuffer(char* buf);
+char* GetKeyAndLengthFromBuffer(char* buf, uint32_t* key_len);
+char* GetValueFromBuffer(char* buf);
+char* GetValueAndLengthFromBuffer(char* buf, uint32_t* value_len);
 
 struct skiplist_map_node;
 TOID_DECLARE(struct skiplist_map_node, SKIPLIST_MAP_TYPE_OFFSET + 0);

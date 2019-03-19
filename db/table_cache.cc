@@ -213,8 +213,9 @@ Status TableCache::GetFromPmem(const Options& options,
     // printf("value:'%s'\n", pmem_iterator->value());
     // (*saver)(arg, pmem_iterator->key(), pmem_iterator->value());
     // (*saver)(arg, res_key, res_value);
-    (*saver)(arg, res_key, pmem_iterator->value());
     // printf("3]\n");
+    (*saver)(arg, res_key, pmem_iterator->value());
+    // printf("4]\n");
   }
   // 	std::chrono::steady_clock::time_point end= std::chrono::steady_clock::now();
 	// std::cout << "GetFromPmem " << k.data() << "= " << std::chrono::duration_cast<std::chrono::nanoseconds> (end - begin).count() <<"\n";

@@ -19,6 +19,7 @@
 
 // #pragma once
 #include "pmem/pmem_skiplist.h"
+#include "pmem/ds/skiplist_key_ptr.h"
 #include "pmem/pmem_hashmap.h"
 #include "pmem/pmem_buffer.h"
 
