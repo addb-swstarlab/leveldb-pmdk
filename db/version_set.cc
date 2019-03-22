@@ -18,10 +18,6 @@
 #include "util/coding.h"
 #include "util/logging.h"
 
-// JH
-#include "table/iterator_wrapper.h"
-
-
 namespace leveldb {
 
 static size_t TargetFileSize(const Options* options) {
@@ -213,7 +209,7 @@ class Version::LevelFileNumIterator : public Iterator {
   // Backing store for value().  Holds the file number and size.
   mutable char value_buf_[16];
 };
-// PROGRESS: Maybe files are ordered, thus only concatenating files by flist-order
+// SOLVE: Copied from LevelFileNumIterator
 class Version::LevelFilesConcatIteratorFromPmem : public Iterator {
  public:
   LevelFilesConcatIteratorFromPmem(
@@ -228,7 +224,7 @@ class Version::LevelFilesConcatIteratorFromPmem : public Iterator {
     for (int i=0; i<size_; i++) {
       uint64_t file_number = flist_->at(i)->number;
       pmem_iterator[i] = new PmemIterator(file_number, 
-                                          pmem_skiplist[file_number%10]); 
+                                          pmem_skiplist[file_number % NUM_OF_SKIPLIST_MANAGER]); 
     }
   }
   ~LevelFilesConcatIteratorFromPmem() {
@@ -241,7 +237,6 @@ class Version::LevelFilesConcatIteratorFromPmem : public Iterator {
     return (current_ != nullptr && current_->Valid());
   }
   virtual void Seek(const Slice& target) {
-    // index_ = FindFile(icmp_, *flist_, target);
     // Specific searching
     assert(Valid());
     // Copy from FindFile() in version_set.cc
@@ -568,12 +563,9 @@ Status Version::Get(const Options& options_,
 
 bool Version::UpdateStats(const GetStats& stats) {
   FileMetaData* f = stats.seek_file;
-  // printf("UpdateStats\n");
   if (f != nullptr) {
-    // printf("UpdateStats IF\n");
     f->allowed_seeks--;
     if (f->allowed_seeks <= 0 && file_to_compact_ == nullptr) {
-    // printf("UpdateStats IF2\n");
       file_to_compact_ = f;
       file_to_compact_level_ = stats.seek_file_level;
       return true;

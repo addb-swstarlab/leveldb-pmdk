@@ -31,14 +31,14 @@
  */
 
 /*
- * skiplist_map.c -- Skiplist implementation
+ * skiplist.c -- no pmembuffer Skiplist implementation
  */
 
 #include <assert.h>
 #include <errno.h>
 #include <stdlib.h>
 #include <stdio.h>
-#include "pmem/ds/skiplist_map.h"
+#include "pmem/ds/skiplist.h"
 
 #include <chrono>
 #include <iostream>

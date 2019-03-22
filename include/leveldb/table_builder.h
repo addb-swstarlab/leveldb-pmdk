@@ -52,13 +52,9 @@ class LEVELDB_EXPORT TableBuilder {
   
   /* [JH][Pmem] */
 
-  // Skiplist default
+  // Skiplist + no pmem-buffer
   void AddToPmem(PmemSkiplist* pmem_skiplist, uint64_t number,
                     const Slice& key, const Slice& value);
-  // [Deprecated function]
-  // void AddToPmemByOID(PmemSkiplist* pmem_skiplist, uint64_t number,
-  //                   const Slice& key, const Slice& value,
-  //                   PMEMoid* key_oid, PMEMoid* value_oid);
   void AddToPmemByPtr(PmemSkiplist* pmem_skiplist, uint64_t number,
                       const Slice& key, const Slice& value,
                       void* key_ptr, void* value_ptr);

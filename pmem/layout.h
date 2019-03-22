@@ -32,13 +32,24 @@
  */
 // #define SKIPLIST_MANAGER_POOL_SIZE 300 * (1 << 20)
 #define SKIPLIST_MANAGER_POOL_SIZE 2 * (1 << 30)
-#define SKIPLIST_MANAGER_LIST_SIZE 190
+/* 
+ * 2GB_pool : 290_skiplists - 28300_nodes
+ * 
+ */
+
+#define SKIPLIST_MANAGER_LIST_SIZE 290
 // #define SKIPLIST_MANAGER_LIST_SIZE 10
-// #define MAX_SKIPLIST_NODE_SIZE 51200 // Compaction Output file max
-// #define MAX_SKIPLIST_NODE_SIZE 40960 // Compaction Output file max
-// #define MAX_SKIPLIST_NODE_SIZE 18432 // Compaction Output file max
-#define MAX_SKIPLIST_NODE_SIZE 30720 // Compaction Output file max
+/* 
+ * value 100bytes - 28300
+ * value 200bytes -
+ * value 400bytes -
+ * value 800bytes -
+ * value 1600bytes - 
+ * value 3200bytes - 
+ */
+#define MAX_SKIPLIST_NODE_SIZE 28300 // Compaction Output file max
 // #define SKIPLIST_BULK_INSERT_NUM 10
+
 #define NUM_OF_SKIPLIST_MANAGER 10
 
 #define BUFFER_PATH "/home/hwan/pmem_dir/pmem_buffer"

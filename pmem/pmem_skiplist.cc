@@ -1,29 +1,43 @@
 /*
- * 
+ * [2019.03.10][JH]
+ * PMDK-based skiplist class
+ * Include dynamic allocation methods and for iterator functions
  */
 
 #include <iostream>
 #include <fstream>
 #include "pmem/pmem_skiplist.h"
-#define SKIPLIST_LEVELS_NUM 12 // redefine
 
 namespace leveldb {
-  inline bool
-  file_exists (const std::string &name)
-  {
+  /* Structure for skiplist */
+  struct skiplist_map_entry {
+    char* buffer_ptr;
+  };
+  struct skiplist_map_node {
+    TOID(struct skiplist_map_node) next[SKIPLIST_LEVELS_NUM];
+    struct skiplist_map_entry entry;
+  };
+  // Register root-manager & node structrue
+  // Skiplist single-node
+  struct root_skiplist { // head node
+    TOID(struct skiplist_map_node) head;
+  };
+  // Skiplists manager
+  struct root_skiplist_manager {
+    pobj::persistent_ptr<root_skiplist[]> skiplists;
+  };
+
+  bool file_exists (const std::string &name) {
     std::ifstream f (name.c_str ());
     return f.good ();
   }
   static int
   Print_skiplist(char* key, char* value, int key_len, void *arg)
   {
-    // if (strcmp(key, "") != 0 && strcmp(value, "") != 0)
-    //   printf("[print] [key %d]:'%s', [value %d]:'%s'\n", strlen(key), key, strlen(value), value);
-    // TODO: Get value from value_ptr
+    // FIXME: Get value from value_ptr
     if (strcmp(key, "") != 0)
       printf("[print] [key %d]:'%s', [value]:'%s'\n", key_len, key, value);
     delete[] key;
-    // delete[] value;
     return 0;
   }
   /*
@@ -83,43 +97,14 @@ namespace leveldb {
     InsertAllocatedMap(allocated_map, file_number, new_index);
     return new_index;
   }
-  // void DeleteFile(std::list<uint64_t>* free_list,
-  //                 std::map<uint64_t, uint64_t>* allocated_map,
-  //                 uint64_t file_number) {
-  //   uint64_t old_index = GetIndexFromAllocatedMap(allocated_map, file_number);
-  //   EraseAllocatedMap(allocated_map, file_number);
-  //   PushFreeList(free_list, old_index);
-  // }
-  uint64_t SetAndGetActualIndex(std::list<uint64_t>* free_list,
+  uint64_t GetActualIndex(std::list<uint64_t>* free_list,
             std::map<uint64_t, uint64_t>* allocated_map, uint64_t file_number) {
     return CheckMapValidation(allocated_map, file_number) ? 
             GetIndexFromAllocatedMap(allocated_map, file_number) :
             AddFileAndGetNewIndex(free_list, allocated_map, file_number);
   }
 
-  // NOTE: For Iterator
-  struct skiplist_map_entry {
-    PMEMoid key;
-    uint8_t key_len;
-    void* key_ptr;
-    // TEST:
-    char* buffer_ptr;
-  };
-  struct skiplist_map_node {
-    TOID(struct skiplist_map_node) next[SKIPLIST_LEVELS_NUM];
-    struct skiplist_map_entry entry;
-  };
-
-  // Register root-manager & node structrue
-  // Skiplist single-node
-  struct root_skiplist { // head node
-    TOID(struct skiplist_map_node) head;
-  };
-  // Skiplists manager
-  struct root_skiplist_manager {
-    // PMEMoid skiplists;
-    pobj::persistent_ptr<root_skiplist[]> skiplists;
-  };
+  /* PMDK-based skiplist */
   PmemSkiplist::PmemSkiplist() {
     Init(SKIPLIST_MANAGER_PATH);
   }
@@ -138,11 +123,11 @@ namespace leveldb {
                       (unsigned long)SKIPLIST_MANAGER_POOL_SIZE, 0666);
       root_skiplist_ = skiplist_pool.get_root();
       pobj::transaction::exec_tx(skiplist_pool, [&] {
-        // Make 100 skiplists
+        // Allocate multiple skiplists
         root_skiplist_->skiplists = 
               pobj::make_persistent<root_skiplist[]>(SKIPLIST_MANAGER_LIST_SIZE);
       });
-      root_skiplist_map_ = (struct root_skiplist *)pmemobj_direct(
+      root_skiplist_map_ = (struct root_skiplist *)pmemobj_direct_latency(
          root_skiplist_->skiplists.raw() );
 
   		skiplists_ = (TOID(struct skiplist_map_node) *) malloc(
@@ -166,7 +151,7 @@ namespace leveldb {
       skiplist_pool = pobj::pool<root_skiplist_manager>::open(pool_path, pool_path);
 
       root_skiplist_ = skiplist_pool.get_root();
-      root_skiplist_map_ = (struct root_skiplist *)pmemobj_direct(
+      root_skiplist_map_ = (struct root_skiplist *)pmemobj_direct_latency(
          root_skiplist_->skiplists.raw() );
 
   		skiplists_ = (TOID(struct skiplist_map_node) *) malloc(
@@ -180,14 +165,18 @@ namespace leveldb {
       }
     }
   }
-  
-  PMEMobjpool* PmemSkiplist::GetPool() {
-    return skiplist_pool.get_handle();
+  void PmemSkiplist::ClearAll() {
+    for (int i=0; i<SKIPLIST_MANAGER_LIST_SIZE; i++) {
+      skiplist_map_clear(GetPool(), skiplists_[i]);
+      // DA: Push all to freelist
+      PushFreeList(&free_list_, i);
+    }
   }
 
+  /* Wrapper functions */
   void PmemSkiplist::Insert(char* key, char* buffer_ptr, int key_len, 
                             uint64_t file_number) {
-    uint64_t actual_index = SetAndGetActualIndex(&free_list_, &allocated_map_, 
+    uint64_t actual_index = GetActualIndex(&free_list_, &allocated_map_, 
                                                   file_number);
     int result = skiplist_map_insert(GetPool(), 
                                       skiplists_[actual_index], 
@@ -199,23 +188,9 @@ namespace leveldb {
       abort();
     } 
   }
-  void PmemSkiplist::InsertByOID(PMEMoid* key_oid, char* buffer_ptr, 
-                                      int key_len, uint64_t file_number) {
-    uint64_t actual_index = SetAndGetActualIndex(&free_list_, &allocated_map_, 
-                                                  file_number);
-    int result = skiplist_map_insert_by_oid(GetPool(), 
-                                      skiplists_[actual_index], 
-                                      &current_node[actual_index],
-                                      key_oid, buffer_ptr,
-                                      key_len, actual_index);
-    if(result) { 
-      fprintf(stderr, "[ERROR] insert_by_oid %d\n", file_number);  
-      abort();
-    } 
-  }
   void PmemSkiplist::InsertByPtr(void* key_ptr, char* buffer_ptr, 
                                       int key_len, uint64_t file_number) {
-    uint64_t actual_index = SetAndGetActualIndex(&free_list_, &allocated_map_, 
+    uint64_t actual_index = GetActualIndex(&free_list_, &allocated_map_, 
                                                   file_number);
     int result = skiplist_map_insert_by_ptr(GetPool(), 
                                       skiplists_[actual_index], 
@@ -228,7 +203,7 @@ namespace leveldb {
     } 
   }
   void PmemSkiplist::InsertNullNode(uint64_t file_number) {
-    uint64_t actual_index = SetAndGetActualIndex(&free_list_, &allocated_map_, 
+    uint64_t actual_index = GetActualIndex(&free_list_, &allocated_map_, 
                                                   file_number);
     int result = skiplist_map_insert_null_node(GetPool(),
                                 skiplists_[actual_index], 
@@ -244,7 +219,7 @@ namespace leveldb {
   // }
   void PmemSkiplist::Foreach(uint64_t file_number,
         int (*callback)(char* key, char* buffer_ptr, int key_len, void* arg)) {
-    uint64_t actual_index = SetAndGetActualIndex(&free_list_, &allocated_map_, 
+    uint64_t actual_index = GetActualIndex(&free_list_, &allocated_map_, 
                                                   file_number);
     int res = skiplist_map_foreach(GetPool(), 
                                   skiplists_[actual_index], callback, nullptr);
@@ -252,34 +227,33 @@ namespace leveldb {
   void PmemSkiplist::PrintAll(uint64_t file_number) {
     Foreach(file_number, Print_skiplist);
   }
-  void PmemSkiplist::ClearAll() {
-    for (int i=0; i<SKIPLIST_MANAGER_LIST_SIZE; i++) {
-      skiplist_map_clear(GetPool(), skiplists_[i]);
-      // DA: Push all to freelist
-      PushFreeList(&free_list_, i);
-    }
-  }
+  
 
-  // SOLVE: Implement Internal GetTOID
+  /* Iterator functions */
   PMEMoid* PmemSkiplist::GetPrevOID(uint64_t file_number, char* key) {
-    uint64_t actual_index = SetAndGetActualIndex(&free_list_, &allocated_map_, 
+    uint64_t actual_index = GetActualIndex(&free_list_, &allocated_map_, 
                                                   file_number);
     return skiplist_map_get_prev_OID(GetPool(), skiplists_[actual_index], key);
   }
-  PMEMoid* PmemSkiplist::GetNextOID(uint64_t file_number, char* key) {
-    uint64_t actual_index = SetAndGetActualIndex(&free_list_, &allocated_map_, 
+  PMEMoid* PmemSkiplist::GetOID(uint64_t file_number, char* key) {
+    uint64_t actual_index = GetActualIndex(&free_list_, &allocated_map_, 
                                                   file_number);
-    return skiplist_map_get_next_OID(GetPool(), skiplists_[actual_index], key);
+    return skiplist_map_get_OID(GetPool(), skiplists_[actual_index], key);
   }
   PMEMoid* PmemSkiplist::GetFirstOID(uint64_t file_number) {
-    uint64_t actual_index = SetAndGetActualIndex(&free_list_, &allocated_map_, 
+    uint64_t actual_index = GetActualIndex(&free_list_, &allocated_map_, 
                                                   file_number);
     return skiplist_map_get_first_OID(GetPool(), skiplists_[actual_index]);
   }
   PMEMoid* PmemSkiplist::GetLastOID(uint64_t file_number) {
-    uint64_t actual_index = SetAndGetActualIndex(&free_list_, &allocated_map_, 
+    uint64_t actual_index = GetActualIndex(&free_list_, &allocated_map_, 
                                                   file_number);
     return skiplist_map_get_last_OID(GetPool(), skiplists_[actual_index]);
+  }
+
+  /* Getter */
+  PMEMobjpool* PmemSkiplist::GetPool() {
+    return skiplist_pool.get_handle();
   }
   size_t PmemSkiplist::GetFreeListSize() {
     return free_list_.size();
@@ -287,8 +261,9 @@ namespace leveldb {
   size_t PmemSkiplist::GetAllocatedMapSize() {
     return allocated_map_.size();
   }
+
+  /* Dynamic allocation */
   void PmemSkiplist::DeleteFile(uint64_t file_number) {
-    // printf("Start DeleteFile\n");
     uint64_t old_index = GetIndexFromAllocatedMap(&allocated_map_, file_number);
     // Clear buffer_ptr to nullptr
     skiplist_map_clear(GetPool(), skiplists_[old_index]);
@@ -297,7 +272,6 @@ namespace leveldb {
     // Map & List
     EraseAllocatedMap(&allocated_map_, file_number);
     PushFreeList(&free_list_, old_index);
-    // printf("End DeleteFile\n");
   }
 
 } // namespace leveldb 

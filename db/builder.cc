@@ -35,17 +35,6 @@ Status BuildTable(const std::string& dbname,
 
   std::string fname = TableFileName(dbname, meta->number);
   if (iter->Valid()) {
-    // TODO: Don't create file
-    /*
-    WritableFile* file;
-    s = env->NewWritableFile(fname, &file);
-    if (!s.ok()) {
-      return s;
-    }
-    TableBuilder* builder = new TableBuilder(options, file);
-    meta->smallest.DecodeFrom(iter->key());
-*/
-
     if (sst_type == kFileDescriptorSST) {
 
       WritableFile* file;
@@ -61,7 +50,6 @@ Status BuildTable(const std::string& dbname,
         Slice key = iter->key();
         meta->largest.DecodeFrom(key);
         builder->Add(key, iter->value());
-        // 24, 100
         // printf("'%s'-'%s', '%d' '%d'\n", key.data(), iter->value().data(), key.size(), iter->value().size());
         // i++;
       }
@@ -113,14 +101,13 @@ Status BuildTable(const std::string& dbname,
           PmemHashmap* pmem_hashmap;
           switch (options.ds_type) {
             case kSkiplist:
-              pmem_skiplist = options.pmem_skiplist[file_number%10];
+              pmem_skiplist = options.pmem_skiplist[file_number % NUM_OF_SKIPLIST_MANAGER];
               break;
             case kHashmap:
-              pmem_hashmap = options.pmem_hashmap[file_number%10];
+              pmem_hashmap = options.pmem_hashmap[file_number % NUM_OF_SKIPLIST_MANAGER];
               break;
           }
-          PmemBuffer* pmem_buffer = options.pmem_buffer[file_number%10];
-          // DEBUG:
+          PmemBuffer* pmem_buffer = options.pmem_buffer[file_number % NUM_OF_SKIPLIST_MANAGER];
           // printf("file_number: %d\n", file_number);
           int i =0;
           for (; iter->Valid(); iter->Next()) {
@@ -138,18 +125,17 @@ Status BuildTable(const std::string& dbname,
                   break;
               }
             } else {
+              // TODO: restore no pmem-buffer
               builder->AddToPmem(pmem_skiplist, file_number, key, iter->value());
             }
             i++;
             // printf("%d]]\n", i);
           }
-          // printf("[DEBUG][builder]num_entries: %d\n",i);
+          printf("[DEBUG][builder]num_entries: %d\n",i);
           // printf("[DEBUG][builder]file_size: %d\n",builder->FileSize());
-          // PROGRESS:
           if(options.use_pmem_buffer) {
             builder->FlushBufferToPmemBuffer(pmem_buffer, file_number);
           }
-          // PROGRESS:
           if(options.ds_type == kSkiplist && options.skiplist_cache) {
             Iterator* it = table_cache->NewIteratorFromPmem(ReadOptions(),
                                                   meta->number,
@@ -158,6 +144,8 @@ Status BuildTable(const std::string& dbname,
             it->RunCleanupFunc();
             // delete it;
           }
+          // PROGRESS:
+          DelayPmemWriteNtimes(1);
 
       } else {
         printf("[ERROR] Invalid filename '%s' '%d'\n", fname.c_str(), file_number);
@@ -167,8 +155,6 @@ Status BuildTable(const std::string& dbname,
       meta->file_size = builder->FileSize();
       assert(meta->file_size > 0);
       delete builder;
-      // delete file;
-      // file = nullptr;
     }
     
     if (s.ok() && meta->file_size > 0) {

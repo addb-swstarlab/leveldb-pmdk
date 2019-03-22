@@ -128,7 +128,7 @@ void TableBuilder::Add(const Slice& key, const Slice& value) {
     Flush();
   }
 }
-// JH
+/* Skiplist + no pmem-buffer */
 void TableBuilder::AddToPmem(PmemSkiplist* pmem_skiplist, uint64_t number,
                               const Slice& key, const Slice& value) {
   // Rep* r = rep_;
@@ -145,22 +145,6 @@ void TableBuilder::AddToPmem(PmemSkiplist* pmem_skiplist, uint64_t number,
   printf("[ERROR][Deprecated function] AddToPmem()\n");
   abort();
 }
-// [Deprecated Function]
-// void TableBuilder::AddToPmemByOID(PmemSkiplist* pmem_skiplist, uint64_t number,
-//                               const Slice& key, const Slice& value,
-//                               PMEMoid* key_oid, PMEMoid* value_oid) {
-//   Rep* r = rep_;
-//   assert(!r->closed);
-//   if (!ok()) return;
-//   if (r->num_entries > 0) {
-//     assert(r->options.comparator->Compare(key, Slice(r->last_key)) > 0);
-//   }
-//   r->last_key.assign(key.data(), key.size());
-//   r->num_entries++;
-//   r->offset += (key.size() + value.size());
-//   pmem_skiplist->InsertByOID(key_oid, value_oid, 
-//                         key.size(), value.size(), number);
-// }
 void TableBuilder::AddToPmemByPtr(PmemSkiplist* pmem_skiplist, uint64_t number,
                               const Slice& key, const Slice& value,
                               void* key_ptr, void* value_ptr) {
@@ -193,7 +177,7 @@ void TableBuilder::AddToBufferAndSkiplist(
 
   // NOTE: Set and Get start-offset at first
   if (r->first_addition_flag) {
-    r->start_offset = pmem_buffer->SetAndGetStartOffset(number);
+    r->start_offset = pmem_buffer->GetStartOffset(number);
     r->first_addition_flag = false;
   }
 
@@ -249,7 +233,7 @@ void TableBuilder::AddToBufferAndHashmap(
 
   // NOTE: Set and Get start-offset at first
   if (r->first_addition_flag) {
-    r->start_offset = pmem_buffer->SetAndGetStartOffset(number);
+    r->start_offset = pmem_buffer->GetStartOffset(number);
     r->first_addition_flag = false;
   }
 

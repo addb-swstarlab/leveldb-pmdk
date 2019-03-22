@@ -1,22 +1,24 @@
 /*
- * [2019.03.10][JH]
- * PBAC(Persistent Byte-Adressable Compaction) skiplist
+ * [2019.03.21][JH]
+ * PMDK-based hashmap class
+ * Need to optimize some functions...
  */
+
 #ifndef PMEM_HASHMAP_H
 #define PMEM_HASHMAP_H
 
-#include <list>
-#include <map>
+// #include <list>
+// #include <map>
 
-#include "pmem/layout.h"
+// #include "pmem/layout.h"
 #include "pmem/map/hashmap.h"
 
 // C++
-#include <libpmemobj++/persistent_ptr.hpp>
-#include <libpmemobj++/make_persistent_array.hpp>
-#include <libpmemobj++/make_persistent.hpp>
-#include <libpmemobj++/transaction.hpp>
-#include <libpmemobj++/pool.hpp>
+// #include <libpmemobj++/persistent_ptr.hpp>
+// #include <libpmemobj++/make_persistent_array.hpp>
+// #include <libpmemobj++/make_persistent.hpp>
+// #include <libpmemobj++/transaction.hpp>
+// #include <libpmemobj++/pool.hpp>
 
 // TEST:
 #include "pmem/ds/hashmap_atomic.h"
@@ -36,7 +38,7 @@ namespace leveldb {
   struct root_hashmap_manager;
 
 
-  // TEST:
+  /* TEST: PMDK-based hashmap class */
   class PmemHashmap {
    public:
     PmemHashmap();
@@ -44,9 +46,6 @@ namespace leveldb {
     ~PmemHashmap();
     void Init(std::string pool_path);
     
-    /* Getter */
-    PMEMobjpool* GetPool();
-
     /* Wrapper functions */
     void Insert(char* key, char* buffer_ptr, 
                       int key_len, uint64_t file_number);
@@ -59,24 +58,22 @@ namespace leveldb {
     void PrintAll(uint64_t file_number);
     void ClearAll();
 
-
     // /* Iterator functions */
     PMEMoid* GetPrevOID(uint64_t file_number, TOID(struct entry) current_entry);
     PMEMoid* GetNextOID(uint64_t file_number, TOID(struct entry) current_entry);
     PMEMoid* GetFirstOID(uint64_t file_number);    
     PMEMoid* GetLastOID(uint64_t file_number);
     PMEMoid* SeekOID(uint64_t file_number, char* key, int key_len);
-// PMEMoid*
-// hm_atomic_seek_OID(PMEMobjpool* pop, TOID(struct hashmap_atomic) hashmap,
-// 		char* key, int key_len
+
+    /* Getter */
+    PMEMobjpool* GetPool();
+
    private:
     struct root_hashmap* root_hashmap_;
 
     /* Actual Skiplist interface */
     TOID(struct hashmap_atomic)* hashmap_;
 
-    // TOID(struct skiplist_map_node) *current_node[SKIPLIST_MANAGER_LIST_SIZE];
-    // TOID(struct entry)* current_node;
     TOID(struct entry)* current_entry;
     
     pobj::pool<root_hashmap_manager> hashmap_pool;

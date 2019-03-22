@@ -1,38 +1,34 @@
 /*
  * [2019.03.10][JH]
- * PBAC(Persistent Byte-Adressable Compaction) iterator
+ * PMDK-based iterator class
  * For pmem_skiplist and pmem_hashmap
  */
 #ifndef PMEM_ITERATOR_H
 #define PMEM_ITERATOR_H
 
-
-#include "pmem/layout.h"
+// #include "pmem/layout.h"
 #include "leveldb/iterator.h"
-
 // C++
-#include <libpmemobj++/persistent_ptr.hpp>
-#include <libpmemobj++/make_persistent_array.hpp>
-#include <libpmemobj++/make_persistent.hpp>
-#include <libpmemobj++/transaction.hpp>
-#include <libpmemobj++/pool.hpp>
+// #include <libpmemobj++/persistent_ptr.hpp>
+// #include <libpmemobj++/make_persistent_array.hpp>
+// #include <libpmemobj++/make_persistent.hpp>
+// #include <libpmemobj++/transaction.hpp>
+// #include <libpmemobj++/pool.hpp>
 
-// #pragma once
 #include "pmem/pmem_skiplist.h"
-#include "pmem/ds/skiplist_key_ptr.h"
 #include "pmem/pmem_hashmap.h"
-#include "pmem/pmem_buffer.h"
+#include "pmem/ds/skiplist_buffer.h" // Use Getter from buffer
+// #include "pmem/pmem_buffer.h"
 
 // use pmem with c++ bindings
 namespace pobj = pmem::obj;
 
 namespace leveldb {
 
+  /* Structure */
   struct skiplist_map_entry;
-  struct skiplist_map_node;     // Skiplist Actual node 
+  struct skiplist_map_node; 
   struct entry;
-
-  // TOID_DECLARE(struct entry, HASHMAP_ATOMIC_TYPE_OFFSET + 2);
 
   // Choose data-structure options
   enum PmemDataStructrueType {
@@ -40,7 +36,11 @@ namespace leveldb {
     kHashmap = 1
   };
 
-  /* SOLVE: Pmem-based Iterator */
+  /* 
+   * Pmem-based Iterator 
+   * Support skiplist-based and hashmap-based iterator
+   * TODO: hashmap-based value()
+   */
   class PmemIterator: public Iterator {
    public:
     PmemIterator(PmemSkiplist* pmem_skiplist); 
@@ -49,7 +49,6 @@ namespace leveldb {
     PmemIterator(int index, PmemHashmap* pmem_hashmap); 
     ~PmemIterator();
 
-    void SetIndexAndSeek(int index, const Slice& target);
     void Seek(const Slice& target);
     void SeekToFirst();
     void SeekToLast();
@@ -63,20 +62,21 @@ namespace leveldb {
 
     virtual PMEMoid* key_oid() const;
     virtual PMEMoid* value_oid() const;
-    // SOLVE:
+
     virtual void* key_ptr() const;
     virtual char* buffer_ptr() const;
     
+    /* Setter and Getter */
     PMEMoid* GetCurrentOID();
     struct skiplist_map_node* GetCurrentNode();
-    void SetIndex(int index);
     int GetIndex();
+    void SetIndex(int index);
 
    private:
     PmemSkiplist* pmem_skiplist_;
     PmemHashmap* pmem_hashmap_;
 
-    int index_;
+    int index_; // storing actual index
     PMEMoid* current_;
     struct skiplist_map_node* current_node_; // for skiplist
     struct entry* current_entry_;            // for hashmap
@@ -87,7 +87,6 @@ namespace leveldb {
     mutable void* key_ptr_;
     mutable char* buffer_ptr_;
 
-    
     const PmemDataStructrueType data_structure; 
 
   };

@@ -1,5 +1,7 @@
 /*
- * 
+ * [2019.03.21][JH]
+ * PMDK-based hashmap class
+ * Need to optimize some functions...
  */
 
 #include <iostream>
@@ -7,16 +9,7 @@
 #include "pmem/pmem_hashmap.h"
 
 namespace leveldb {
-  inline bool
-  file_exists (const std::string &name)
-  {
-    std::ifstream f (name.c_str ());
-    return f.good ();
-  }
-  // TEST:
-  // TOID_DECLARE(struct buckets, HASHMAP_ATOMIC_TYPE_OFFSET + 1);
-  // TOID_DECLARE(struct entry, HASHMAP_ATOMIC_TYPE_OFFSET + 2);
-
+  /* Structure for hashmap */
   struct entry {
     PMEMoid key;
     uint8_t key_len;
@@ -27,16 +20,12 @@ namespace leveldb {
     POBJ_LIST_ENTRY(struct entry) list;
     POBJ_LIST_ENTRY(struct entry) iterator;
   };
-
   struct entry_args {
-    // uint64_t key;
-	// PMEMoid value;
     PMEMoid key;
     uint8_t key_len;
     void* key_ptr;
     char* buffer_ptr;
   };
-
   POBJ_LIST_HEAD(entries_head, struct entry);
   struct buckets {
     /* number of buckets */
@@ -44,7 +33,6 @@ namespace leveldb {
     /* array of lists */
     struct entries_head bucket[];
   };
-
   POBJ_LIST_HEAD(iterator_head, struct entry);
   struct hashmap_atomic {
     /* random number generator seed */
@@ -66,8 +54,6 @@ namespace leveldb {
     TOID(struct buckets) buckets_tmp;
     struct iterator_head entries;
   };
-
-
   struct root_hashmap { // head node
     TOID(struct hashmap_atomic) head;
   };
@@ -75,6 +61,7 @@ namespace leveldb {
     pobj::persistent_ptr<root_hashmap[]> hashmap;
   };
 
+  /* PMDK-based hashmap class */
   PmemHashmap::PmemHashmap() {
     Init(BUFFER_PATH);
   }
@@ -130,10 +117,7 @@ namespace leveldb {
   }
   void PmemHashmap::Insert(char* key, char* buffer_ptr, 
                            int key_len, uint64_t file_number) {
-    // int res = hm_atomic_insert(GetPool(), hashmap_[file_number], key, value);
-    // if (res != 0) printf("ERROR Hashmap insertion\n");
-    
-    uint64_t actual_index = SetAndGetActualIndex(&free_list_, &allocated_map_, 
+    uint64_t actual_index = GetActualIndex(&free_list_, &allocated_map_, 
                                                   file_number);
     int result = hm_atomic_insert(GetPool(), 
                                   hashmap_[actual_index], 
@@ -146,7 +130,7 @@ namespace leveldb {
   }
   void PmemHashmap::InsertByPtr(void* key_ptr, char* buffer_ptr, 
                                       int key_len, uint64_t file_number) {
-    uint64_t actual_index = SetAndGetActualIndex(&free_list_, &allocated_map_, 
+    uint64_t actual_index = GetActualIndex(&free_list_, &allocated_map_, 
                                                   file_number);
     int result = hm_atomic_insert_by_ptr(GetPool(), 
                                           hashmap_[actual_index], 
@@ -186,28 +170,28 @@ namespace leveldb {
   
 
   PMEMoid* PmemHashmap::GetPrevOID(uint64_t file_number, TOID(struct entry) current_entry) {
-    uint64_t actual_index = SetAndGetActualIndex(&free_list_, &allocated_map_, 
+    uint64_t actual_index = GetActualIndex(&free_list_, &allocated_map_, 
                                                   file_number);
     // return hm_atomic_get_prev_OID(GetPool(), hashmap_[actual_index], key);
     return hm_atomic_get_prev_OID(GetPool(), current_entry);
   }
   PMEMoid* PmemHashmap::GetNextOID(uint64_t file_number, TOID(struct entry) current_entry) {
-    uint64_t actual_index = SetAndGetActualIndex(&free_list_, &allocated_map_, 
+    uint64_t actual_index = GetActualIndex(&free_list_, &allocated_map_, 
                                                   file_number);
     return hm_atomic_get_next_OID(GetPool(), current_entry);
   }
   PMEMoid* PmemHashmap::GetFirstOID(uint64_t file_number) {
-    uint64_t actual_index = SetAndGetActualIndex(&free_list_, &allocated_map_, 
+    uint64_t actual_index = GetActualIndex(&free_list_, &allocated_map_, 
                                                   file_number);
     return hm_atomic_get_first_OID(GetPool(), hashmap_[actual_index]);
   }
   PMEMoid* PmemHashmap::GetLastOID(uint64_t file_number) {
-    uint64_t actual_index = SetAndGetActualIndex(&free_list_, &allocated_map_, 
+    uint64_t actual_index = GetActualIndex(&free_list_, &allocated_map_, 
                                                   file_number);
     return hm_atomic_get_last_OID(GetPool(), hashmap_[actual_index]);
   }
   PMEMoid* PmemHashmap::SeekOID(uint64_t file_number, char* key, int key_len) {
-    uint64_t actual_index = SetAndGetActualIndex(&free_list_, &allocated_map_, 
+    uint64_t actual_index = GetActualIndex(&free_list_, &allocated_map_, 
                                                   file_number);
     return hm_atomic_seek_OID(GetPool(), hashmap_[actual_index], key, key_len);
   }

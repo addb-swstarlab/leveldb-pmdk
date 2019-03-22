@@ -96,7 +96,7 @@ Status TableCache::FindSkiplist(uint64_t file_number, Cache::Handle** handle) {
   *handle = cache_->Lookup(key);
   if (*handle == nullptr) {
     // printf("Cache Insert %d\n", file_number);
-    PmemSkiplist* pmem_skiplist = options_.pmem_skiplist[file_number%10];
+    PmemSkiplist* pmem_skiplist = options_.pmem_skiplist[file_number % NUM_OF_SKIPLIST_MANAGER];
     PmemIterator* pmem_iterator = new PmemIterator(file_number, pmem_skiplist); 
     *handle = cache_->Insert(key, 
           pmem_iterator, 
@@ -152,10 +152,11 @@ Iterator* TableCache::NewIteratorFromPmem(const ReadOptions& options,
     result->RegisterCleanup(&UnrefEntry, cache_, handle);
 
   } else {
-    PmemSkiplist* pmem_skiplist = options_.pmem_skiplist[file_number%10];
+    PmemSkiplist* pmem_skiplist = options_.pmem_skiplist[file_number % NUM_OF_SKIPLIST_MANAGER];
     result = new PmemIterator(file_number, pmem_skiplist);
     result->SeekToFirst();
   }
+  DelayPmemReadNtimes(1);
 
   return result;
 }
@@ -188,9 +189,9 @@ Status TableCache::GetFromPmem(const Options& options,
                    void (*saver)(void*, const Slice&, const Slice&)) {
   Status s; 
 	// std::chrono::steady_clock::time_point begin = std::chrono::steady_clock::now();
-  // FIXME: Checks cache logic
-  // bool on_cache = true;
   // printf("Start GetFromPmem\n");
+  // FIXME: Fix ordering problem
+  // bool on_cache = true;
   bool on_cache = false;
   if (on_cache) {
     Cache::Handle* handle = nullptr;
@@ -203,33 +204,37 @@ Status TableCache::GetFromPmem(const Options& options,
     cache_->Release(handle);
 
   } else {
-    PmemIterator* pmem_iterator = options.pmem_internal_iterator[file_number%10]; 
-    // printf("1]\n");
-    pmem_iterator->SetIndexAndSeek(file_number, k);
-    // printf("2]\n");
+    if (options_.skiplist_cache) {
+      PmemIterator* pmem_iterator = options.pmem_internal_iterator[file_number % NUM_OF_SKIPLIST_MANAGER]; 
+      pmem_iterator->SetIndex(file_number);
+      pmem_iterator->Seek(k);
+      Slice res_key = pmem_iterator->key();
+      (*saver)(arg, res_key, pmem_iterator->value());
+    } else {
+      PmemIterator* pmem_iterator = new PmemIterator(file_number, options.pmem_skiplist[file_number % NUM_OF_SKIPLIST_MANAGER]);
+      pmem_iterator->Seek(k);
+      Slice res_key = pmem_iterator->key();
+      (*saver)(arg, res_key, pmem_iterator->value());
+      delete pmem_iterator;
+    }
     // printf("key:'%s'\n", pmem_iterator->key());
-    Slice res_key = pmem_iterator->key();
     // Slice res_value = pmem_iterator->value();
     // printf("value:'%s'\n", pmem_iterator->value());
     // (*saver)(arg, pmem_iterator->key(), pmem_iterator->value());
     // (*saver)(arg, res_key, res_value);
-    // printf("3]\n");
-    (*saver)(arg, res_key, pmem_iterator->value());
-    // printf("4]\n");
   }
   // 	std::chrono::steady_clock::time_point end= std::chrono::steady_clock::now();
 	// std::cout << "GetFromPmem " << k.data() << "= " << std::chrono::duration_cast<std::chrono::nanoseconds> (end - begin).count() <<"\n";
 // printf("End GetFromPmem\n");
+  DelayPmemReadNtimes(1);
   return s;
 }
 
 
 void TableCache::Evict(uint64_t file_number) {
-  // printf("TableCache Eviction 1\n");
   char buf[sizeof(file_number)];
   EncodeFixed64(buf, file_number);
   cache_->Erase(Slice(buf, sizeof(buf)));
-  // printf("TableCache Eviction 2\n");
 }
 
 }  // namespace leveldb
