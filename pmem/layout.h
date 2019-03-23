@@ -40,11 +40,11 @@
 #define SKIPLIST_MANAGER_LIST_SIZE 290
 // #define SKIPLIST_MANAGER_LIST_SIZE 10
 /* 
- * value 100bytes - 28300
- * value 200bytes -
- * value 400bytes -
- * value 800bytes -
- * value 1600bytes - 
+ * value 100bytes - 28300 (28221)
+ * value 200bytes - 16400 (16353)
+ * value 400bytes - 9200  (9179)
+ * value 800bytes - 4100  (4089)
+ * value 1600bytes - 2560 (2536)
  * value 3200bytes - 
  */
 #define MAX_SKIPLIST_NODE_SIZE 28300 // Compaction Output file max

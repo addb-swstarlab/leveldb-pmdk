@@ -198,6 +198,8 @@ class DBImpl : public DB {
   const Comparator* user_comparator() const {
     return internal_comparator_.user_comparator();
   }
+  // JH
+  uint64_t total_delayed_micros;
 };
 
 // Sanitize db options.  The caller should delete result.info_log if

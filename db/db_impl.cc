@@ -138,7 +138,7 @@ Options SanitizeOptions(const std::string& dbname,
         // NOTE: FIXME: [190313] use this as cache iterator.. 
         // actual skiplist_cache has ordering problem on compaction
         // Smallest and largest key are invalid..
-        result.pmem_internal_iterator = new PmemIterator*[NUM_OF_BUFFER];
+        result.pmem_internal_iterator = new PmemIterator*[NUM_OF_SKIPLIST_MANAGER];
         result.pmem_internal_iterator[0] = new PmemIterator(0, result.pmem_skiplist[0]);
         result.pmem_internal_iterator[1] = new PmemIterator(1, result.pmem_skiplist[1]);
         result.pmem_internal_iterator[2] = new PmemIterator(2, result.pmem_skiplist[2]);
@@ -172,7 +172,7 @@ Options SanitizeOptions(const std::string& dbname,
         // NOTE: FIXME: [190313] use this as cache iterator.. 
         // actual skiplist_cache has ordering problem on compaction
         // Smallest and largest key are invalid..
-        result.pmem_internal_iterator = new PmemIterator*[NUM_OF_BUFFER];
+        result.pmem_internal_iterator = new PmemIterator*[NUM_OF_HASHMAP];
         result.pmem_internal_iterator[0] = new PmemIterator(0, result.pmem_hashmap[0]);
         result.pmem_internal_iterator[1] = new PmemIterator(1, result.pmem_hashmap[1]);
         result.pmem_internal_iterator[2] = new PmemIterator(2, result.pmem_hashmap[2]);
@@ -236,7 +236,10 @@ DBImpl::DBImpl(const Options& raw_options, const std::string& dbname)
       background_compaction_scheduled_(false),
       manual_compaction_(nullptr),
       versions_(new VersionSet(dbname_, &options_, table_cache_,
-                               &internal_comparator_)) {
+                               &internal_comparator_)),
+      // JH
+      total_delayed_micros(0)                         
+      {
   has_imm_.Release_Store(nullptr);
 }
 
@@ -249,6 +252,11 @@ DBImpl::~DBImpl() {
   }
   mutex_.Unlock();
 
+  // JH
+  Log(options_.info_log, "[Finish] total delayed micros: %lld\n", 
+                          total_delayed_micros);
+  printf("[Finish] total delayed micros: %lld\n", total_delayed_micros);
+  
   if (options_.sst_type == kPmemSST && options_.ds_type == kSkiplist) {
     printf("[DEBUG] free_list size\n");
     for (int i=0; i<NUM_OF_SKIPLIST_MANAGER; i++) {
@@ -949,7 +957,7 @@ Status DBImpl::FinishCompactionOutputFile(CompactionState* compact,
   Status s = input->status();
   const uint64_t current_entries = compact->builder->NumEntries();
   // printf("FinishCompaction: %d\n", compact->builder->FileSize());
-  printf("FinishCompaction: %d\n", current_entries);
+  // printf("FinishCompaction: %d\n", current_entries);
   // Builder
   if (sst_type == kFileDescriptorSST) {
     if (s.ok()) {
@@ -1626,6 +1634,8 @@ Status DBImpl::MakeRoomForWrite(bool force) {
   assert(!writers_.empty());
   bool allow_delay = !force;
   Status s;
+  uint64_t current_micros = env_->NowMicros();
+  uint64_t delayed_micros = 0;
   while (true) {
     if (!bg_error_.ok()) {
       // Yield previous error
@@ -1644,6 +1654,8 @@ Status DBImpl::MakeRoomForWrite(bool force) {
       env_->SleepForMicroseconds(1000);
       allow_delay = false;  // Do not delay a single write more than once
       mutex_.Lock();
+      delayed_micros += env_->NowMicros() - current_micros;
+      current_micros = env_->NowMicros();
     } else if (!force &&
                (mem_->ApproximateMemoryUsage() <= options_.write_buffer_size)) {
       // There is room in current memtable
@@ -1653,10 +1665,14 @@ Status DBImpl::MakeRoomForWrite(bool force) {
       // one is still being compacted, so we wait.
       Log(options_.info_log, "Current memtable full; waiting...\n");
       background_work_finished_signal_.Wait();
+      delayed_micros += env_->NowMicros() - current_micros;
+      current_micros = env_->NowMicros();
     } else if (versions_->NumLevelFiles(0) >= config::kL0_StopWritesTrigger) {
       // There are too many level-0 files.
       Log(options_.info_log, "Too many L0 files; waiting...\n");
       background_work_finished_signal_.Wait();
+      delayed_micros += env_->NowMicros() - current_micros;
+      current_micros = env_->NowMicros();
     } else {
       // Attempt to switch to a new memtable and trigger compaction of old
       assert(versions_->PrevLogNumber() == 0);
@@ -1681,6 +1697,11 @@ Status DBImpl::MakeRoomForWrite(bool force) {
       force = false;   // Do not force another compaction if have room
       MaybeScheduleCompaction();
     }
+  }
+  if (delayed_micros != 0) {
+    total_delayed_micros += delayed_micros;
+    // Log(options_.info_log, "[MakeRoomForWrite] delayed_micros: %lld\n", delayed_micros);
+    // Log(options_.info_log, "[MakeRoomForWrite] total_delayed_micros: %lld\n", total_delayed_micros);
   }
   return s;
 }

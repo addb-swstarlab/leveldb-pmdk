@@ -109,7 +109,7 @@ Status BuildTable(const std::string& dbname,
           }
           PmemBuffer* pmem_buffer = options.pmem_buffer[file_number % NUM_OF_SKIPLIST_MANAGER];
           // printf("file_number: %d\n", file_number);
-          int i =0;
+          // int i =0;
           for (; iter->Valid(); iter->Next()) {
             Slice key = iter->key();
             meta->largest.DecodeFrom(key);
@@ -128,10 +128,10 @@ Status BuildTable(const std::string& dbname,
               // TODO: restore no pmem-buffer
               builder->AddToPmem(pmem_skiplist, file_number, key, iter->value());
             }
-            i++;
+            // i++;
             // printf("%d]]\n", i);
           }
-          printf("[DEBUG][builder]num_entries: %d\n",i);
+          // printf("[DEBUG][builder]num_entries: %d\n",i);
           // printf("[DEBUG][builder]file_size: %d\n",builder->FileSize());
           if(options.use_pmem_buffer) {
             builder->FlushBufferToPmemBuffer(pmem_buffer, file_number);
