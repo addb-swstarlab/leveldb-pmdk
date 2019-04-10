@@ -13,12 +13,12 @@ namespace leveldb {
     PutLengthPrefixedSlice(buffer, key);
     PutLengthPrefixedSlice(buffer, value);
   }
+
+  // DEBUG: 
   void AddToPmemBuffer(PmemBuffer* pmem_buffer, 
                                   std::string* buffer, uint64_t file_number) {
     pmem_buffer->SequentialWrite(file_number, Slice(*buffer));
   }
-
-  // void Get(char* buf, const Slice& key, std::string* value) {
   uint32_t PrintKVAndReturnLength(char* buf) {
     Slice key_buffer(buf);
     Slice key, value;
@@ -66,8 +66,22 @@ namespace leveldb {
     }
     return skip_length;
   }
+  
   int GetEncodedLength(const size_t key_size, const size_t value_size) {
     return VarintLength(key_size) + key_size + VarintLength(value_size) + value_size;
+  }
+
+  /* 
+   * pmem-buffer DA functions 
+   * NOTE: Use only allocated map 
+   */
+  void PmemBuffer::InsertAllocatedMap(uint64_t file_number, uint64_t index) {
+    allocated_map_.emplace(file_number, index);
+  }
+  uint64_t PmemBuffer::AddFileAndGetNextOffset(uint64_t file_number) {
+    uint64_t new_offset = current_offset;
+    InsertAllocatedMap(file_number, new_offset);
+    return new_offset;
   }
 
   /* pmdk-based buffer */
@@ -94,7 +108,7 @@ namespace leveldb {
               pobj::make_persistent<uint32_t[]>(NUM_OF_CONTENTS);
       });
     } 
-    // Not exists
+    // exists
     else {
       buffer_pool_ = pobj::pool<root_pmem_buffer>::open (
                       pool_path, pool_path);
@@ -105,27 +119,32 @@ namespace leveldb {
     // Fill free_list
     for (int index=0; index<NUM_OF_CONTENTS; index++) {
       // Clear all contents_size
-      uint32_t initial_zero = 0;
-      buffer_pool_.memcpy_persist(
-            root_buffer_->contents_size.get() + (index * sizeof(uint32_t)), 
-            &initial_zero,
-            sizeof(uint32_t));
-
-      // DA: Push all to freelist
-      PushFreeList(&free_list_, index);
+      // uint32_t initial_zero = 0;
+      // buffer_pool_.memcpy_persist(
+      //       root_buffer_->contents_size.get() + (index * sizeof(uint32_t)), 
+      //       &initial_zero,
+      //       sizeof(uint32_t));
     }
+    // PROGRESS:
+    current_offset = 0;
   }
   void PmemBuffer::SequentialWrite(uint64_t file_number, const Slice& data) {
     // Get offset(index)
-    uint64_t index = (uint32_t) GetIndexFromAllocatedMap(&allocated_map_, file_number);
+    uint64_t offset = GetIndexFromAllocatedMap(&allocated_map_, file_number);
     uint32_t data_size = data.size();
+    if (offset + data_size >= MAX_CONTENTS_SIZE) {
+      printf("[ERROR][SequentialWrite] Out of bound.. %d %d %d\n", 
+              offset, data_size, MAX_CONTENTS_SIZE);
+    }
     // Sequential-Write(memcpy) from buf to specific contents offset
     DelayPmemWriteNtimes(1);
     buffer_pool_.memcpy_persist(
-      root_buffer_->contents.get() + (index * sizeof(char) * EACH_CONTENT_SIZE), 
+      root_buffer_->contents.get() + offset, 
       data.data(), 
       data_size
     );
+    // Addition for updating current offset
+    current_offset += data_size;
     // Set contents_size about matching offset(index)
     // buffer_pool_.memcpy_persist(
     //   root_buffer_->contents_size.get() + (index * sizeof(uint32_t)),
@@ -141,23 +160,23 @@ namespace leveldb {
       printf("[ERROR] %d is not in allocated_map...\n",file_number);
       abort();
     }
-    uint32_t index = (uint32_t) GetIndexFromAllocatedMap(&allocated_map_, 
+    uint32_t index = GetIndexFromAllocatedMap(&allocated_map_, 
                                                         file_number);
     // Check whether offset+size is over contents_size
-    uint32_t contents_size;
-    DelayPmemReadNtimes(1);
-    memcpy(&contents_size, 
-          root_buffer_->contents_size.get() + (index * sizeof(uint32_t)), 
-          sizeof(uint32_t));
-    if (offset + n > contents_size) {
-      // Overflow
-      printf("[WARN][PmemBuffer][RandomRead] Read overflow\n");
-      // abort();
-    }
+    // uint32_t contents_size;
+    // DelayPmemReadNtimes(1);
+    // memcpy(&contents_size, 
+    //       root_buffer_->contents_size.get() + (index * sizeof(uint32_t)), 
+    //       sizeof(uint32_t));
+    // if (offset + n > contents_size) {
+    //   // Overflow
+    //   printf("[WARN][PmemBuffer][RandomRead] Read overflow\n");
+    //   // abort();
+    // }
     // Make result Slice
     DelayPmemReadNtimes(1);
     *result = Slice( root_buffer_->contents.get() + 
-                     (index * sizeof(char) * EACH_CONTENT_SIZE) + offset, 
+                     (index) + offset, 
                      n);
   }
   /* 
@@ -165,23 +184,17 @@ namespace leveldb {
    * NOTE: Be copied from memtable.cc
    */
   std::string PmemBuffer::key(char* buf) const {
-    // Read encoded key-length
     uint32_t key_length;
     const char* key_ptr = GetVarint32Ptr(buf, buf+VARINT_LENGTH, &key_length);
-    // Get key
     return std::string(key_ptr, key_length);
   }
   std::string PmemBuffer::value(char* buf) const {
-    // Read encoded key-length
     uint32_t key_length, value_length;
-    // Skip key-part
     const char* key_ptr = GetVarint32Ptr(buf, buf+VARINT_LENGTH, &key_length);
-    // Read encoded value-length
     const char* value_ptr = GetVarint32Ptr(
                         buf+key_length+VarintLength(key_length),
                         buf+key_length+VarintLength(key_length)+VARINT_LENGTH,
                         &value_length);
-    // Get value
     return std::string(value_ptr, value_length);                    
   }
   /* Getter */
@@ -189,15 +202,8 @@ namespace leveldb {
     return buffer_pool_.get_handle();
   }
   char* PmemBuffer::GetStartOffset(uint64_t file_number) {
-    if(CheckMapValidation(&allocated_map_, file_number)) {
-      printf("[WARNING] %d is already inserted into allocated-map\n", file_number);
-      // abort();
-    }
-    uint64_t new_index = AddFileAndGetNewIndex(&free_list_, &allocated_map_, 
-                                                file_number);
-
-    return root_buffer_->contents.get() + 
-          (new_index * sizeof(char) * EACH_CONTENT_SIZE);
+    uint64_t offset = AddFileAndGetNextOffset(file_number);
+    return root_buffer_->contents.get() + offset;
   }
 
 

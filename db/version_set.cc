@@ -221,17 +221,22 @@ class Version::LevelFilesConcatIteratorFromPmem : public Iterator {
 
     pmem_iterator = new PmemIterator*[size_];
     // Make PmemIterators based on each index
+    // printf("LevelFiles size %d\n", size_);
     for (int i=0; i<size_; i++) {
       uint64_t file_number = flist_->at(i)->number;
+      // printf("LevelFiles %d\n", file_number);
       pmem_iterator[i] = new PmemIterator(file_number, 
                                           pmem_skiplist[file_number % NUM_OF_SKIPLIST_MANAGER]); 
+      // printf("LevelFiles End\n");
     }
   }
   ~LevelFilesConcatIteratorFromPmem() {
     for (int i=0; i<size_; i++) {
+      uint64_t file_number = flist_->at(i)->number;
+      // printf("Destructor LevelFiles %d\n", file_number);
       delete pmem_iterator[i];
     }
-    delete pmem_iterator;
+    delete[] pmem_iterator;
   }
   virtual bool Valid() const {
     return (current_ != nullptr && current_->Valid());
@@ -452,7 +457,8 @@ Status Version::Get(const Options& options_,
                     const ReadOptions& options,
                     const LookupKey& k,
                     std::string* value,
-                    GetStats* stats) {
+                    GetStats* stats,
+                    Tiering_stats* tiering_stats) {
   Slice ikey = k.internal_key();
   Slice user_key = k.user_key();
   const Comparator* ucmp = vset_->icmp_.user_comparator();
@@ -511,6 +517,8 @@ Status Version::Get(const Options& options_,
       }
     }
 
+    // SSTMakerType sst_type = options_.sst_type;
+
     for (uint32_t i = 0; i < num_files; ++i) {
       // printf("[VERSION_SET DEBUG %d]\n", i);
       if (last_file_read != nullptr && stats->seek_file == nullptr) {
@@ -531,13 +539,22 @@ Status Version::Get(const Options& options_,
       /*
        * SOLVE: Get operation 
        */
-      SSTMakerType sst_type = options_.sst_type;
-      if (sst_type == kFileDescriptorSST) {
-        s = vset_->table_cache_->Get(options, f->number, f->file_size,
-                                    ikey, &saver, SaveValue);
-      } else if (sst_type == kPmemSST) {
+      // bool is_in_skiplist_set = tiering_stats->IsInSkiplistSet(f->number);
+      // bool is_in_file_set = false;
+      // if (!is_in_skiplist_set) {
+      //   is_in_file_set = tiering_stats->IsInFileSet(f->number);
+      // } 
+      // if (!is_in_skiplist_set && !is_in_file_set) {
+      //   printf("[ERROR] cannot seek file_number in both file and skiplist set\n");
+      //   abort();
+      // }
+      
+      if (files[i]->which_set == kSkiplistSet) {
         s = vset_->table_cache_->GetFromPmem(options_, f->number,
                                    ikey, &saver, SaveValue);
+      } else if (files[i]->which_set == kFileSet) {
+        s = vset_->table_cache_->Get(options, f->number, f->file_size,
+                                    ikey, &saver, SaveValue);
       }
       // printf("[Saver_state] %d\n", saver.state);
       if (!s.ok()) {
@@ -1258,7 +1275,7 @@ Status VersionSet::WriteSnapshot(log::Writer* log) {
     const std::vector<FileMetaData*>& files = current_->files_[level];
     for (size_t i = 0; i < files.size(); i++) {
       const FileMetaData* f = files[i];
-      edit.AddFile(level, f->number, f->file_size, f->smallest, f->largest);
+      edit.AddFile(level, f->number, f->file_size, f->smallest, f->largest, f->which_set);
     }
   }
 
@@ -1394,7 +1411,7 @@ void VersionSet::GetRange2(const std::vector<FileMetaData*>& inputs1,
 }
 
 // PROGRESS: Compaction based on pmem
-Iterator* VersionSet::MakeInputIterator(Compaction* c) {
+Iterator* VersionSet::MakeInputIterator(Compaction* c, Tiering_stats* tiering_stats) {
   ReadOptions options;
   options.verify_checksums = options_->paranoid_checks;
   options.fill_cache = false;
@@ -1402,7 +1419,8 @@ Iterator* VersionSet::MakeInputIterator(Compaction* c) {
   // Level-0 files have to be merged together.  For other levels,
   // we will make a concatenating iterator per level.
   // TODO(opt): use concatenating iterator for level-0 if there is no overlap
-  const int space = (c->level() == 0 ? c->inputs_[0].size() + 1 : 2);
+  // const int space = (c->level() == 0 ? c->inputs_[0].size() + 1 : 2);
+  const int space = (c->level() == 0 ? c->inputs_[0].size() + 2 : 4);
   Iterator** list = new Iterator*[space];
   int num = 0;
 
@@ -1411,6 +1429,7 @@ Iterator* VersionSet::MakeInputIterator(Compaction* c) {
   SSTMakerType sst_type = options_->sst_type;
   // NOTE: which=[0, 1] := Compaction between two level
   for (int which = 0; which < 2; which++) {
+    // printf("Which %d\n", which);
     if (!c->inputs_[which].empty()) {
       if (c->level() + which == 0) { // Only L0 in Compaction between L0-L1
         // if (c->inputs_[which].size() > 0) {
@@ -1420,15 +1439,25 @@ Iterator* VersionSet::MakeInputIterator(Compaction* c) {
         // }
         const std::vector<FileMetaData*>& files = c->inputs_[which];
         for (size_t i = 0; i < files.size(); i++) {
-          // printf("i:%d, files:%d\n", i, files.size());
-          if (sst_type == kFileDescriptorSST) {
-            list[num++] = table_cache_->NewIterator(
-                options, files[i]->number, files[i]->file_size);
-            // printf("number: %d\n", files[i]->number);
-          } 
-          // PROGRESS: Pmem-based
-          else if (sst_type == kPmemSST) {
+          // bool is_in_skiplist_set = tiering_stats->IsInSkiplistSet(files[i]->number);
+          // bool is_in_file_set = false;
+          // if (!is_in_skiplist_set) {
+          //   is_in_file_set = tiering_stats->IsInFileSet(files[i]->number);
+          // } 
+          // if (!is_in_skiplist_set && !is_in_file_set) {
+          //   printf("[ERROR] cannot seek file_number in both file and skiplist set\n");
+          //   abort();
+          // }
+          
+          if (files[i]->which_set == kSkiplistSet) {
             list[num++] = table_cache_->NewIteratorFromPmem(
+                options, files[i]->number, files[i]->file_size);
+            // std::vector<FileMetaData*> files_;
+            // files_.push_back(files[i]);
+            // list[num++] = new Version::LevelFilesConcatIteratorFromPmem(
+            //   icmp_, options_->pmem_skiplist, &files_);
+          } else if (files[i]->which_set == kFileSet) {
+            list[num++] = table_cache_->NewIterator(
                 options, files[i]->number, files[i]->file_size);
           }
         }
@@ -1442,23 +1471,26 @@ Iterator* VersionSet::MakeInputIterator(Compaction* c) {
         //   }
         // }
         // printf("If\n");
-        if (sst_type == kFileDescriptorSST) {
+        if (c->inputs_in_fileset_[which].size() != 0) {
+          // printf("fileset\n");
           list[num++] = NewTwoLevelIterator(
-              new Version::LevelFileNumIterator(icmp_, &c->inputs_[which]),
+              new Version::LevelFileNumIterator(icmp_, &c->inputs_in_fileset_[which]),
               &GetFileIterator, table_cache_, options);
         }
-        else if (sst_type == kPmemSST) {
+        if (c->inputs_in_skiplistset_[which].size() != 0) {
           list[num++] = new Version::LevelFilesConcatIteratorFromPmem(
-                          icmp_, options_->pmem_skiplist, &c->inputs_[which]);
+                          icmp_, options_->pmem_skiplist, &c->inputs_in_skiplistset_[which]);
         }
         // printf("FI\n");
       }
     }
   }
+  // printf("[MakeInputIterator] num %d space %d\n", num, space);
   assert(num <= space);
   // Merge all iterators
   Iterator* result = NewMergingIterator(&icmp_, list, num);
   delete[] list;
+  // printf("MakeInputIterator End %d \n", num);
   return result;
 }
 
@@ -1512,6 +1544,19 @@ Compaction* VersionSet::PickCompaction() {
   }
 
   SetupOtherInputs(c);
+
+  // JH
+  for (int layer=0; layer<2; layer++) {
+    std::vector<FileMetaData*>::iterator iter;
+    for (iter = c->inputs_[layer].begin(); iter != c->inputs_[layer].end(); iter++ ) {
+      FileMetaData* tmp = *iter;
+      if (tmp->which_set == kFileSet) {
+        c->inputs_in_fileset_[layer].push_back(*iter);
+      } else if (tmp->which_set == kSkiplistSet) {
+        c->inputs_in_skiplistset_[layer].push_back(*iter);
+      }
+    }
+  }
 
   return c;
 }

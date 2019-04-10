@@ -7,7 +7,7 @@
 #define LAYOUT_H
 
 #include <libpmemobj.h>
-// #include "pmem/ds/skiplist_map.h"
+
 /* Single skiplist */
 #define SKIPLIST_PATH "/home/hwan/pmem_dir/skiplist"
 #define SKIPLIST_POOL_SIZE 30 * (1 << 20) // temp setting
@@ -24,12 +24,7 @@
 #define SKIPLIST_MANAGER_PATH_7 "/home/hwan/pmem_dir/skiplist_manager_7"
 #define SKIPLIST_MANAGER_PATH_8 "/home/hwan/pmem_dir/skiplist_manager_8"
 #define SKIPLIST_MANAGER_PATH_9 "/home/hwan/pmem_dir/skiplist_manager_9"
-/* 
- * FIXME: Seek proper pool size
- * 1.0 : 75-23961
- * 1.95 : 148-12508
- * 3 : 228-23674
- */
+
 // #define SKIPLIST_MANAGER_POOL_SIZE 300 * (1 << 20)
 #define SKIPLIST_MANAGER_POOL_SIZE 2 * (1 << 30)
 /* 
@@ -37,18 +32,26 @@
  * 
  */
 
-#define SKIPLIST_MANAGER_LIST_SIZE 290
-// #define SKIPLIST_MANAGER_LIST_SIZE 10
 /* 
- * value 100bytes - 28300 (28221)
- * value 200bytes - 16400 (16353)
- * value 400bytes - 9200  (9179)
- * value 800bytes - 4100  (4089)
- * value 1600bytes - 2560 (2536)
- * value 3200bytes - 
+ * EVALUATION 1: write_buffer_size = 4MB (default)
+ * value 100bytes - 28300 (28221) MAX_LIST_SIZE 290
+ * value 200bytes - 16400 (16353) 500
+ * value 400bytes - 9200  (9179) 900
+ * value 800bytes - 4100  (4089) 2000
+ * value 1600bytes - 2560 (2536) 3200
  */
-#define MAX_SKIPLIST_NODE_SIZE 28300 // Compaction Output file max
+/* 
+ * EVALUATION 2: write_buffer_size = 64MB
+ * value 1KB - 62270 (62266) MAX_LIST_SIZE 130
+ * value 2KB - 31935 (31930) MAX_LIST_SIZE 255
+ * value 4KB - 16180 (16171) 510
+ * value 8KB - 8140 (8139) 1000
+ * value 16KB - 4090 (4083) 2000
+ */
+#define MAX_SKIPLIST_NODE_SIZE 8140 // Compaction Output file max
 // #define SKIPLIST_BULK_INSERT_NUM 10
+#define SKIPLIST_MANAGER_LIST_SIZE 3500
+// #define SKIPLIST_MANAGER_LIST_SIZE 10
 
 #define NUM_OF_SKIPLIST_MANAGER 10
 
@@ -64,9 +67,9 @@
 #define BUFFER_PATH_8 "/home/hwan/pmem_dir/pmem_buffer_8"
 #define BUFFER_PATH_9 "/home/hwan/pmem_dir/pmem_buffer_9"
 
-#define BUFFER_POOL_SIZE 2 * (1 << 30)
+#define BUFFER_POOL_SIZE 2.5 * (1 << 30)
 #define NUM_OF_BUFFER 10
-#define NUM_OF_CONTENTS 300
+#define NUM_OF_CONTENTS 400
 #define EACH_CONTENT_SIZE 4 << 20 // FIXME: 4MB
 #define MAX_CONTENTS_SIZE (NUM_OF_CONTENTS * EACH_CONTENT_SIZE)
 
@@ -88,19 +91,6 @@
 #define NUM_OF_HASHMAP 10
 
 namespace levedb {
-
-// POBJ_LAYOUT_ROOT(root_skiplist_map, struct skiplist_map_node);
-
-// struct root_skiplist_map {
-//  	TOID(struct skiplist_map_node) map;
-// };
-// TOID_DECLARE_ROOT(struct root_skiplist_map);
-
-// typedef struct Root_skiplist_map {
-//  	char buf[3000];
-// } root_skiplist_map;
-
-// TOID_DECLARE_ROOT(struct root_skiplist_map);
 
 }
 #endif

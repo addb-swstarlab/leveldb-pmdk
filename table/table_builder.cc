@@ -184,7 +184,7 @@ void TableBuilder::AddToBufferAndSkiplist(
   // Add to buffer
   EncodeToBuffer(&r->buffer, key, value);
   int total_length = GetEncodedLength(key.size(), value.size());
-  // printf("%d %d] total_length %d\n", key.size(), value.size(), total_length);
+
   // Add to pmem_skiplist
   pmem_skiplist->Insert((char *)key.data(), r->start_offset + r->offset, 
                         key.size(), number);
@@ -197,6 +197,7 @@ void TableBuilder::FlushBufferToPmemBuffer(PmemBuffer* pmem_buffer, uint64_t num
   if (!ok()) return;
   if (r->buffer.size() >= r->options.write_buffer_size) {
     printf("[ERROR] table_builder buffer size is over!! '%d'\n", r->buffer.size());
+    printf("[Table_builder] %d\n", r->num_entries);
     abort();
   }
   Slice buffer_wrapper(r->buffer);
@@ -215,9 +216,11 @@ void TableBuilder::AddToSkiplistByPtr(PmemSkiplist* pmem_skiplist, uint64_t numb
   r->last_key.assign(key.data(), key.size());
   r->num_entries++;
   r->offset += (key.size() + value.size());
-  // printf("num_entries %d\n", r->num_entries);
+
   pmem_skiplist->InsertByPtr(key_ptr, buffer_ptr, key.size(), number);
 }
+
+
 /* Hashmap + use_pmem_buffer */
 void TableBuilder::AddToBufferAndHashmap(
                         PmemBuffer* pmem_buffer, PmemHashmap* pmem_hashmap, 
@@ -261,6 +264,8 @@ void TableBuilder::AddToHashmapByPtr(PmemHashmap* pmem_hashmap, uint64_t number,
   r->offset += (key.size() + value.size());
   pmem_hashmap->InsertByPtr(key_ptr, buffer_ptr, key.size(), number);
 }
+
+
 void TableBuilder::Flush() {
   Rep* r = rep_;
   assert(!r->closed);
@@ -337,10 +342,9 @@ Status TableBuilder::status() const {
   return rep_->status;
 }
 
-// PROGRESS: JH
 Status TableBuilder::FinishPmem() {
   Rep* r = rep_;
-  r->pending_index_entry = true;
+  r->pending_index_entry = false;
   r->status = Status::OK();
   assert(!r->closed);
   r->closed = true;

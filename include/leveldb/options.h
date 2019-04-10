@@ -8,11 +8,11 @@
 #include <stddef.h>
 #include "leveldb/export.h"
 // JH
-// #pragma once
 #include "pmem/pmem_skiplist.h"
 #include "pmem/pmem_iterator.h"
 #include "pmem/pmem_buffer.h"
 #include "pmem/pmem_hashmap.h"
+#include "pmem/tiering_stats.h"
 
 namespace leveldb {
 
@@ -38,6 +38,12 @@ enum CompressionType {
 enum SSTMakerType {
   kFileDescriptorSST,
   kPmemSST
+};
+enum TieringOption {
+  kSimpleLevelTiering,
+  kColdDataTiering,
+  kLRUTiering,
+  kNoTiering
 };
 
 // Options to control the behavior of a database (passed to DB::Open)
@@ -178,7 +184,8 @@ struct LEVELDB_EXPORT Options {
   bool skiplist_cache;
   bool use_pmem_buffer;
   
-
+  /* Tiering */
+  TieringOption tiering_option;
   // Create an Options object with default values for all fields.
   Options();
 };

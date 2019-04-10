@@ -137,7 +137,7 @@ Iterator* TableCache::NewIteratorFromPmem(const ReadOptions& options,
                                   uint64_t file_size,
                                   Table** tableptr) {
                                     
-  bool on_cache =true;
+  // bool on_cache =true;
   Iterator* result;
   if (options_.skiplist_cache) {
     if (tableptr != nullptr) {
@@ -204,19 +204,20 @@ Status TableCache::GetFromPmem(const Options& options,
     cache_->Release(handle);
 
   } else {
-    if (options_.skiplist_cache) {
+    // if (options_.skiplist_cache) {
       PmemIterator* pmem_iterator = options.pmem_internal_iterator[file_number % NUM_OF_SKIPLIST_MANAGER]; 
       pmem_iterator->SetIndex(file_number);
       pmem_iterator->Seek(k);
       Slice res_key = pmem_iterator->key();
       (*saver)(arg, res_key, pmem_iterator->value());
-    } else {
-      PmemIterator* pmem_iterator = new PmemIterator(file_number, options.pmem_skiplist[file_number % NUM_OF_SKIPLIST_MANAGER]);
-      pmem_iterator->Seek(k);
-      Slice res_key = pmem_iterator->key();
-      (*saver)(arg, res_key, pmem_iterator->value());
-      delete pmem_iterator;
-    }
+    // } else {
+    //   PmemIterator* pmem_iterator = new PmemIterator(file_number, options.pmem_skiplist[file_number % NUM_OF_SKIPLIST_MANAGER]);
+    //   pmem_iterator->Seek(k);
+    //   Slice res_key = pmem_iterator->key();
+    //   (*saver)(arg, res_key, pmem_iterator->value());
+    //   delete pmem_iterator;
+    // }
+    
     // printf("key:'%s'\n", pmem_iterator->key());
     // Slice res_value = pmem_iterator->value();
     // printf("value:'%s'\n", pmem_iterator->value());

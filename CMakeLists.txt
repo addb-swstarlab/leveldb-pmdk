@@ -210,6 +210,10 @@ target_sources(leveldb
     "${PROJECT_SOURCE_DIR}/pmem/pmem_latency.cc"
     "${PROJECT_SOURCE_DIR}/pmem/pmem_latency.h"
 
+    # Tiering options statistics
+    "${PROJECT_SOURCE_DIR}/pmem/tiering_stats.cc"
+    "${PROJECT_SOURCE_DIR}/pmem/tiering_stats.h"
+
     # hash_map
     "${PROJECT_SOURCE_DIR}/pmem/ds/hashmap_atomic.cc"
     "${PROJECT_SOURCE_DIR}/pmem/ds/hashmap_atomic.h"

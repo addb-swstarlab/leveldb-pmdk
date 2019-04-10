@@ -71,6 +71,8 @@ namespace leveldb {
     struct skiplist_map_node* GetCurrentNode();
     int GetIndex();
     void SetIndex(int index);
+    void SetCurrentNode(PMEMoid* current_oid);  // for skiplist
+    void SetCurrentEntry(PMEMoid* current_oid); // for hashmap
 
    private:
     PmemSkiplist* pmem_skiplist_;

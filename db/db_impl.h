@@ -114,8 +114,13 @@ class DBImpl : public DB {
   Status DoCompactionWork(CompactionState* compact)
       EXCLUSIVE_LOCKS_REQUIRED(mutex_);
 
-  Status OpenCompactionOutputFile(CompactionState* compact);
-  Status FinishCompactionOutputFile(CompactionState* compact, Iterator* input);
+//   Status OpenCompactionOutputFile(CompactionState* compact);
+  Status OpenCompactionOutputFile(CompactionState* compact, 
+                                    uint64_t file_number, bool is_file_creation);
+//   Status FinishCompactionOutputFile(CompactionState* compact, Iterator* input);
+  // JH
+  Status FinishCompactionOutputFile(CompactionState* compact, Iterator* input,
+                                    bool is_file_creation);
   Status InstallCompactionResults(CompactionState* compact)
       EXCLUSIVE_LOCKS_REQUIRED(mutex_);
 
@@ -199,7 +204,9 @@ class DBImpl : public DB {
     return internal_comparator_.user_comparator();
   }
   // JH
+  /* stat */
   uint64_t total_delayed_micros;
+  Tiering_stats tiering_stats_;
 };
 
 // Sanitize db options.  The caller should delete result.info_log if

@@ -34,6 +34,7 @@ namespace leveldb {
   }
   PmemIterator::PmemIterator(int index, PmemSkiplist *pmem_skiplist) 
     : index_(index), pmem_skiplist_(pmem_skiplist), data_structure(kSkiplist) {
+      // printf("[Constructor]New Iterator From Pmem %d\n", index_);
   }
   PmemIterator::PmemIterator(PmemHashmap* pmem_hashmap) 
     : index_(0), pmem_hashmap_(pmem_hashmap), data_structure(kHashmap) {
@@ -43,38 +44,39 @@ namespace leveldb {
   }
   PmemIterator::~PmemIterator() {
     // printf("PmemIterator destructor %d\n", index_);
+      // printf("[Destructor]Delete Iterator %d\n", index_);
   }
 
   void PmemIterator::Seek(const Slice& target) {
     if (data_structure == kSkiplist) {
       current_ = (pmem_skiplist_->GetOID(index_, (char *)target.data()));
-      current_node_ = (struct skiplist_map_node *)pmemobj_direct_latency(*current_);
+      SetCurrentNode(current_);
     } else if (data_structure == kHashmap) {
       current_ = pmem_hashmap_->SeekOID(index_, (char *)target.data(), 
                                 target.size());
-      current_entry_ = (struct entry *) pmemobj_direct_latency(*current_);
+      SetCurrentEntry(current_);
     }
   }
   void PmemIterator::SeekToFirst() {
     if (data_structure == kSkiplist) {
       current_ = (pmem_skiplist_->GetFirstOID(index_));
       assert(!OID_IS_NULL(*current_));
-      current_node_ = (struct skiplist_map_node *)pmemobj_direct_latency(*current_);
+      SetCurrentNode(current_);
     } else if (data_structure == kHashmap) {
       current_ = pmem_hashmap_->GetFirstOID(index_);
       assert(!OID_IS_NULL(*current_));
-      current_entry_ = (struct entry *) pmemobj_direct_latency(*current_);
+      SetCurrentEntry(current_);
     }
   }
   void PmemIterator::SeekToLast() {
     if (data_structure == kSkiplist) {
       current_ = (pmem_skiplist_->GetLastOID(index_));
       assert(!OID_IS_NULL(*current_));
-      current_node_ = (struct skiplist_map_node *)pmemobj_direct_latency(*current_);
+      SetCurrentNode(current_);
     } else if (data_structure == kHashmap) {
       current_ = pmem_hashmap_->GetLastOID(index_);
       assert(!OID_IS_NULL(*current_));
-      current_entry_ = (struct entry *) pmemobj_direct_latency(*current_);
+      SetCurrentEntry(current_);
     }
   }
   void PmemIterator::Next() {
@@ -83,14 +85,14 @@ namespace leveldb {
       if (OID_IS_NULL(*current_)) {
         printf("[ERROR][PmemIterator][Next] OID IS NULL\n");
       }
-      current_node_ = (struct skiplist_map_node *)pmemobj_direct_latency(*current_);
+      SetCurrentNode(current_);
     } else if (data_structure == kHashmap) {
       TOID(struct entry) current_toid(*current_);
       current_ = pmem_hashmap_->GetNextOID(index_, current_toid);
       if (OID_IS_NULL(*current_)) {
         printf("[ERROR][PmemIterator][Next] OID IS NULL\n");
       }
-      current_entry_ = (struct entry *)pmemobj_direct_latency(*current_);
+      SetCurrentEntry(current_);
     }
   }
   void PmemIterator::Prev() {
@@ -100,14 +102,14 @@ namespace leveldb {
       if (OID_IS_NULL(*current_)) {
         printf("[ERROR][PmemIterator][Prev] OID IS NULL\n");
       }
-      current_node_ = (struct skiplist_map_node *)pmemobj_direct_latency(*current_);
+      SetCurrentNode(current_);
     } else if (data_structure == kHashmap) {
       TOID(struct entry) current_toid(*current_);
       current_ = pmem_hashmap_->GetPrevOID(index_, current_toid);
       if (OID_IS_NULL(*current_)) {
         printf("[ERROR][PmemIterator][Next] OID IS NULL\n");
       }
-      current_entry_ = (struct entry *)pmemobj_direct_latency(*current_);
+      SetCurrentEntry(current_);
     }
   }
 
@@ -156,7 +158,6 @@ namespace leveldb {
       return res;
     }
   }
-  // PROGRESS: implement PmemBuffer-based Get-Value
   Slice PmemIterator::value() const {
     if (data_structure == kSkiplist) {
       assert(!OID_IS_NULL(*current_));
@@ -200,5 +201,11 @@ namespace leveldb {
   }
   void PmemIterator::SetIndex(int index) {
     index_ = index;
+  }
+  void PmemIterator::SetCurrentNode(PMEMoid* current_oid) {
+    current_node_ = (struct skiplist_map_node*)pmemobj_direct_latency(*current_oid);
+  }
+  void PmemIterator::SetCurrentEntry(PMEMoid* current_oid) {
+    current_entry_ = (struct entry*)pmemobj_direct_latency(*current_oid);
   }
 } // namespace leveldb 

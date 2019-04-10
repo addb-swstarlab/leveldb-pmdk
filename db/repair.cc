@@ -224,7 +224,9 @@ class Repairer {
     FileMetaData meta;
     meta.number = next_file_number_++;
     Iterator* iter = mem->NewIterator();
-    status = BuildTable(dbname_, env_, options_, table_cache_, iter, &meta);
+    // TODO:
+    // status = BuildTable(dbname_, env_, options_, table_cache_, iter, &meta);
+    status = BuildTable(dbname_, env_, options_, table_cache_, iter, &meta, nullptr);
     delete iter;
     mem->Unref();
     mem = nullptr;
@@ -396,7 +398,7 @@ class Repairer {
       // TODO(opt): separate out into multiple levels
       const TableInfo& t = tables_[i];
       edit_.AddFile(0, t.meta.number, t.meta.file_size,
-                    t.meta.smallest, t.meta.largest);
+                    t.meta.smallest, t.meta.largest, t.meta.which_set);
     }
 
     //fprintf(stderr, "NewDescriptor:\n%s\n", edit_.DebugString().c_str());

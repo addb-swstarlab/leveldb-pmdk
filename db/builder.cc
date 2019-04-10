@@ -25,9 +25,26 @@ Status BuildTable(const std::string& dbname,
                   const Options& options,
                   TableCache* table_cache,
                   Iterator* iter,
-                  FileMetaData* meta) {
+                  FileMetaData* meta,
+                  Tiering_stats* tiering_stats) {
   SSTMakerType sst_type = options.sst_type;
   // std::chrono::steady_clock::time_point begin = std::chrono::steady_clock::now();
+  uint64_t file_number = meta->number;
+  // printf("Build Table %d\n", file_number);
+  PmemSkiplist* pmem_skiplist;
+  PmemHashmap* pmem_hashmap;
+  switch (options.ds_type) {
+    case kSkiplist:
+      pmem_skiplist = options.pmem_skiplist[file_number % NUM_OF_SKIPLIST_MANAGER];
+      break;
+    case kHashmap:
+      pmem_hashmap = options.pmem_hashmap[file_number % NUM_OF_SKIPLIST_MANAGER];
+      break;
+  }
+  
+  // Tiering trigger
+  bool need_file_creation = pmem_skiplist->IsFreeListEmpty();
+  // if(need_file_creation) printf("[builder] is free list empty\n");
 
   Status s;
   meta->file_size = 0;
@@ -35,8 +52,9 @@ Status BuildTable(const std::string& dbname,
 
   std::string fname = TableFileName(dbname, meta->number);
   if (iter->Valid()) {
-    if (sst_type == kFileDescriptorSST) {
-
+    if (sst_type == kFileDescriptorSST || 
+        need_file_creation) {
+      // printf("%d file@\n", file_number);
       WritableFile* file;
       s = env->NewWritableFile(fname, &file);
       if (!s.ok()) {
@@ -87,74 +105,67 @@ Status BuildTable(const std::string& dbname,
         s = iter->status();
       }
 
+      // PROGRESS:
+      // options.InsertIntoSet(&options.file_set, file_number);
+      tiering_stats->InsertIntoFileSet(file_number);
+      meta->which_set = kFileSet;
 
     } else if (sst_type == kPmemSST) {
+
+      // printf("%d skiplist@\n", file_number);
 
       TableBuilder* builder = new TableBuilder(options, nullptr);
       meta->smallest.DecodeFrom(iter->key());
 
-      uint64_t file_number;
-      FileType type;
-      if (ParseFileName(fname.substr(fname.rfind("/")+1, fname.size()), &file_number, &type) &&
-            type != kDBLockFile) {
-          PmemSkiplist* pmem_skiplist;
-          PmemHashmap* pmem_hashmap;
+      PmemBuffer* pmem_buffer = options.pmem_buffer[file_number % NUM_OF_SKIPLIST_MANAGER];
+      // printf("file_number: %d\n", file_number);
+      // int i =0;
+      for (; iter->Valid(); iter->Next()) {
+        Slice key = iter->key();
+        meta->largest.DecodeFrom(key);
+        if (options.use_pmem_buffer) {
           switch (options.ds_type) {
             case kSkiplist:
-              pmem_skiplist = options.pmem_skiplist[file_number % NUM_OF_SKIPLIST_MANAGER];
+              builder->AddToBufferAndSkiplist(pmem_buffer, pmem_skiplist, 
+                                          file_number, key, iter->value());
               break;
             case kHashmap:
-              pmem_hashmap = options.pmem_hashmap[file_number % NUM_OF_SKIPLIST_MANAGER];
+              builder->AddToBufferAndHashmap(pmem_buffer, pmem_hashmap,
+                                          file_number, key, iter->value());
               break;
           }
-          PmemBuffer* pmem_buffer = options.pmem_buffer[file_number % NUM_OF_SKIPLIST_MANAGER];
-          // printf("file_number: %d\n", file_number);
-          // int i =0;
-          for (; iter->Valid(); iter->Next()) {
-            Slice key = iter->key();
-            meta->largest.DecodeFrom(key);
-            if (options.use_pmem_buffer) {
-              switch (options.ds_type) {
-                case kSkiplist:
-                  builder->AddToBufferAndSkiplist(pmem_buffer, pmem_skiplist, 
-                                              file_number, key, iter->value());
-                  break;
-                case kHashmap:
-                  builder->AddToBufferAndHashmap(pmem_buffer, pmem_hashmap,
-                                              file_number, key, iter->value());
-                  break;
-              }
-            } else {
-              // TODO: restore no pmem-buffer
-              builder->AddToPmem(pmem_skiplist, file_number, key, iter->value());
-            }
-            // i++;
-            // printf("%d]]\n", i);
-          }
-          // printf("[DEBUG][builder]num_entries: %d\n",i);
-          // printf("[DEBUG][builder]file_size: %d\n",builder->FileSize());
-          if(options.use_pmem_buffer) {
-            builder->FlushBufferToPmemBuffer(pmem_buffer, file_number);
-          }
-          if(options.ds_type == kSkiplist && options.skiplist_cache) {
-            Iterator* it = table_cache->NewIteratorFromPmem(ReadOptions(),
-                                                  meta->number,
-                                                  meta->file_size);
-            s = it->status();
-            it->RunCleanupFunc();
-            // delete it;
-          }
-          // PROGRESS:
-          DelayPmemWriteNtimes(1);
-
-      } else {
-        printf("[ERROR] Invalid filename '%s' '%d'\n", fname.c_str(), file_number);
-        s = Status::InvalidArgument(Slice());
+        } else {
+          // TODO: restore no pmem-buffer
+          builder->AddToPmem(pmem_skiplist, file_number, key, iter->value());
+        }
+        // i++;
+        // printf("%d]]\n", i);
       }
+      // printf("[DEBUG][builder]num_entries: %d\n",i);
+      // printf("[DEBUG][builder]file_size: %d\n",builder->FileSize());
+      if(options.use_pmem_buffer) {
+        builder->FlushBufferToPmemBuffer(pmem_buffer, file_number);
+      }
+      if(options.ds_type == kSkiplist && options.skiplist_cache) {
+        Iterator* it = table_cache->NewIteratorFromPmem(ReadOptions(),
+                                              meta->number,
+                                              meta->file_size);
+        s = it->status();
+        it->RunCleanupFunc();
+        // delete it;
+      }
+      DelayPmemWriteNtimes(1);
+
       s = builder->FinishPmem();
       meta->file_size = builder->FileSize();
       assert(meta->file_size > 0);
       delete builder;
+
+      // PROGRESS:
+      // options.InsertIntoSet(&options.skiplist_set, file_number);
+      tiering_stats->InsertIntoSkiplistSet(file_number);
+      meta->which_set = kSkiplistSet;
+      
     }
     
     if (s.ok() && meta->file_size > 0) {

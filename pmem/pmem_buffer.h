@@ -5,21 +5,8 @@
 #ifndef PMEM_BUFFER_H
 #define PMEM_BUFFER_H
 
-// #include <list>
-// #include <map>
-
-// #include "pmem/layout.h"
 
 #include "util/coding.h" 
-
-// C++
-// #include <libpmemobj++/persistent_ptr.hpp>
-// #include <libpmemobj++/make_persistent_array.hpp>
-// #include <libpmemobj++/make_persistent.hpp>
-// #include <libpmemobj++/transaction.hpp>
-// #include <libpmemobj++/pool.hpp>
-
-// TEST:
 #include "pmem/pmem_skiplist.h"
 
 // use pmem with c++ bindings
@@ -30,15 +17,16 @@ namespace leveldb {
   struct root_pmem_buffer;
   class PmemBuffer;
 
-  // TEST:
   void EncodeToBuffer(std::string* buffer, const Slice& key, const Slice& value);
+ 
+  // DEBUG:
   void AddToPmemBuffer(PmemBuffer* pmem_buffer, std::string* buffer, uint64_t file_number);
   uint32_t PrintKVAndReturnLength(char* buf);
   void GetAndPrintAll(PmemBuffer* pmem_buffer, uint64_t file_number);
   uint32_t SkipNEntriesAndGetOffset(const char* buf, uint64_t file_number, uint8_t n);
   int GetEncodedLength(const size_t key_size, const size_t value_size);
 
-  /* pmdk-based buffer for sequential-write*/
+  /* pmdk-based buffer for sequential-write */
   class PmemBuffer {
    public:
     PmemBuffer();
@@ -58,13 +46,17 @@ namespace leveldb {
     PMEMobjpool* GetPool();
     char* GetStartOffset(uint64_t file_number);
 
+    /* Dynamic Allocation */
+    uint64_t AddFileAndGetNextOffset(uint64_t file_number);
+    void InsertAllocatedMap(uint64_t file_number, uint64_t index);
+
    private:
     /* pmdk access object */
     pobj::pool<root_pmem_buffer> buffer_pool_;
     pobj::persistent_ptr<root_pmem_buffer> root_buffer_;
+    uint64_t current_offset;
 
     /* Dynamic allocation */
-    std::list<uint64_t> free_list_;
     std::map<uint64_t, uint64_t> allocated_map_; // [ file_number -> index ]
   };
   /* root structure for accessing pmdk */

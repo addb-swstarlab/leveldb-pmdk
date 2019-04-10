@@ -15,19 +15,28 @@ Iterator::Iterator() {
 
 Iterator::~Iterator() {
   // JH
-  if (!use_skiplist_cache) {
-    if (!cleanup_head_.IsEmpty()) {
-      // printf("RunCleanUpFunc11\n");
-      cleanup_head_.Run();
-      // printf("RunCleanUpFunc22\n");
-      for (CleanupNode* node = cleanup_head_.next; node != nullptr; ) {
-      // printf("RunCleanUpFunc33\n");
-        node->Run();
-      // printf("RunCleanUpFunc44\n");
-        CleanupNode* next_node = node->next;
-        delete node;
-        node = next_node;
-      }
+  // if (!use_skiplist_cache) {
+  //   if (!cleanup_head_.IsEmpty()) {
+  //     // printf("RunCleanUpFunc11\n");
+  //     cleanup_head_.Run();
+  //     // printf("RunCleanUpFunc22\n");
+  //     for (CleanupNode* node = cleanup_head_.next; node != nullptr; ) {
+  //     // printf("RunCleanUpFunc33\n");
+  //       node->Run();
+  //     // printf("RunCleanUpFunc44\n");
+  //       CleanupNode* next_node = node->next;
+  //       delete node;
+  //       node = next_node;
+  //     }
+  //   }
+  // }
+  if (!cleanup_head_.IsEmpty()) {
+    cleanup_head_.Run();
+    for (CleanupNode* node = cleanup_head_.next; node != nullptr; ) {
+      node->Run();
+      CleanupNode* next_node = node->next;
+      delete node;
+      node = next_node;
     }
   }
 }

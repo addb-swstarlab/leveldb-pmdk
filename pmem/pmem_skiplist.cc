@@ -58,12 +58,15 @@ namespace leveldb {
     free_list->pop_front();
     return res;
   }
+  size_t GetFreeListSize(std::list<uint64_t>* free_list) {
+    return free_list->size();
+  }
   // Allocated-map
   void InsertAllocatedMap(std::map<uint64_t, uint64_t>* allocated_map, 
                           uint64_t file_number, uint64_t index) {
     allocated_map->emplace(file_number, index);
-    if (allocated_map->size() >= SKIPLIST_MANAGER_LIST_SIZE) {
-      printf("[WARNING][InsertAllocatedMap] map size is full...\n");
+    if (allocated_map->size() > SKIPLIST_MANAGER_LIST_SIZE) {
+      printf("[WARNING][InsertAllocatedMap] map size is full... %d\n", allocated_map->size());
     }
   }
   uint64_t GetIndexFromAllocatedMap(std::map<uint64_t, uint64_t>* allocated_map,
@@ -93,7 +96,9 @@ namespace leveldb {
   uint64_t AddFileAndGetNewIndex(std::list<uint64_t>* free_list,
                                  std::map<uint64_t, uint64_t>* allocated_map,
                                  uint64_t file_number) {
+    // printf("[AddFileAndGetNewIndex] file_number %d\n", file_number);
     uint64_t new_index = PopFreeList(free_list);
+    // printf("[AddFileAndGetNewIndex] freelist size %d\n", free_list->size());
     InsertAllocatedMap(allocated_map, file_number, new_index);
     return new_index;
   }
@@ -121,6 +126,9 @@ namespace leveldb {
       skiplist_pool = pobj::pool<root_skiplist_manager>::create (
                       pool_path, pool_path, 
                       (unsigned long)SKIPLIST_MANAGER_POOL_SIZE, 0666);
+      // Get Pool
+      skiplist_pool_c = skiplist_pool.get_handle();
+
       root_skiplist_ = skiplist_pool.get_root();
       pobj::transaction::exec_tx(skiplist_pool, [&] {
         // Allocate multiple skiplists
@@ -138,17 +146,19 @@ namespace leveldb {
       struct hashmap_args args; // empty
       /* create */
       for (int i=0; i<SKIPLIST_MANAGER_LIST_SIZE; i++) {
+        // printf("i %d\n",i);
         int res = skiplist_map_create(GetPool(), 
                   &(root_skiplist_map_[i].head), current_node[i], i, &args);
         if (res) printf("[CREATE ERROR %d] %d\n",i ,res);
         else if (i==SKIPLIST_MANAGER_LIST_SIZE-1) printf("[CREATE SUCCESS %d]\n",i);	
         skiplists_[i] = root_skiplist_map_[i].head;
         /* NOTE: Reset current node */
-        current_node[i] = skiplists_[i];
+        ResetCurrentNodeToHeader(i);
       }
     } 
     else {
       skiplist_pool = pobj::pool<root_skiplist_manager>::open(pool_path, pool_path);
+      skiplist_pool_c = skiplist_pool.get_handle();
 
       root_skiplist_ = skiplist_pool.get_root();
       root_skiplist_map_ = (struct root_skiplist *)pmemobj_direct_latency(
@@ -161,7 +171,7 @@ namespace leveldb {
       
       for (int i=0; i<SKIPLIST_MANAGER_LIST_SIZE; i++) {
 				skiplists_[i] = root_skiplist_map_[i].head;
-        current_node[i] = skiplists_[i];
+        ResetCurrentNodeToHeader(i);
       }
     }
   }
@@ -213,7 +223,7 @@ namespace leveldb {
       fprintf(stderr, "[ERROR] insert_null_node %d\n", file_number);  
     }
   }
-  // NOTE: Will be deprecated.. 
+  // NOTE: [Deprecated] 
   // char* PmemSkiplist::Get(int index, char *key) {
   //   return skiplist_map_get(GetPool(), skiplists_[index], key);
   // }
@@ -253,7 +263,7 @@ namespace leveldb {
 
   /* Getter */
   PMEMobjpool* PmemSkiplist::GetPool() {
-    return skiplist_pool.get_handle();
+    return skiplist_pool_c;
   }
   size_t PmemSkiplist::GetFreeListSize() {
     return free_list_.size();
@@ -261,15 +271,23 @@ namespace leveldb {
   size_t PmemSkiplist::GetAllocatedMapSize() {
     return allocated_map_.size();
   }
+  /* Setter */
+  void PmemSkiplist::ResetCurrentNodeToHeader(uint64_t index) {
+    current_node[index] = skiplists_[index];
+  }
+
+
+  bool PmemSkiplist::IsFreeListEmpty() {
+    return GetFreeListSize() == 0 || 
+           GetAllocatedMapSize() >= SKIPLIST_MANAGER_LIST_SIZE;
+  }
 
   /* Dynamic allocation */
   void PmemSkiplist::DeleteFile(uint64_t file_number) {
+    // printf("[DeleteFile] file_number %d\n", file_number);
     uint64_t old_index = GetIndexFromAllocatedMap(&allocated_map_, file_number);
-    // Clear buffer_ptr to nullptr
     skiplist_map_clear(GetPool(), skiplists_[old_index]);
-    // Reset current_node
-    current_node[old_index] = skiplists_[old_index];
-    // Map & List
+    ResetCurrentNodeToHeader(old_index);
     EraseAllocatedMap(&allocated_map_, file_number);
     PushFreeList(&free_list_, old_index);
   }

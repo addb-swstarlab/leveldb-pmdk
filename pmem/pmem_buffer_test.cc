@@ -83,38 +83,38 @@ TEST (PmemBufferTest, Buffer) {
 
   pmem_buffer[0]->ClearAll();
 
-  std::string buffer;
+  // std::string buffer;
   
 
-  for (int i=0; i<1; i++) {
-    for (int j=0; j<10; j++) {
-      char key[] = "key-";
-      stringstream ss_key, ss_value;
-      ss_key << key << i << "-" << j;
-      char value[] = "value-";
-      ss_value << value << i << "-" << j 
-      << ".......................................................................................";
-      EncodeToBuffer(&buffer, Slice(ss_key.str()), Slice(ss_value.str()));
-      // pmem_skiplists[1]->Insert((char *)ss_key.str().c_str(), 
-      //           (char *)ss_value.str().c_str(), 
-      // printf("key_len:%d, value_len:%d\n",ss_key.str().size(), ss_value.str().size());
+  // for (int i=0; i<1; i++) {
+  //   for (int j=0; j<10; j++) {
+  //     char key[] = "key-";
+  //     stringstream ss_key, ss_value;
+  //     ss_key << key << i << "-" << j;
+  //     char value[] = "value-";
+  //     ss_value << value << i << "-" << j 
+  //     << ".......................................................................................";
+  //     EncodeToBuffer(&buffer, Slice(ss_key.str()), Slice(ss_value.str()));
+  //     // pmem_skiplists[1]->Insert((char *)ss_key.str().c_str(), 
+  //     //           (char *)ss_value.str().c_str(), 
+  //     // printf("key_len:%d, value_len:%d\n",ss_key.str().size(), ss_value.str().size());
 
-    }
-  }
-  AddToPmemBuffer(pmem_buffer[0], &buffer, 0);
-  printf("Complete addtion to pmem-buffer\n");
+  //   }
+  // }
+  // AddToPmemBuffer(pmem_buffer[0], &buffer, 0);
+  // printf("Complete addtion to pmem-buffer\n");
 
 
-  // std::string res_value;
-  // Get(pmem_buffer[0], key, &res_value);
-  // printf("Get %d ]'%s'\n",res_value.size(), res_value.c_str());
+  // // std::string res_value;
+  // // Get(pmem_buffer[0], key, &res_value);
+  // // printf("Get %d ]'%s'\n",res_value.size(), res_value.c_str());
 
-  // GetAndPrintAll(pmem_buffer[0], 0);
-  Slice res;
-  pmem_buffer[0]->RandomRead(0, 0, EACH_CONTENT_SIZE, &res);
+  // // GetAndPrintAll(pmem_buffer[0], 0);
+  // Slice res;
+  // pmem_buffer[0]->RandomRead(0, 0, EACH_CONTENT_SIZE, &res);
   
-  uint32_t skiped_length = SkipNEntriesAndGetOffset(res.data(), 0, 10);
-  uint32_t decoded_length = PrintKVAndReturnLength(const_cast<char *>(res.data())+skiped_length);
+  // uint32_t skiped_length = SkipNEntriesAndGetOffset(res.data(), 0, 10);
+  // uint32_t decoded_length = PrintKVAndReturnLength(const_cast<char *>(res.data())+skiped_length);
 
   printf("Complete GetAndPrintAll\n");
 

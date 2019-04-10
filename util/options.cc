@@ -41,13 +41,19 @@ Options::Options()
       // , use_pmem_buffer(false)
 
       /* Addtional cache option */
-      , skiplist_cache(true) // NOTE: Only ds_type is "kSkiplist"
-      // , skiplist_cache(false)
+      // , skiplist_cache(true) // NOTE: Only ds_type is "kSkiplist"
+      , skiplist_cache(false)
 
+      /* Tiering option */
+      // , tiering_option(kSimpleLevelTiering)
+      // , tiering_option(kColdDataTiering)
+      // , tiering_option(kLRUTiering)
+      , tiering_option(kNoTiering)
+
+      // TODO: hashmap is not implemented perfectly
       /* Data-Structure option */
       , ds_type(kSkiplist)
       // , ds_type(kHashmap)
        {
 }
-
 }  // namespace leveldbf

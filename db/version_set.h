@@ -72,8 +72,10 @@ class Version {
   // Customized by JH
   // Status Get(const ReadOptions&, const LookupKey& key, std::string* val,
   //            GetStats* stats);
+  // Status Get(const Options&, const ReadOptions&, const LookupKey& key, 
+  //             std::string* val, GetStats* stats);
   Status Get(const Options&, const ReadOptions&, const LookupKey& key, 
-              std::string* val, GetStats* stats);
+              std::string* val, GetStats* stats, Tiering_stats* tiering_stats);
 
   // Adds "stats" into the current state.  Returns true if a new
   // compaction may need to be triggered, false otherwise.
@@ -250,11 +252,14 @@ class VersionSet {
 
   // Create an iterator that reads over the compaction inputs for "*c".
   // The caller should delete the iterator when no longer needed.
-  Iterator* MakeInputIterator(Compaction* c);
+  // Iterator* MakeInputIterator(Compaction* c);
+  // JH
+  Iterator* MakeInputIterator(Compaction* c, Tiering_stats* tiering_stats);
 
   // Returns true iff some level needs a compaction.
   bool NeedsCompaction() const {
     Version* v = current_;
+    // printf("[NeedsCompaction]%f \n", v->compaction_score_);
     return (v->compaction_score_ >= 1) || (v->file_to_compact_ != nullptr);
   }
 
@@ -369,6 +374,8 @@ class Compaction {
 
   // JH
   uint64_t MaxOutputEntriesNum() const {return MAX_SKIPLIST_NODE_SIZE; };
+  std::vector<FileMetaData*> inputs_in_fileset_[2];      // Inputs in file set 
+  std::vector<FileMetaData*> inputs_in_skiplistset_[2];  // Inputs in skiplist set 
 
  private:
   friend class Version;

@@ -70,12 +70,10 @@ struct store_last_node last_node;
 /*  Global constant for binary insertion */
 int common_constant;
 
-/* Getter from (pmem)buffer */
+/* Getter of Key & Value from (pmem)buffer */
 uint32_t GetKeyLengthFromBuffer(char* buf) {
-	// Read encoded key-length
 	uint32_t key_len;
 	const char* key_ptr = GetVarint32Ptr(buf, buf+VARINT_LENGTH, &key_len);
-	// Get key
 	return key_len;
 }
 char* GetKeyFromBuffer(char* buf) {
@@ -88,16 +86,12 @@ char* GetKeyAndLengthFromBuffer(char* buf, uint32_t* key_len) {
 	return const_cast<char *>(key_ptr);
 }
 char* GetValueFromBuffer(char* buf) {
-	// Read encoded key-length
 	uint32_t key_length, value_length;
-	// Skip key-part
 	const char* key_ptr = GetVarint32Ptr(buf, buf+VARINT_LENGTH, &key_length);
-	// Read encoded value-length
 	const char* value_ptr = GetVarint32Ptr(
 													buf+key_length+VarintLength(key_length),
 													buf+key_length+VarintLength(key_length)+VARINT_LENGTH,
 													&value_length);
-	// Get value
 	return const_cast<char *>(value_ptr);                 
 }
 char* GetValueAndLengthFromBuffer(char* buf, uint32_t* value_len) {
@@ -152,7 +146,6 @@ int skiplist_map_destroy(PMEMobjpool* pop, TOID(struct skiplist_map_node)* map) 
  */
 static void skiplist_map_insert_node(TOID(struct skiplist_map_node) new_node,
 											TOID(struct skiplist_map_node) path[SKIPLIST_LEVELS_NUM]) {
-	// std::chrono::steady_clock::time_point begin = std::chrono::steady_clock::now();
 	unsigned current_level = 0;
 	// binary insertion
 	if (USE_BINARY_INSERTION) {
@@ -187,8 +180,6 @@ static void skiplist_map_insert_node(TOID(struct skiplist_map_node) new_node,
 			D_RW(path[current_level])->next[current_level] = new_node;
 		} while (++current_level < SKIPLIST_LEVELS_NUM && rand() % 2 == 0);
 	}
-	// std::chrono::steady_clock::time_point end= std::chrono::steady_clock::now();
-	// std::cout << "insert-node = " << std::chrono::duration_cast<std::chrono::nanoseconds> (end - begin).count() <<"\n";
 }
 
 /*

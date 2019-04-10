@@ -85,6 +85,11 @@ namespace leveldb {
     size_t GetFreeListSize();
     size_t GetAllocatedMapSize();
 
+    /* Setter */
+    void ResetCurrentNodeToHeader(uint64_t index);
+
+    bool IsFreeListEmpty();
+
     /* Dynamic allocation*/
     void DeleteFile(uint64_t file_number);
 
@@ -96,6 +101,7 @@ namespace leveldb {
     TOID(struct skiplist_map_node)* current_node;
     
     /* pmdk access object */
+    PMEMobjpool* skiplist_pool_c;
     pobj::pool<root_skiplist_manager> skiplist_pool;
     pobj::persistent_ptr<root_skiplist_manager> root_skiplist_;
 
