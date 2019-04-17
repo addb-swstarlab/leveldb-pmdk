@@ -64,7 +64,6 @@ struct DBImpl::CompactionState {
     uint64_t number;
     uint64_t file_size;
     InternalKey smallest, largest;
-    IsInSet which_set;
   };
   std::vector<Output> outputs;
 
@@ -279,10 +278,10 @@ DBImpl::~DBImpl() {
       case kSkiplist:
         for (int i=0; i<NUM_OF_SKIPLIST_MANAGER; i++) {
           delete options_.pmem_skiplist[i];
-          delete options_.pmem_internal_iterator[i];
+          // delete options_.pmem_internal_iterator[i]; // DEBUG:
         }
         delete[] options_.pmem_skiplist;
-        delete[] options_.pmem_internal_iterator;
+        // delete[] options_.pmem_internal_iterator;
 
         break;
       // DS_Option2: Hashmap
@@ -679,7 +678,7 @@ Status DBImpl::WriteLevel0Table(MemTable* mem, VersionEdit* edit,
       level = base->PickLevelForMemTableOutput(min_user_key, max_user_key);
     }
     edit->AddFile(level, meta.number, meta.file_size,
-                  meta.smallest, meta.largest, meta.which_set);
+                  meta.smallest, meta.largest);
   }
 
   CompactionStats stats;
@@ -870,7 +869,8 @@ void DBImpl::BackgroundCompaction() {
         (m->end ? m->end->DebugString().c_str() : "(end)"),
         (m->done ? "(end)" : manual_end.DebugString().c_str()));
   } else {
-    c = versions_->PickCompaction();
+    // c = versions_->PickCompaction();
+    c = versions_->PickCompaction(&tiering_stats_);
   }
 
   Status status;
@@ -882,7 +882,7 @@ void DBImpl::BackgroundCompaction() {
     FileMetaData* f = c->input(0, 0);
     c->edit()->DeleteFile(c->level(), f->number);
     c->edit()->AddFile(c->level() + 1, f->number, f->file_size,
-                       f->smallest, f->largest, f->which_set);
+                       f->smallest, f->largest);
     status = versions_->LogAndApply(c->edit(), &mutex_);
     if (!status.ok()) {
       RecordBackgroundError(status);
@@ -906,7 +906,7 @@ void DBImpl::BackgroundCompaction() {
 
     /* SOLVE: Delete files based on pmem */
     if(options_.sst_type == kFileDescriptorSST || 
-       options_.tiering_option == kSimpleLevelTiering) {
+       options_.tiering_option != kNoTiering) {
       DeleteObsoleteFiles();
     } else if (options_.sst_type == kPmemSST) {
       // Done
@@ -969,11 +969,6 @@ Status DBImpl::OpenCompactionOutputFile(CompactionState* compact,
     out.number = file_number;
     out.smallest.Clear();
     out.largest.Clear();
-    if (options_.sst_type == kFileDescriptorSST || is_file_creation) {
-      out.which_set = kFileSet;
-    } else {
-      out.which_set = kSkiplistSet;
-    }
     compact->outputs.push_back(out);
     mutex_.Unlock();
   }
@@ -1003,7 +998,8 @@ Status DBImpl::FinishCompactionOutputFile(CompactionState* compact,
 
   const uint64_t output_number = compact->current_output()->number;
   assert(output_number != 0);
-
+  //DEBUG:
+  // printf("[FinishCompactionOutputFile]\n");
   // Check for iterator errors
   Status s = input->status();
   const uint64_t current_entries = compact->builder->NumEntries();
@@ -1018,6 +1014,10 @@ Status DBImpl::FinishCompactionOutputFile(CompactionState* compact,
     DelayPmemWriteNtimes(1);
     s = compact->builder->FinishPmem();
     tiering_stats_.InsertIntoSkiplistSet(output_number);
+    if (options_.tiering_option == kColdDataTiering ||
+        options_.tiering_option == kLRUTiering) {
+      tiering_stats_.PushToNumberListInPmem(compact->compaction->level()+1, output_number);
+    }
   }
   const uint64_t current_bytes = compact->builder->FileSize();
   compact->current_output()->file_size = current_bytes;
@@ -1096,7 +1096,7 @@ Status DBImpl::InstallCompactionResults(CompactionState* compact) {
     const CompactionState::Output& out = compact->outputs[i];
     compact->compaction->edit()->AddFile(
         level + 1,
-        out.number, out.file_size, out.smallest, out.largest, out.which_set);
+        out.number, out.file_size, out.smallest, out.largest);
   }
   return versions_->LogAndApply(compact->compaction->edit(), &mutex_);
 }
@@ -1137,17 +1137,30 @@ Status DBImpl::DoCompactionWork(CompactionState* compact) {
   // int i=0;
 
   /* Tiering trigger */
-  bool need_file_creation = false;
+  bool write_pmem_buffer = false;  // flag that store contents into pmem
   bool retain_flag = false;
-  bool write_pmem_buffer = false;
-  bool simple_level = false;
-  // Opt1
+  bool need_file_creation = false; // flag that store contents as SST file
+  bool leveled_trigger = false;    // Opt1
+
+  // std::vector<uint64_t> pending_deleted_number_in_pmem; // for synchronization
+
   if (options_.ds_type == kSkiplist) {
-    if (options_.tiering_option == kSimpleLevelTiering) {
-      int output_file_level = compact->compaction->level()+1;
-      if (output_file_level > SIMPLE_LEVEL) {
-        simple_level = true;
+    switch(options_.tiering_option) {
+      // Opt1
+      case kLeveledTiering:
+      { 
+        int output_file_level = compact->compaction->level()+1;
+        if (output_file_level > SIMPLE_LEVEL) {
+          leveled_trigger = true;
+        }
+        break;
       }
+      // Opt2, 3, 4
+      case kColdDataTiering:
+      case kLRUTiering:
+      case kNoTiering:
+        // Done
+        break;
     }
   }
 
@@ -1235,39 +1248,128 @@ Status DBImpl::DoCompactionWork(CompactionState* compact) {
 
     if (!drop) {
       // Open output file if necessary
-      if (compact->builder == nullptr && 
-          (!need_file_creation && !retain_flag) ) {
+      if (compact->builder == nullptr && !retain_flag ) {
         uint64_t file_number = versions_->NewFileNumber();
+
+        /* Check tiering conditions */
         switch (options_.ds_type) {
           case kSkiplist:
             PmemSkiplist* pmem_skiplist = 
                       options_.pmem_skiplist[file_number % NUM_OF_SKIPLIST_MANAGER];
-            // First, check free-list is full
-            // printf("####This\n");
-            if (pmem_skiplist->IsFreeListEmpty()) {
-              need_file_creation = true;
-              if(need_file_creation) printf("[DoCompaction] is free list empty\n");
-              break;
-            }
-        }
-        // Then, check tiering options
-        if (!need_file_creation) {
-          switch(options_.tiering_option) {
-            case kSimpleLevelTiering:
-              if (simple_level) {
-                need_file_creation = true;
+            bool is_freelist_empty = pmem_skiplist->IsFreeListEmptyWarning();
+            // PROGRESS: Flush [Opt2, Opt3]
+            switch (options_.tiering_option) {
+              case kLeveledTiering:
+                need_file_creation = (is_freelist_empty || leveled_trigger) ? 
+                                      true : 
+                                      false;
+                break;
+              case kColdDataTiering:
+              // 1) Get candidate
+              // 2) Flush pmem_skiplist to SST
+              // 3) collect statistics
+                need_file_creation = false;
+                break;
+              case kLRUTiering:
+              {
+                if (is_freelist_empty) {
+                  /* 1) Get candidate number */
+                  level_number evicted_level_number;
+                  for (int i=0 ; ; i++) {
+                    evicted_level_number =
+                        tiering_stats_.GetElementFromNumberListInPmem(file_number, i);
+                        // printf("evicted_number %d\n", evicted_number);
+                    bool current_in_use = false;
+                    for (int layer=0; layer<2; layer++) {
+                      for (int i=0; i<compact->compaction->num_input_files(layer); i++) {
+                        uint64_t number = compact->compaction->input(layer, i)->number;
+                        if (evicted_level_number.number == number) {
+                          current_in_use = true;
+                          break;
+                        }
+                      }
+                      if(current_in_use) break;
+                    }
+                    if(!current_in_use) break;
+                  }
+                  tiering_stats_.RemoveFromNumberListInPmem(evicted_level_number.number);
+
+                  /* 
+                   * 2) Flush pmem_skiplist to SST 
+                   * Copy from builder.cc
+                   */
+                  FileMetaData meta;
+                  meta.number = evicted_level_number.number;
+                  meta.file_size = 0;
+                  std::string fname = TableFileName(dbname_, meta.number);
+                  WritableFile* file;
+                  Status s = env_->NewWritableFile(fname, &file);
+                  if (!s.ok()) {
+                    return s;
+                  }
+                  TableBuilder* builder = new TableBuilder(options_, file);
+                  // printf("Compaction meta %d\n", meta.number);
+                  PmemIterator* pmem_iterator = new PmemIterator(meta.number, 
+                    options_.pmem_skiplist[meta.number % NUM_OF_SKIPLIST_MANAGER]);
+                  pmem_iterator->SeekToFirst();
+                  meta.smallest.DecodeFrom(pmem_iterator->key());
+                  for ( ; pmem_iterator->Valid() ; pmem_iterator->Next()) {
+                    Slice key = pmem_iterator->key();
+                    meta.largest.DecodeFrom(key);
+                    Slice value = pmem_iterator->value();
+                    builder->Add(key, value);
+                  }
+                  delete pmem_iterator;
+
+                  s = builder->Finish();
+                  if (s.ok()) {
+                    meta.file_size = builder->FileSize();
+                    assert(meta.file_size > 0);
+                  }
+                  delete builder;
+
+                  if (s.ok()) {
+                    s = file->Sync();
+                  }
+                  if (s.ok()) {
+                    s = file->Close();
+                  }
+                  delete file;
+                  file = nullptr;
+
+                  if (s.ok()) {
+                    // Verify that the table is usable
+                    Iterator* it = table_cache_->NewIterator(ReadOptions(),
+                                                    meta.number,
+                                                    meta.file_size);
+                    s = it->status();
+                    delete it;
+                  }
+                  /* 3) Stats */
+                  // NOTE: pending delete file from pmem_skiplist and tiering_stats
+                  // pending_deleted_number_in_pmem.push_back(evicted_level_number.number);
+                  mutex_.Lock();
+                  pmem_skiplist->DeleteFileWithCheckRef(evicted_level_number.number);
+                  tiering_stats_.DeleteFromSkiplistSet(evicted_level_number.number);
+                  tiering_stats_.InsertIntoFileSet(evicted_level_number.number);
+                  mutex_.Unlock();
+                  // printf("[DEBUG] End LRU tiering on %d %d\n", evicted_level_number.number, file_number);
+                }
+                need_file_creation = false;
+                need_file_creation = pmem_skiplist->IsFreeListEmpty() ? true : false;
+                if (need_file_creation) {
+                  printf("[WARNING][Compaction] already use LRU-tiering option. but temporarily need_file_creation\n");
+                  printf("file_number %d\n", file_number);
+                }
+                break;
               }
-            break;
-            case kColdDataTiering:
-              // TODO:
-            break;
-            case kLRUTiering:
-              // TODO:
-            break;
-            case kNoTiering:
-              // Continue false condition of need_file_creation
-            break;
-          }
+              case kNoTiering:
+                need_file_creation = is_freelist_empty ? true : false;
+                // if (need_file_creation)
+                //   printf("[WARNING][Compaction] already use no-tiering option. but temporarily need_file_creation\n");
+                break;
+            } 
+          break;
         }
         retain_flag = true;
         status = OpenCompactionOutputFile(compact, file_number, need_file_creation);
@@ -1303,9 +1405,9 @@ Status DBImpl::DoCompactionWork(CompactionState* compact) {
           case kSkiplist:
             pmem_skiplist = options_.pmem_skiplist[file_number % NUM_OF_SKIPLIST_MANAGER];
             if (options_.use_pmem_buffer) {
-              if(input->buffer_ptr() == nullptr) {
-                PmemBuffer* pmem_buffer = 
+              PmemBuffer* pmem_buffer =
                     options_.pmem_buffer[file_number % NUM_OF_SKIPLIST_MANAGER];
+              if(input->buffer_ptr() == nullptr) {
                 compact->builder->AddToBufferAndSkiplist(pmem_buffer, pmem_skiplist,
                                                     file_number, key, value);
                 if(!write_pmem_buffer) write_pmem_buffer = true;
@@ -1352,7 +1454,6 @@ Status DBImpl::DoCompactionWork(CompactionState* compact) {
           status = FinishCompactionOutputFile(compact, input, need_file_creation);
           need_file_creation = false;
           retain_flag = false;
-
           if (!status.ok()) {
             break;
           }
@@ -1433,32 +1534,42 @@ Status DBImpl::DoCompactionWork(CompactionState* compact) {
    * Delete FileSet or SkiplistSet
    */
   // L(i) & L(i+1)
+  // printf("clear info \n");
   for (int layer=0; layer<2; layer++) {
-    for (int i=0; i<compact->compaction->num_input_files(layer); i++) {
-      uint64_t file_number = compact->compaction->input(layer, i)->number;
-      if (tiering_stats_.IsInFileSet(file_number)) {
-        tiering_stats_.DeleteFromFileSet(file_number);
-      } else if (tiering_stats_.IsInSkiplistSet(file_number)) {
-        tiering_stats_.DeleteFromSkiplistSet(file_number);
-        // printf("Skiplist delete %d\n", file_number);
-        if (options_.sst_type == kPmemSST && 
+    std::vector<FileMetaData*>::iterator iter;
+    /* in file set */
+    for (iter = compact->compaction->inputs_in_fileset_[layer].begin(); 
+          iter != compact->compaction->inputs_in_fileset_[layer].end(); 
+          iter++ ) {
+      FileMetaData* tmp = *iter;
+      uint64_t file_number = tmp->number;
+      tiering_stats_.DeleteFromFileSet(file_number);
+    }
+    /* in skip list set */
+    for (iter = compact->compaction->inputs_in_skiplistset_[layer].begin(); 
+          iter != compact->compaction->inputs_in_skiplistset_[layer].end(); 
+          iter++ ) {
+      FileMetaData* tmp = *iter;
+      uint64_t file_number = tmp->number;
+      tiering_stats_.DeleteFromSkiplistSet(file_number);
+
+      if (options_.sst_type == kPmemSST && 
             options_.ds_type == kSkiplist) {
-          PmemSkiplist* pmem_skiplist = 
-                  options_.pmem_skiplist[file_number % NUM_OF_SKIPLIST_MANAGER];
-          pmem_skiplist->DeleteFile(file_number);
-          // DEBUG:
-          // if (pmem_skiplist->IsFreeListEmpty()) {
-          //   printf("DEBUG\n");
-          // }
-          if (options_.skiplist_cache) {
-            table_cache_->Evict(file_number);
-          }
+        PmemSkiplist* pmem_skiplist = 
+                options_.pmem_skiplist[file_number % NUM_OF_SKIPLIST_MANAGER];
+        pmem_skiplist->DeleteFile(file_number);
+
+        // PROGRESS: Cold_data, LRU => evict from tiering_stats
+        if (options_.tiering_option == kColdDataTiering ||
+            options_.tiering_option == kLRUTiering) {
+          tiering_stats_.RemoveFromNumberListInPmem(file_number);
         }
-      } else {
-        printf("[ERROR] Cannot seek file_number in both fileSet and skiplistSet\n");
+        if (options_.skiplist_cache) {
+          table_cache_->Evict(file_number);
+        }
       }
     }
-  }
+
   // printf("End background compaction\n");
   return status;
 }
@@ -1997,33 +2108,6 @@ Status DestroyDB(const std::string& dbname, const Options& options) {
         }
       }
     }
-    /* [JH]
-     * db_bench run open() twice.. 
-     * Thus, temp delete 
-     */
-    // env->DeleteFile("/home/hwan/pmem_dir/skiplist_manager_0");
-    // env->DeleteFile("/home/hwan/pmem_dir/skiplist_manager_1");
-    // env->DeleteFile("/home/hwan/pmem_dir/skiplist_manager_2");
-    // env->DeleteFile("/home/hwan/pmem_dir/skiplist_manager_3");
-    // env->DeleteFile("/home/hwan/pmem_dir/skiplist_manager_4");
-    // env->DeleteFile("/home/hwan/pmem_dir/skiplist_manager_5");
-    // env->DeleteFile("/home/hwan/pmem_dir/skiplist_manager_6");
-    // env->DeleteFile("/home/hwan/pmem_dir/skiplist_manager_7");
-    // env->DeleteFile("/home/hwan/pmem_dir/skiplist_manager_8");
-    // env->DeleteFile("/home/hwan/pmem_dir/skiplist_manager_9");
-
-    // Clear all
-    env->DeleteFile("/home/hwan/pmem_dir/pmem_hashmap_0");
-    env->DeleteFile("/home/hwan/pmem_dir/pmem_hashmap_1");
-    env->DeleteFile("/home/hwan/pmem_dir/pmem_hashmap_2");
-    env->DeleteFile("/home/hwan/pmem_dir/pmem_hashmap_3");
-    env->DeleteFile("/home/hwan/pmem_dir/pmem_hashmap_4");
-    env->DeleteFile("/home/hwan/pmem_dir/pmem_hashmap_5");
-    env->DeleteFile("/home/hwan/pmem_dir/pmem_hashmap_6");
-    env->DeleteFile("/home/hwan/pmem_dir/pmem_hashmap_7");
-    env->DeleteFile("/home/hwan/pmem_dir/pmem_hashmap_8");
-    env->DeleteFile("/home/hwan/pmem_dir/pmem_hashmap_9");
-
     env->UnlockFile(lock);  // Ignore error since state is already gone
     env->DeleteFile(lockname);
     env->DeleteDir(dbname);  // Ignore error in case dir contains other files

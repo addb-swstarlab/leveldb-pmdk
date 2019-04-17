@@ -44,7 +44,7 @@ Status BuildTable(const std::string& dbname,
   
   // Tiering trigger
   bool need_file_creation = pmem_skiplist->IsFreeListEmpty();
-  // if(need_file_creation) printf("[builder] is free list empty\n");
+  if(need_file_creation) printf("[builder] is free list empty\n");
 
   Status s;
   meta->file_size = 0;
@@ -106,9 +106,7 @@ Status BuildTable(const std::string& dbname,
       }
 
       // PROGRESS:
-      // options.InsertIntoSet(&options.file_set, file_number);
       tiering_stats->InsertIntoFileSet(file_number);
-      meta->which_set = kFileSet;
 
     } else if (sst_type == kPmemSST) {
 
@@ -162,10 +160,11 @@ Status BuildTable(const std::string& dbname,
       delete builder;
 
       // PROGRESS:
-      // options.InsertIntoSet(&options.skiplist_set, file_number);
       tiering_stats->InsertIntoSkiplistSet(file_number);
-      meta->which_set = kSkiplistSet;
-      
+      if (options.tiering_option == kColdDataTiering || 
+          options.tiering_option == kLRUTiering) {
+        tiering_stats->PushToNumberListInPmem(0, file_number);
+      }
     }
     
     if (s.ok() && meta->file_size > 0) {
@@ -174,9 +173,9 @@ Status BuildTable(const std::string& dbname,
       env->DeleteFile(fname);
     }
   }
-  // TODO: Minimize time to insertion
   // std::chrono::steady_clock::time_point end= std::chrono::steady_clock::now();
   // std::cout << "result = " << std::chrono::duration_cast<std::chrono::nanoseconds> (end - begin).count() <<std::endl;
+  // printf("Build Table End\n");
   return s;
 }
 

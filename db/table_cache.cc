@@ -206,10 +206,13 @@ Status TableCache::GetFromPmem(const Options& options,
   } else {
     // if (options_.skiplist_cache) {
       PmemIterator* pmem_iterator = options.pmem_internal_iterator[file_number % NUM_OF_SKIPLIST_MANAGER]; 
+      // pmem_iterator->Ref(file_number);
       pmem_iterator->SetIndex(file_number);
       pmem_iterator->Seek(k);
       Slice res_key = pmem_iterator->key();
-      (*saver)(arg, res_key, pmem_iterator->value());
+      Slice res_value = pmem_iterator->value();
+      // pmem_iterator->UnRef(file_number);
+      (*saver)(arg, res_key, res_value);
     // } else {
     //   PmemIterator* pmem_iterator = new PmemIterator(file_number, options.pmem_skiplist[file_number % NUM_OF_SKIPLIST_MANAGER]);
     //   pmem_iterator->Seek(k);

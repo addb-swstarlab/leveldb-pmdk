@@ -40,7 +40,7 @@ enum SSTMakerType {
   kPmemSST
 };
 enum TieringOption {
-  kSimpleLevelTiering,
+  kLeveledTiering,
   kColdDataTiering,
   kLRUTiering,
   kNoTiering

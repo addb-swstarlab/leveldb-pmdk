@@ -46,8 +46,8 @@
 #endif
 
 /* value 100bytes */
-#define NUM_OF_PRE_ALLOC_NODE 8140 // = Just pre-alloc
-#define NUM_OF_USE_ALLOC_NODE 8140 // = MAX_SKIPLIST_NODE_SIZE
+#define NUM_OF_PRE_ALLOC_NODE 28300 // = Just pre-alloc
+#define NUM_OF_USE_ALLOC_NODE 28300 // = MAX_SKIPLIST_NODE_SIZE
 
 #define PRE_ALLOC_KEY_SIZE 26 // 16
 #define STRING_PADDING 0 // \0

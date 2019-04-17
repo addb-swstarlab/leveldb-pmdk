@@ -31,10 +31,12 @@ namespace leveldb {
    */
   PmemIterator::PmemIterator(PmemSkiplist *pmem_skiplist) 
     : index_(0), pmem_skiplist_(pmem_skiplist), data_structure(kSkiplist) {
+    
   }
   PmemIterator::PmemIterator(int index, PmemSkiplist *pmem_skiplist) 
     : index_(index), pmem_skiplist_(pmem_skiplist), data_structure(kSkiplist) {
       // printf("[Constructor]New Iterator From Pmem %d\n", index_);
+    pmem_skiplist->Ref(index);
   }
   PmemIterator::PmemIterator(PmemHashmap* pmem_hashmap) 
     : index_(0), pmem_hashmap_(pmem_hashmap), data_structure(kHashmap) {
@@ -45,6 +47,9 @@ namespace leveldb {
   PmemIterator::~PmemIterator() {
     // printf("PmemIterator destructor %d\n", index_);
       // printf("[Destructor]Delete Iterator %d\n", index_);
+    
+    // PROGRESS: unref skip list
+    pmem_skiplist_->UnRef(index_);
   }
 
   void PmemIterator::Seek(const Slice& target) {
@@ -207,5 +212,12 @@ namespace leveldb {
   }
   void PmemIterator::SetCurrentEntry(PMEMoid* current_oid) {
     current_entry_ = (struct entry*)pmemobj_direct_latency(*current_oid);
+  }
+
+  void PmemIterator::Ref(uint64_t file_number) {
+    pmem_skiplist_->Ref(file_number);
+  }
+  void PmemIterator::UnRef(uint64_t file_number) {
+    pmem_skiplist_->UnRef(file_number);
   }
 } // namespace leveldb 

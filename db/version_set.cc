@@ -519,6 +519,8 @@ Status Version::Get(const Options& options_,
 
     // SSTMakerType sst_type = options_.sst_type;
 
+    std::set<uint64_t> dup_candidate_number;
+    std::set<uint64_t>::iterator dup_candidate_number_iter;
     for (uint32_t i = 0; i < num_files; ++i) {
       // printf("[VERSION_SET DEBUG %d]\n", i);
       if (last_file_read != nullptr && stats->seek_file == nullptr) {
@@ -539,24 +541,29 @@ Status Version::Get(const Options& options_,
       /*
        * SOLVE: Get operation 
        */
-      // bool is_in_skiplist_set = tiering_stats->IsInSkiplistSet(f->number);
-      // bool is_in_file_set = false;
-      // if (!is_in_skiplist_set) {
-      //   is_in_file_set = tiering_stats->IsInFileSet(f->number);
-      // } 
-      // if (!is_in_skiplist_set && !is_in_file_set) {
-      //   printf("[ERROR] cannot seek file_number in both file and skiplist set\n");
-      //   abort();
-      // }
-      
-      if (files[i]->which_set == kSkiplistSet) {
-        s = vset_->table_cache_->GetFromPmem(options_, f->number,
-                                   ikey, &saver, SaveValue);
-      } else if (files[i]->which_set == kFileSet) {
-        s = vset_->table_cache_->Get(options, f->number, f->file_size,
+      PmemSkiplist* pmem_skiplist = options_.pmem_skiplist[f->number % NUM_OF_SKIPLIST_MANAGER];
+      if (tiering_stats->IsInFileSet(f->number)) {
+        dup_candidate_number_iter = dup_candidate_number.find(f->number);
+        if (dup_candidate_number_iter == dup_candidate_number.end()) {
+          // printf("Get\n");
+          s = vset_->table_cache_->Get(options, f->number, f->file_size,
+                                      ikey, &saver, SaveValue);
+          dup_candidate_number.insert(f->number);
+        }
+      } else if ( tiering_stats->IsInSkiplistSet(f->number) &&
+          pmem_skiplist->CheckNumberIsInPmem(f->number) ) {
+        dup_candidate_number_iter = dup_candidate_number.find(f->number);
+        if (dup_candidate_number_iter == dup_candidate_number.end()) {
+          // printf("GetFromPmem %d", f->number);
+          s = vset_->table_cache_->GetFromPmem(options_, f->number,
                                     ikey, &saver, SaveValue);
+          // printf(" end\n");
+          dup_candidate_number.insert(f->number);
+        }
+      } else {
+        printf("[ERROR][VersionSet][Get] Cannot find %d\n", f->number);
       }
-      // printf("[Saver_state] %d\n", saver.state);
+
       if (!s.ok()) {
         return s;
       }
@@ -1275,7 +1282,7 @@ Status VersionSet::WriteSnapshot(log::Writer* log) {
     const std::vector<FileMetaData*>& files = current_->files_[level];
     for (size_t i = 0; i < files.size(); i++) {
       const FileMetaData* f = files[i];
-      edit.AddFile(level, f->number, f->file_size, f->smallest, f->largest, f->which_set);
+      edit.AddFile(level, f->number, f->file_size, f->smallest, f->largest);
     }
   }
 
@@ -1432,47 +1439,26 @@ Iterator* VersionSet::MakeInputIterator(Compaction* c, Tiering_stats* tiering_st
     // printf("Which %d\n", which);
     if (!c->inputs_[which].empty()) {
       if (c->level() + which == 0) { // Only L0 in Compaction between L0-L1
-        // if (c->inputs_[which].size() > 0) {
-        //   for (int i=0; i<c->inputs_[which].size(); i++) {
-        //     printf("[DEBUG1] fileNumber:%d\n", c->inputs_[which][i]->number);
-        //   }
-        // }
         const std::vector<FileMetaData*>& files = c->inputs_[which];
         for (size_t i = 0; i < files.size(); i++) {
-          // bool is_in_skiplist_set = tiering_stats->IsInSkiplistSet(files[i]->number);
-          // bool is_in_file_set = false;
-          // if (!is_in_skiplist_set) {
-          //   is_in_file_set = tiering_stats->IsInFileSet(files[i]->number);
-          // } 
-          // if (!is_in_skiplist_set && !is_in_file_set) {
-          //   printf("[ERROR] cannot seek file_number in both file and skiplist set\n");
-          //   abort();
-          // }
-          
-          if (files[i]->which_set == kSkiplistSet) {
-            list[num++] = table_cache_->NewIteratorFromPmem(
-                options, files[i]->number, files[i]->file_size);
-            // std::vector<FileMetaData*> files_;
-            // files_.push_back(files[i]);
-            // list[num++] = new Version::LevelFilesConcatIteratorFromPmem(
-            //   icmp_, options_->pmem_skiplist, &files_);
-          } else if (files[i]->which_set == kFileSet) {
+          uint64_t number = files[i]->number;
+          PmemSkiplist* pmem_skiplist = options_->pmem_skiplist[number % NUM_OF_SKIPLIST_MANAGER];
+          if (tiering_stats->IsInFileSet(number)) {
             list[num++] = table_cache_->NewIterator(
                 options, files[i]->number, files[i]->file_size);
+          } else if ( tiering_stats->IsInSkiplistSet(number) &&
+              pmem_skiplist->CheckNumberIsInPmem(number) ) {
+            list[num++] = table_cache_->NewIteratorFromPmem(
+                options, files[i]->number, files[i]->file_size);
+          } else {
+            printf("[ERROR][VersionSet][MakeInputIterator] Cannot find %d\n", number);
           }
         }
         // printf("num1: %d\n", num);
       } else { 
         // Create concatenating iterator for the files from this level
-        // printf("num2: %d, inputs_size: %d\n", num, c->inputs_[which].size());
-        // if (c->inputs_[which].size() > 0) {
-        //   for (int i=0; i<c->inputs_[which].size(); i++) {
-        //     printf("[DEBUG2] fileNumber:%d\n", c->inputs_[which][i]->number);
-        //   }
-        // }
         // printf("If\n");
         if (c->inputs_in_fileset_[which].size() != 0) {
-          // printf("fileset\n");
           list[num++] = NewTwoLevelIterator(
               new Version::LevelFileNumIterator(icmp_, &c->inputs_in_fileset_[which]),
               &GetFileIterator, table_cache_, options);
@@ -1494,7 +1480,7 @@ Iterator* VersionSet::MakeInputIterator(Compaction* c, Tiering_stats* tiering_st
   return result;
 }
 
-Compaction* VersionSet::PickCompaction() {
+Compaction* VersionSet::PickCompaction(Tiering_stats* tiering_stats) {
   Compaction* c;
   int level;
 
@@ -1550,13 +1536,22 @@ Compaction* VersionSet::PickCompaction() {
     std::vector<FileMetaData*>::iterator iter;
     for (iter = c->inputs_[layer].begin(); iter != c->inputs_[layer].end(); iter++ ) {
       FileMetaData* tmp = *iter;
-      if (tmp->which_set == kFileSet) {
+      uint64_t number = tmp->number;
+      
+      PmemSkiplist* pmem_skiplist = options_->pmem_skiplist[number % NUM_OF_SKIPLIST_MANAGER];        
+      if (tiering_stats->IsInFileSet(number)) {
         c->inputs_in_fileset_[layer].push_back(*iter);
-      } else if (tmp->which_set == kSkiplistSet) {
+      } else if ( tiering_stats->IsInSkiplistSet(number) &&
+          pmem_skiplist->CheckNumberIsInPmem(number) ) {
+        // TEST:
+        // pmem_skiplist->Ref(number);
         c->inputs_in_skiplistset_[layer].push_back(*iter);
+      } else {
+        printf("[ERROR][VersionSet][PickCompaction] Cannot find %d\n", number);
       }
     }
   }
+  // printf("\n");
 
   return c;
 }

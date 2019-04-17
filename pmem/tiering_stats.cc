@@ -5,59 +5,98 @@
 
 namespace leveldb {
 
-  bool Tiering_stats::IsInFileSet(uint64_t file_number) {
-    // printf("IsInFileSet\n");
-    std::set<uint64_t>::iterator iter = file_set.find(file_number);
+  bool Tiering_stats::IsInFileSet(uint64_t number) {
+    std::set<uint64_t>::iterator iter = file_set.find(number);
     if (iter != file_set.end()) {
       return true;
     }
     return false;
   }
-
-  bool Tiering_stats::IsInSkiplistSet(uint64_t file_number) {
-    // printf("IsInSkiplistSet\n");
-    std::set<uint64_t>::iterator iter = skiplist_set.find(file_number);
+  bool Tiering_stats::IsInSkiplistSet(uint64_t number) {
+    std::set<uint64_t>::iterator iter = skiplist_set.find(number);
     if (iter != skiplist_set.end()) {
       return true;
     }
     return false;
   }
 
-  void InsertIntoSet(std::set<uint64_t>* set, uint64_t file_number) {
-    set->insert(file_number);
+  void InsertIntoSet(std::set<uint64_t>* set, uint64_t number) {
+    std::pair<std::set<uint64_t>::iterator, bool> pair = set->insert(number);
+    if (!(pair.second == true)) {
+      printf("[WARN][InsertIntoSet] cannot insert into set\n");
+    }
   }
-  void Tiering_stats::InsertIntoFileSet(uint64_t file_number) {
-    // printf("InsertIntoFileSet %d\n", file_number);
-    InsertIntoSet(&file_set, file_number);
+  void Tiering_stats::InsertIntoFileSet(uint64_t number) {
+    InsertIntoSet(&file_set, number);
   }
-  void Tiering_stats::InsertIntoSkiplistSet(uint64_t file_number) {
-    // printf("InsertIntoSkiplistSet %d\n", file_number);
-    InsertIntoSet(&skiplist_set, file_number);
+  void Tiering_stats::InsertIntoSkiplistSet(uint64_t number) {
+    InsertIntoSet(&skiplist_set, number);
   }
   
-  int DeleteFromSet(std::set<uint64_t>* set, uint64_t file_number) {
-    return set->erase(file_number);
+  int DeleteFromSet(std::set<uint64_t>* set, uint64_t number) {
+    return set->erase(number);
   }
-  int Tiering_stats::DeleteFromFileSet(uint64_t file_number) {
-    // printf("DeleteFromFileSet %d\n", file_number);
-    return DeleteFromSet(&file_set, file_number);
+  void Tiering_stats::DeleteFromFileSet(uint64_t number) {
+    if (DeleteFromSet(&file_set, number) <= 0) {
+      printf("[WARN][DeleteFromFileSet] no deleted_file %d in file set\n", number);
+    }
   }
-  int Tiering_stats::DeleteFromSkiplistSet(uint64_t file_number) {
-    // printf("DeleteFromSkiplistSet %d\n", file_number);
-    return DeleteFromSet(&skiplist_set, file_number);
+  void Tiering_stats::DeleteFromSkiplistSet(uint64_t number) {
+    if (DeleteFromSet(&skiplist_set, number) <= 0) {
+      // printf("[WARN][DeleteFromSkiplistSet] no deleted_file %d in skiplist set\n", number);
+      DeleteFromFileSet(number);
+    }
   }
 
-  void Tiering_stats::PushToFileNumberList(uint64_t file_number) {
-    LRU_fileNumber_list.push_back(file_number);
+  void Tiering_stats::PushToNumberListInPmem(int level, uint64_t number) {
+    level_number ln;
+    ln.level = level;
+    ln.number = number;
+    LRU_fileNumber_list[number % NUM_OF_SKIPLIST_MANAGER].push_back(ln);
   }
-  uint64_t Tiering_stats::PopFromFileNumberList(uint64_t file_number) {
-    uint64_t first = LRU_fileNumber_list.front();
-    LRU_fileNumber_list.pop_front();
+  level_number Tiering_stats::PopFromNumberListInPmem(uint64_t number) {
+    int index = number % NUM_OF_SKIPLIST_MANAGER;
+    if (LRU_fileNumber_list[index].size() == 0) {
+      printf("[WARNING][Tiering_stats][PopFromNumberListInPmem] List is empty..\n");
+    }
+    level_number first = LRU_fileNumber_list[index].front();
+    LRU_fileNumber_list[index].pop_front();
     return first;
   }
-  void Tiering_stats::RemoveFromFileNumberList(uint64_t file_number) {
-    LRU_fileNumber_list.remove(file_number);
+  void Tiering_stats::RemoveFromNumberListInPmem(uint64_t number) {
+    int index = number % NUM_OF_SKIPLIST_MANAGER;
+    std::list<level_number>::iterator iter = LRU_fileNumber_list[index].begin();
+    while ( iter != LRU_fileNumber_list[index].end()) {
+      if (iter->number == number) {
+          LRU_fileNumber_list[index].erase(iter);
+        // if (iter->level == level ) {
+        // } else {
+        //   printf("[WARNING][RemoveFromNumberListInPmem] number is same. but level is different\n");
+        // }
+        break;
+      }
+      iter++;
+    }
   }
+  level_number Tiering_stats::GetElementFromNumberListInPmem(uint64_t number, uint64_t n) {
+    int index = number % NUM_OF_SKIPLIST_MANAGER;
+    // printf("%d] size %d \n",n, LRU_fileNumber_list[index].size());
+    std::list<level_number>::iterator iter = 
+            LRU_fileNumber_list[index].begin();
+    uint64_t res = 0;
+    if (LRU_fileNumber_list[index].size() > n) {
+      for (int i=0; i<n; i++) {
+        iter++;
+      }
+      // res = *iter;
+      return *iter;
+    } else {
+      printf("[WARNING][GetElementFromNumberListInPmem]%d] n %d > size %d ..\n", number, n, LRU_fileNumber_list[index].size());
+      return LRU_fileNumber_list[index].front();
+    }
+  }
+
+
   uint64_t Tiering_stats::GetFileSetSize() {
     return file_set.size();
   }

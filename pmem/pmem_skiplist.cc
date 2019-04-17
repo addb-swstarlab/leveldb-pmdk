@@ -205,7 +205,8 @@ namespace leveldb {
     int result = skiplist_map_insert_by_ptr(GetPool(), 
                                       skiplists_[actual_index], 
                                       &current_node[actual_index],
-                                      key_ptr, buffer_ptr,
+                                      // key_ptr, buffer_ptr,
+                                      nullptr, buffer_ptr, // TEST:
                                       key_len, actual_index);
     if(result) { 
       fprintf(stderr, "[ERROR] insert_by_oid %d\n", file_number);  
@@ -281,15 +282,143 @@ namespace leveldb {
     return GetFreeListSize() == 0 || 
            GetAllocatedMapSize() >= SKIPLIST_MANAGER_LIST_SIZE;
   }
+  // PROGRESS:
+  bool PmemSkiplist::IsFreeListEmptyWarning() {
+    bool res = GetFreeListSize() < FREE_LIST_WARNING_BOUNDARY; 
+    if (res) {
+      GarbageCollection(); // Clear untouched garbage in pending_deletion_files
+      res = GetFreeListSize() < FREE_LIST_WARNING_BOUNDARY;
+    }
+    return res;
+  }
 
   /* Dynamic allocation */
-  void PmemSkiplist::DeleteFile(uint64_t file_number) {
-    // printf("[DeleteFile] file_number %d\n", file_number);
-    uint64_t old_index = GetIndexFromAllocatedMap(&allocated_map_, file_number);
-    skiplist_map_clear(GetPool(), skiplists_[old_index]);
-    ResetCurrentNodeToHeader(old_index);
-    EraseAllocatedMap(&allocated_map_, file_number);
-    PushFreeList(&free_list_, old_index);
+  void PmemSkiplist::ResetInfo(uint64_t index, uint64_t file_number) {
+    skiplist_map_clear(GetPool(), skiplists_[index]);
+    ResetCurrentNodeToHeader(index);
+    EraseAllocatedMap(&allocated_map_, file_number); // file_number -> index
+    PushFreeList(&free_list_, index);
   }
+  void PmemSkiplist::DeleteFile(uint64_t file_number) {
+    uint64_t old_index = GetIndexFromAllocatedMap(&allocated_map_, file_number);
+    // printf("[DeleteFile] file_number %d index %d\n", file_number, old_index);
+    ResetInfo(old_index, file_number);
+    // clear1) pending files
+    std::set<uint64_t>::iterator set_iter = pending_deletion_files_.find(file_number);
+    if (set_iter != pending_deletion_files_.end()) {
+      pending_deletion_files_.erase(set_iter);
+    } 
+    // clear2) referenced
+    referenced_files_.remove(file_number);
+  }
+  // PROGRESS: Check pending_deletion_list (ref_count)
+  void PmemSkiplist::DeleteFileWithCheckRef(uint64_t file_number) {
+    uint64_t old_index = GetIndexFromAllocatedMap(&allocated_map_, file_number);
+    // printf("[DeleteFileWithCheckRef] file_number %d index %d\n", file_number, old_index);
+    std::list<uint64_t>::iterator iter = referenced_files_.begin();
+    bool seek_in_referenced_list = false;
+    for ( ; iter != referenced_files_.end(); iter++) {
+      if (*iter == file_number) {
+        // printf("[%d %d]\n", *iter, file_number);
+        seek_in_referenced_list = true;
+        break;
+      }
+    }
+    // NOTE: carefully delete skip list due to synchronization issues.
+    if (!seek_in_referenced_list) {
+      // printf("DeleteFile imm %d\n", file_number);
+      ResetInfo(old_index, file_number);
+    } else {
+      printf("Insert %d\n", file_number);
+      pending_deletion_files_.insert(file_number);
+    }
+  }
+
+  /* PROGRESS: */
+  void PmemSkiplist::Ref(uint64_t file_number) {
+    // printf("Ref number %d\n", file_number);
+    referenced_files_.push_back(file_number);
+  }
+  void PmemSkiplist::UnRef(uint64_t file_number) {
+    // printf("UnRef number %d\n", file_number);
+    uint64_t index = GetIndexFromAllocatedMap(&allocated_map_, file_number);
+    std::list<uint64_t>::iterator iter = referenced_files_.begin();
+    // First Seek 
+    int count = 0;
+    for ( ; iter != referenced_files_.end(); iter++) {
+      if (*iter == file_number) {
+        // printf("[Unref] %d %d\n", *iter, file_number);
+        count++;
+        referenced_files_.erase(iter);
+        break;
+      } 
+    }
+    // DEBUG: special case] UnRef -> Ref
+    if (count == 0) {
+      printf("[WARN]Unref %d, but count = 0\n", count);
+    }
+    // Second seek
+    std::set<uint64_t>::iterator set_iter = pending_deletion_files_.find(file_number);
+    if (set_iter != pending_deletion_files_.end()) {
+      bool seek_in_referenced_files = false;
+      printf("%d] ", file_number % 10);
+      for (iter = referenced_files_.begin(); 
+          iter != referenced_files_.end(); 
+          iter++) {
+        printf("%d ", *iter);
+        if (*iter == file_number) {
+          printf("pending yet [[%d %d]]\n", *iter, file_number);
+          seek_in_referenced_files = true;
+          break;
+        }
+      }
+      printf("\n");
+      if (!seek_in_referenced_files) {
+        pending_deletion_files_.erase(set_iter);
+        ResetInfo(index, file_number);
+        printf("[SUCCESS] erase pending %d\n", file_number);
+      } else {
+        printf("[FAILED] pending yet\n");
+      }
+    }
+  }
+  // PROGRESS:
+  void PmemSkiplist::GarbageCollection() {
+    // printf("[GC]\n");
+    std::set<uint64_t>::iterator set_iter;
+    std::list<uint64_t>::iterator list_iter;
+    for ( set_iter = pending_deletion_files_.begin();
+          set_iter != pending_deletion_files_.end();
+          ) {
+      list_iter = std::find(referenced_files_.begin(), 
+                            referenced_files_.end(), *set_iter);
+      if (list_iter == referenced_files_.end()) {
+        // Cannot find = GC candidate
+        printf("GC %d\n", *set_iter);
+        uint64_t index = GetIndexFromAllocatedMap(&allocated_map_, *set_iter);
+        ResetInfo(index, *set_iter);
+        set_iter = pending_deletion_files_.erase(set_iter);
+      } else {
+        // printf("[[%d %d]]\n", *set_iter, *list_iter);
+        std::list<uint64_t>::iterator iter = referenced_files_.begin();
+        int count = 0;
+        for ( ; iter != referenced_files_.end(); iter++) {
+            // printf("[[%d %d]]\n", *iter, index);
+          if (*iter == *list_iter) {
+            count++;
+          }
+        }
+        printf("[[%d %d]] - %d\n", *set_iter, *list_iter, count);
+        ++set_iter;
+      }
+    }
+    // printf("[GC End]\n");
+  }
+
+  /* Check whether skiplist is valid in a specific version */
+  bool PmemSkiplist::CheckNumberIsInPmem(uint64_t file_number) {
+    return CheckMapValidation(&allocated_map_, file_number);
+  }
+
 
 } // namespace leveldb 

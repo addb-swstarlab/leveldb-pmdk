@@ -7,6 +7,8 @@
 
 #include <list>
 #include <map>
+#include <set>
+#include <algorithm> // std::find
 
 #include "pmem/layout.h"
 #include "pmem/ds/skiplist_buffer.h"
@@ -89,9 +91,18 @@ namespace leveldb {
     void ResetCurrentNodeToHeader(uint64_t index);
 
     bool IsFreeListEmpty();
+    bool IsFreeListEmptyWarning();
 
     /* Dynamic allocation*/
+    void ResetInfo(uint64_t index, uint64_t file_number);
     void DeleteFile(uint64_t file_number);
+    void DeleteFileWithCheckRef(uint64_t file_number);
+    void Ref(uint64_t file_number);
+    void UnRef(uint64_t file_number);
+    void GarbageCollection();
+
+    /* Check whether skiplist is valid in a specific version */
+    bool CheckNumberIsInPmem(uint64_t file_number);
 
    private:
     struct root_skiplist* root_skiplist_map_;
@@ -108,6 +119,10 @@ namespace leveldb {
     /* Dynamic allocation */
     std::list<uint64_t> free_list_;
     std::map<uint64_t, uint64_t> allocated_map_; // [ file_number -> index ]
+
+    /* Pending deletion files by ref_count */
+    std::set<uint64_t> pending_deletion_files_;
+    std::list<uint64_t> referenced_files_;
   };
   
 } // namespace leveldb

@@ -74,6 +74,9 @@ namespace leveldb {
     void SetCurrentNode(PMEMoid* current_oid);  // for skiplist
     void SetCurrentEntry(PMEMoid* current_oid); // for hashmap
 
+    void Ref(uint64_t file_number);
+    void UnRef(uint64_t file_number);
+
    private:
     PmemSkiplist* pmem_skiplist_;
     PmemHashmap* pmem_hashmap_;

@@ -28,11 +28,6 @@
 // #define SKIPLIST_MANAGER_POOL_SIZE 300 * (1 << 20)
 #define SKIPLIST_MANAGER_POOL_SIZE 2 * (1 << 30)
 /* 
- * 2GB_pool : 290_skiplists - 28300_nodes
- * 
- */
-
-/* 
  * EVALUATION 1: write_buffer_size = 4MB (default)
  * value 100bytes - 28300 (28221) MAX_LIST_SIZE 290
  * value 200bytes - 16400 (16353) 500
@@ -48,9 +43,9 @@
  * value 8KB - 8140 (8139) 1000
  * value 16KB - 4090 (4083) 2000
  */
-#define MAX_SKIPLIST_NODE_SIZE 8140 // Compaction Output file max
+#define MAX_SKIPLIST_NODE_SIZE 28300 // Compaction Output file max
 // #define SKIPLIST_BULK_INSERT_NUM 10
-#define SKIPLIST_MANAGER_LIST_SIZE 3500
+#define SKIPLIST_MANAGER_LIST_SIZE 290
 // #define SKIPLIST_MANAGER_LIST_SIZE 10
 
 #define NUM_OF_SKIPLIST_MANAGER 10
@@ -72,6 +67,8 @@
 #define NUM_OF_CONTENTS 400
 #define EACH_CONTENT_SIZE 4 << 20 // FIXME: 4MB
 #define MAX_CONTENTS_SIZE (NUM_OF_CONTENTS * EACH_CONTENT_SIZE)
+
+#define FREE_LIST_WARNING_BOUNDARY 10
 
 // PROGRESS: Hashmap
 #define HASHMAP_PATH "/home/hwan/pmem_dir/pmem_hashmap"

@@ -31,6 +31,7 @@ struct TableBuilder::Rep {
   FilterBlockBuilder* filter_block;
   // JH
   char* start_offset;
+  uint64_t buffer_offset;
   bool first_addition_flag;
   std::string buffer;
 
@@ -59,6 +60,7 @@ struct TableBuilder::Rep {
         closed(false),
         // JH
         start_offset(nullptr),
+        buffer_offset(0),
         first_addition_flag(true),
 
         filter_block(opt.filter_policy == nullptr ? nullptr
@@ -78,6 +80,7 @@ TableBuilder::TableBuilder(const Options& options, WritableFile* file)
 TableBuilder::~TableBuilder() {
   assert(rep_->closed);  // Catch errors where caller forgot to call Finish()
   delete rep_->filter_block;
+  rep_->buffer.clear();
   delete rep_;
 }
 
@@ -186,22 +189,25 @@ void TableBuilder::AddToBufferAndSkiplist(
   int total_length = GetEncodedLength(key.size(), value.size());
 
   // Add to pmem_skiplist
-  pmem_skiplist->Insert((char *)key.data(), r->start_offset + r->offset, 
+  pmem_skiplist->Insert((char *)key.data(), r->start_offset + r->buffer_offset, 
                         key.size(), number);
 
+  // printf("start_offset %d '%d', total_length\n", r->start_offset, total_length);
   r->offset += (total_length);
+  r->buffer_offset += (total_length);
 }
 void TableBuilder::FlushBufferToPmemBuffer(PmemBuffer* pmem_buffer, uint64_t number) {
   Rep* r = rep_;
   assert(!r->closed);
   if (!ok()) return;
   if (r->buffer.size() >= r->options.write_buffer_size) {
-    printf("[ERROR] table_builder buffer size is over!! '%d'\n", r->buffer.size());
+    printf("[WARN] table_builder buffer size is over!! '%d'\n", r->buffer.size());
     printf("[Table_builder] %d\n", r->num_entries);
-    abort();
+    // abort();
   }
   Slice buffer_wrapper(r->buffer);
   // printf("[DEBUG %d] '%s'\n",buffer_wrapper.size(), buffer_wrapper.data()); // 3,555,846
+  // printf("[Sequential_write] file_number %d\n", number);
   pmem_buffer->SequentialWrite(number, buffer_wrapper);
 }
 void TableBuilder::AddToSkiplistByPtr(PmemSkiplist* pmem_skiplist, uint64_t number,
