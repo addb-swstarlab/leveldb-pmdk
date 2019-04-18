@@ -198,16 +198,14 @@ namespace leveldb {
       abort();
     } 
   }
-  void PmemSkiplist::InsertByPtr(void* key_ptr, char* buffer_ptr, 
-                                      int key_len, uint64_t file_number) {
+  void PmemSkiplist::InsertByPtr(char* buffer_ptr,
+                                 int key_len, uint64_t file_number) {
     uint64_t actual_index = GetActualIndex(&free_list_, &allocated_map_, 
                                                   file_number);
     int result = skiplist_map_insert_by_ptr(GetPool(), 
                                       skiplists_[actual_index], 
                                       &current_node[actual_index],
-                                      // key_ptr, buffer_ptr,
-                                      nullptr, buffer_ptr, // TEST:
-                                      key_len, actual_index);
+                                      buffer_ptr, key_len, actual_index);
     if(result) { 
       fprintf(stderr, "[ERROR] insert_by_oid %d\n", file_number);  
       abort();

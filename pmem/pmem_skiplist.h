@@ -67,8 +67,7 @@ namespace leveldb {
     /* Wrapper functions */
     void Insert(char* key, char* buffer_ptr, 
                       int key_len, uint64_t file_number);
-    void InsertByPtr(void* key_ptr, char* buffer_ptr, int key_len, 
-                      uint64_t file_number);
+    void InsertByPtr(char* buffer_ptr, int key_len, uint64_t file_number);
     void InsertNullNode(uint64_t file_number);
     // [Deprecated]
     // char* Get(int index, char *key);

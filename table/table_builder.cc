@@ -212,7 +212,7 @@ void TableBuilder::FlushBufferToPmemBuffer(PmemBuffer* pmem_buffer, uint64_t num
 }
 void TableBuilder::AddToSkiplistByPtr(PmemSkiplist* pmem_skiplist, uint64_t number,
                     const Slice& key, const Slice& value,
-                    void* key_ptr, char* buffer_ptr) {
+                    char* buffer_ptr) {
   Rep* r = rep_;
   assert(!r->closed);
   if (!ok()) return;
@@ -223,7 +223,7 @@ void TableBuilder::AddToSkiplistByPtr(PmemSkiplist* pmem_skiplist, uint64_t numb
   r->num_entries++;
   r->offset += (key.size() + value.size());
 
-  pmem_skiplist->InsertByPtr(key_ptr, buffer_ptr, key.size(), number);
+  pmem_skiplist->InsertByPtr(buffer_ptr, key.size(), number);
 }
 
 

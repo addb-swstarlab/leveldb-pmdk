@@ -1138,7 +1138,7 @@ Status DBImpl::DoCompactionWork(CompactionState* compact) {
 
   /* Tiering trigger */
   bool write_pmem_buffer = false;  // flag that store contents into pmem
-  bool retain_flag = false;
+  bool maintain_flag = false;
   bool need_file_creation = false; // flag that store contents as SST file
   bool leveled_trigger = false;    // Opt1
 
@@ -1194,7 +1194,7 @@ Status DBImpl::DoCompactionWork(CompactionState* compact) {
       status = FinishCompactionOutputFile(compact, input, need_file_creation);
       // reset tiering-trigger flag
       need_file_creation = false;
-      retain_flag = false;
+      maintain_flag = false;
       if (!status.ok()) {
         break;
       }
@@ -1248,7 +1248,7 @@ Status DBImpl::DoCompactionWork(CompactionState* compact) {
 
     if (!drop) {
       // Open output file if necessary
-      if (compact->builder == nullptr && !retain_flag ) {
+      if (compact->builder == nullptr && !maintain_flag ) {
         uint64_t file_number = versions_->NewFileNumber();
 
         /* Check tiering conditions */
@@ -1371,7 +1371,7 @@ Status DBImpl::DoCompactionWork(CompactionState* compact) {
             } 
           break;
         }
-        retain_flag = true;
+        maintain_flag = true;
         status = OpenCompactionOutputFile(compact, file_number, need_file_creation);
         if (!status.ok()) {
           break;
@@ -1383,7 +1383,7 @@ Status DBImpl::DoCompactionWork(CompactionState* compact) {
       compact->current_output()->largest.DecodeFrom(key);
 
       Slice value = input->value();
-      if (sst_type == kFileDescriptorSST || (need_file_creation && retain_flag)) {
+      if (sst_type == kFileDescriptorSST || (need_file_creation && maintain_flag)) {
         compact->builder->Add(key, value);
 
         // Close output file if it is big enough
@@ -1391,7 +1391,7 @@ Status DBImpl::DoCompactionWork(CompactionState* compact) {
             compact->compaction->MaxOutputFileSize()) {
           status = FinishCompactionOutputFile(compact, input, need_file_creation);
           need_file_creation = false;
-          retain_flag = false;
+          maintain_flag = false;
 
           if (!status.ok()) {
             break;
@@ -1413,8 +1413,7 @@ Status DBImpl::DoCompactionWork(CompactionState* compact) {
                 if(!write_pmem_buffer) write_pmem_buffer = true;
               } else {
                 compact->builder->AddToSkiplistByPtr (pmem_skiplist,
-                              file_number, key, value,
-                              input->key_ptr(), input->buffer_ptr());
+                              file_number, key, value, input->buffer_ptr());
               }
             } else {
               // Deprecated in this version
@@ -1453,7 +1452,7 @@ Status DBImpl::DoCompactionWork(CompactionState* compact) {
           }
           status = FinishCompactionOutputFile(compact, input, need_file_creation);
           need_file_creation = false;
-          retain_flag = false;
+          maintain_flag = false;
           if (!status.ok()) {
             break;
           }
@@ -1480,7 +1479,7 @@ Status DBImpl::DoCompactionWork(CompactionState* compact) {
     }
     status = FinishCompactionOutputFile(compact, input, need_file_creation);
     need_file_creation = false;
-    retain_flag = false;
+    maintain_flag = false;
   }
   if (status.ok()) {
     status = input->status();
@@ -1569,7 +1568,7 @@ Status DBImpl::DoCompactionWork(CompactionState* compact) {
         }
       }
     }
-
+  }
   // printf("End background compaction\n");
   return status;
 }

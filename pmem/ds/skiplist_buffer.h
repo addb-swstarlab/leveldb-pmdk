@@ -93,7 +93,7 @@ int skiplist_map_insert(PMEMobjpool* pop,
 int skiplist_map_insert_by_ptr(PMEMobjpool* pop, 
 		TOID(struct skiplist_map_node) map, 
 		TOID(struct skiplist_map_node)* current_node,
-		void* key_ptr, char* buffer_ptr, int key_len, int index);
+		char* buffer_ptr, int key_len, int index);
 int skiplist_map_insert_null_node(PMEMobjpool* pop, 
 		TOID(struct skiplist_map_node) map, 
 		TOID(struct skiplist_map_node)* current_node,

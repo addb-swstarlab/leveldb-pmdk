@@ -263,7 +263,7 @@ int skiplist_map_insert(PMEMobjpool* pop,
 int skiplist_map_insert_by_ptr(PMEMobjpool* pop, 
 											TOID(struct skiplist_map_node) map,
 											TOID(struct skiplist_map_node) *current_node, 
-											void* key_ptr, char* buffer_ptr, int key_len, int index) {
+											char* buffer_ptr, int key_len, int index) {
 	int ret = 0;
 	TOID(struct skiplist_map_node) new_node = D_RW(*current_node)->next[0];
 	if (TOID_IS_NULL(new_node) || TOID_EQUALS(new_node, NULL_NODE)) {
