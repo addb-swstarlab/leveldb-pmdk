@@ -24,6 +24,8 @@
 #define SKIPLIST_MANAGER_PATH_7 "/home/hwan/pmem_dir/skiplist_manager_7"
 #define SKIPLIST_MANAGER_PATH_8 "/home/hwan/pmem_dir/skiplist_manager_8"
 #define SKIPLIST_MANAGER_PATH_9 "/home/hwan/pmem_dir/skiplist_manager_9"
+#define SKIPLIST_MANAGER_PATH_10 "/home/hwan/pmem_dir/skiplist_manager_10"
+#define SKIPLIST_MANAGER_PATH_11 "/home/hwan/pmem_dir/skiplist_manager_11"
 
 // #define SKIPLIST_MANAGER_POOL_SIZE 300 * (1 << 20)
 #define SKIPLIST_MANAGER_POOL_SIZE 2 * (1 << 30)
@@ -43,12 +45,15 @@
  * value 8KB - 8140 (8139) 1000
  * value 16KB - 4090 (4083) 2000
  */
-#define MAX_SKIPLIST_NODE_SIZE 28300 // Compaction Output file max
+// #define MAX_SKIPLIST_NODE_SIZE 28300 // Compaction Output file max
 // #define SKIPLIST_BULK_INSERT_NUM 10
-#define SKIPLIST_MANAGER_LIST_SIZE 290
-// #define SKIPLIST_MANAGER_LIST_SIZE 10
+// #define SKIPLIST_MANAGER_LIST_SIZE 290
+// for YCSB
+#define MAX_SKIPLIST_NODE_SIZE 58830 // Compaction Output file max
+#define SKIPLIST_MANAGER_LIST_SIZE 140
 
 #define NUM_OF_SKIPLIST_MANAGER 10
+// #define NUM_OF_SKIPLIST_MANAGER 12
 
 #define BUFFER_PATH "/home/hwan/pmem_dir/pmem_buffer"
 #define BUFFER_PATH_0 "/home/hwan/pmem_dir/pmem_buffer_0"
@@ -61,10 +66,18 @@
 #define BUFFER_PATH_7 "/home/hwan/pmem_dir/pmem_buffer_7"
 #define BUFFER_PATH_8 "/home/hwan/pmem_dir/pmem_buffer_8"
 #define BUFFER_PATH_9 "/home/hwan/pmem_dir/pmem_buffer_9"
+#define BUFFER_PATH_10 "/home/hwan/pmem_dir/pmem_buffer_10"
+#define BUFFER_PATH_11 "/home/hwan/pmem_dir/pmem_buffer_11"
+#define BUFFER_PATH_12 "/home/hwan/pmem_dir/pmem_buffer_12"
+#define BUFFER_PATH_13 "/home/hwan/pmem_dir/pmem_buffer_13"
+#define BUFFER_PATH_14 "/home/hwan/pmem_dir/pmem_buffer_14"
 
-#define BUFFER_POOL_SIZE 2.5 * (1 << 30)
+// #define BUFFER_POOL_SIZE 2.5 * (1 << 30)
+// #define BUFFER_POOL_SIZE 2684354560
+#define BUFFER_POOL_SIZE 2 * (1 << 30)
 #define NUM_OF_BUFFER 10
-#define NUM_OF_CONTENTS 400
+// #define NUM_OF_BUFFER 13
+#define NUM_OF_CONTENTS 350
 #define EACH_CONTENT_SIZE 4 << 20 // FIXME: 4MB
 #define MAX_CONTENTS_SIZE (NUM_OF_CONTENTS * EACH_CONTENT_SIZE)
 

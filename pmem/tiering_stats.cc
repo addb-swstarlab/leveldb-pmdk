@@ -54,25 +54,22 @@ namespace leveldb {
     ln.number = number;
     LRU_fileNumber_list[number % NUM_OF_SKIPLIST_MANAGER].push_back(ln);
   }
-  level_number Tiering_stats::PopFromNumberListInPmem(uint64_t number) {
-    int index = number % NUM_OF_SKIPLIST_MANAGER;
-    if (LRU_fileNumber_list[index].size() == 0) {
-      printf("[WARNING][Tiering_stats][PopFromNumberListInPmem] List is empty..\n");
-    }
-    level_number first = LRU_fileNumber_list[index].front();
-    LRU_fileNumber_list[index].pop_front();
-    return first;
-  }
+  /* Deprecated function */
+  // level_number Tiering_stats::PopFromNumberListInPmem(uint64_t number) {
+  //   int index = number % NUM_OF_SKIPLIST_MANAGER;
+  //   if (LRU_fileNumber_list[index].size() == 0) {
+  //     printf("[WARNING][Tiering_stats][PopFromNumberListInPmem] List is empty..\n");
+  //   }
+  //   level_number first = LRU_fileNumber_list[index].front();
+  //   LRU_fileNumber_list[index].pop_front();
+  //   return first;
+  // }
   void Tiering_stats::RemoveFromNumberListInPmem(uint64_t number) {
     int index = number % NUM_OF_SKIPLIST_MANAGER;
     std::list<level_number>::iterator iter = LRU_fileNumber_list[index].begin();
     while ( iter != LRU_fileNumber_list[index].end()) {
       if (iter->number == number) {
           LRU_fileNumber_list[index].erase(iter);
-        // if (iter->level == level ) {
-        // } else {
-        //   printf("[WARNING][RemoveFromNumberListInPmem] number is same. but level is different\n");
-        // }
         break;
       }
       iter++;

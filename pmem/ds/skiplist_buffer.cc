@@ -237,6 +237,29 @@ static void skiplist_map_insert_find(PMEMobjpool* pop,
 	}
 }
 /*
+ * skiplist_map_create_insert -- (internal) inserts an empty key-value pair 
+ * into the map. Just pre-allocate new-node and key&value area
+ * return:  0 = finish all job
+ * 					1 = error
+ */
+int skiplist_map_create_insert(PMEMobjpool* pop, 
+															TOID(struct skiplist_map_node) map) {
+	int ret = 0;
+	TOID(struct skiplist_map_node) new_node;
+	TOID(struct skiplist_map_node) path[SKIPLIST_LEVELS_NUM];
+
+	TX_BEGIN(pop) {
+		new_node = TX_ZNEW(struct skiplist_map_node);
+		D_RW(new_node)->entry.buffer_ptr = nullptr;
+
+		skiplist_map_insert_find(pop, map, path);
+		skiplist_map_insert_node(new_node, path);
+	} TX_ONABORT {
+		ret = 1;
+	} TX_END
+	return ret;
+}
+/*
  * skiplist_map_insert -- inserts a new key-value pair into the map
  * return:  0 = finish all job
  * 					1 = error
@@ -247,9 +270,20 @@ int skiplist_map_insert(PMEMobjpool* pop,
 												char* key, char* buffer_ptr, int key_len, int index) {
 	int ret = 0;
 	TOID(struct skiplist_map_node) new_node = D_RW(*current_node)->next[0];
+	// if (TOID_IS_NULL(new_node) || TOID_EQUALS(new_node, NULL_NODE)) {
+	// 	printf("[ERROR][Skiplist][insertion] Out of bound \n");
+	// 	ret = 1;
+	// }
 	if (TOID_IS_NULL(new_node) || TOID_EQUALS(new_node, NULL_NODE)) {
-		printf("[ERROR][Skiplist][insertion] Out of bound \n");
-		ret = 1;
+		printf("[ERROR][Skiplist][insert] Out of bound \n");
+		// printf("null_node -> create_insert\n");
+		// skiplist_map_create_insert(pop, *current_node);
+		// new_node = D_RW(*current_node)->next[0];
+		// if (TOID_IS_NULL(new_node) || TOID_EQUALS(new_node, NULL_NODE)) {
+		// 	printf("again null... maybe abort()\n");
+		// } else {
+		// 	// Success
+		// }
 	}
 	*current_node = new_node;
 	D_RW(new_node)->entry.buffer_ptr = buffer_ptr;
@@ -289,29 +323,7 @@ int skiplist_map_insert_null_node(PMEMobjpool* pop,
 	*current_node = NULL_NODE;
 	return ret;
 }
-/*
- * skiplist_map_create_insert -- (internal) inserts an empty key-value pair 
- * into the map. Just pre-allocate new-node and key&value area
- * return:  0 = finish all job
- * 					1 = error
- */
-int skiplist_map_create_insert(PMEMobjpool* pop, 
-															TOID(struct skiplist_map_node) map) {
-	int ret = 0;
-	TOID(struct skiplist_map_node) new_node;
-	TOID(struct skiplist_map_node) path[SKIPLIST_LEVELS_NUM];
 
-	TX_BEGIN(pop) {
-		new_node = TX_ZNEW(struct skiplist_map_node);
-		D_RW(new_node)->entry.buffer_ptr = nullptr;
-
-		skiplist_map_insert_find(pop, map, path);
-		skiplist_map_insert_node(new_node, path);
-	} TX_ONABORT {
-		ret = 1;
-	} TX_END
-	return ret;
-}
 /*
  * skiplist_map_create -- allocates a new skiplist instance
  * return:  0 = finish all job

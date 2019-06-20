@@ -46,8 +46,11 @@
 #endif
 
 /* value 100bytes */
-#define NUM_OF_PRE_ALLOC_NODE 28300 // = Just pre-alloc
-#define NUM_OF_USE_ALLOC_NODE 28300 // = MAX_SKIPLIST_NODE_SIZE
+// #define NUM_OF_PRE_ALLOC_NODE 28300 // = Just pre-alloc
+// #define NUM_OF_USE_ALLOC_NODE 28300 // = MAX_SKIPLIST_NODE_SIZE
+// For YCSB
+#define NUM_OF_PRE_ALLOC_NODE 58830 // = Just pre-alloc
+#define NUM_OF_USE_ALLOC_NODE 58830 // = MAX_SKIPLIST_NODE_SIZE
 
 #define PRE_ALLOC_KEY_SIZE 26 // 16
 #define STRING_PADDING 0 // \0
@@ -56,8 +59,8 @@
 
 #define SKIPLIST_LEVELS_NUM 12
 
-// #define USE_BINARY_INSERTION 0
-#define USE_BINARY_INSERTION 1
+#define USE_BINARY_INSERTION 0
+// #define USE_BINARY_INSERTION 1
 
 #define LEVEL_11_POINT ( NUM_OF_USE_ALLOC_NODE / 2 )
 #define LEVEL_10_POINT ( LEVEL_11_POINT / 2)

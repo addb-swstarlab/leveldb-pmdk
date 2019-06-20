@@ -6,7 +6,7 @@
 #define PMEM_BUFFER_H
 
 
-#include "util/coding.h" 
+// #include "util/coding.h" 
 #include "pmem/pmem_skiplist.h"
 
 // use pmem with c++ bindings

@@ -335,50 +335,50 @@ namespace leveldb {
   /* PROGRESS: */
   void PmemSkiplist::Ref(uint64_t file_number) {
     // printf("Ref number %d\n", file_number);
-    referenced_files_.push_back(file_number);
+    // referenced_files_.push_back(file_number);
   }
   void PmemSkiplist::UnRef(uint64_t file_number) {
-    // printf("UnRef number %d\n", file_number);
-    uint64_t index = GetIndexFromAllocatedMap(&allocated_map_, file_number);
-    std::list<uint64_t>::iterator iter = referenced_files_.begin();
-    // First Seek 
-    int count = 0;
-    for ( ; iter != referenced_files_.end(); iter++) {
-      if (*iter == file_number) {
-        // printf("[Unref] %d %d\n", *iter, file_number);
-        count++;
-        referenced_files_.erase(iter);
-        break;
-      } 
-    }
-    // DEBUG: special case] UnRef -> Ref
-    if (count == 0) {
-      printf("[WARN]Unref %d, but count = 0\n", count);
-    }
-    // Second seek
-    std::set<uint64_t>::iterator set_iter = pending_deletion_files_.find(file_number);
-    if (set_iter != pending_deletion_files_.end()) {
-      bool seek_in_referenced_files = false;
-      printf("%d] ", file_number % 10);
-      for (iter = referenced_files_.begin(); 
-          iter != referenced_files_.end(); 
-          iter++) {
-        printf("%d ", *iter);
-        if (*iter == file_number) {
-          printf("pending yet [[%d %d]]\n", *iter, file_number);
-          seek_in_referenced_files = true;
-          break;
-        }
-      }
-      printf("\n");
-      if (!seek_in_referenced_files) {
-        pending_deletion_files_.erase(set_iter);
-        ResetInfo(index, file_number);
-        printf("[SUCCESS] erase pending %d\n", file_number);
-      } else {
-        printf("[FAILED] pending yet\n");
-      }
-    }
+    // // printf("UnRef number %d\n", file_number);
+    // uint64_t index = GetIndexFromAllocatedMap(&allocated_map_, file_number);
+    // std::list<uint64_t>::iterator iter = referenced_files_.begin();
+    // // First Seek 
+    // int count = 0;
+    // for ( ; iter != referenced_files_.end(); iter++) {
+    //   if (*iter == file_number) {
+    //     // printf("[Unref] %d %d\n", *iter, file_number);
+    //     count++;
+    //     referenced_files_.erase(iter);
+    //     break;
+    //   } 
+    // }
+    // // DEBUG: special case] UnRef -> Ref
+    // if (count == 0) {
+    //   printf("[WARN]Unref %d, but count = 0\n", count);
+    // }
+    // // Second seek
+    // std::set<uint64_t>::iterator set_iter = pending_deletion_files_.find(file_number);
+    // if (set_iter != pending_deletion_files_.end()) {
+    //   bool seek_in_referenced_files = false;
+    //   printf("%d] ", file_number % 10);
+    //   for (iter = referenced_files_.begin(); 
+    //       iter != referenced_files_.end(); 
+    //       iter++) {
+    //     printf("%d ", *iter);
+    //     if (*iter == file_number) {
+    //       printf("pending yet [[%d %d]]\n", *iter, file_number);
+    //       seek_in_referenced_files = true;
+    //       break;
+    //     }
+    //   }
+    //   printf("\n");
+    //   if (!seek_in_referenced_files) {
+    //     pending_deletion_files_.erase(set_iter);
+    //     ResetInfo(index, file_number);
+    //     printf("[SUCCESS] erase pending %d\n", file_number);
+    //   } else {
+    //     printf("[FAILED] pending yet\n");
+    //   }
+    // }
   }
   // PROGRESS:
   void PmemSkiplist::GarbageCollection() {

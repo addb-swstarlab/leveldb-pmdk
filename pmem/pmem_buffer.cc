@@ -5,6 +5,7 @@
 
 #include <iostream>
 #include <fstream>
+#include "util/coding.h" 
 #include "pmem/pmem_buffer.h"
 
 namespace leveldb {

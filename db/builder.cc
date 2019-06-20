@@ -115,7 +115,7 @@ Status BuildTable(const std::string& dbname,
       TableBuilder* builder = new TableBuilder(options, nullptr);
       meta->smallest.DecodeFrom(iter->key());
 
-      PmemBuffer* pmem_buffer = options.pmem_buffer[file_number % NUM_OF_SKIPLIST_MANAGER];
+      PmemBuffer* pmem_buffer = options.pmem_buffer[file_number % NUM_OF_BUFFER];
       // printf("file_number: %d\n", file_number);
       // int i =0;
       for (; iter->Valid(); iter->Next()) {

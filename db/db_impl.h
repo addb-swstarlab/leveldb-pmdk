@@ -15,6 +15,9 @@
 #include "port/port.h"
 #include "port/thread_annotations.h"
 
+// JH for FileMetadata
+#include "db/version_edit.h"
+
 namespace leveldb {
 
 class MemTable;
@@ -63,6 +66,11 @@ class DBImpl : public DB {
   // Samples are taken approximately once every config::kReadBytesPeriod
   // bytes.
   void RecordReadSample(Slice key);
+
+  // Customized by JH for DBIter
+  std::vector<FileMetaData *> fileSet[config::kNumLevels];
+  std::vector<FileMetaData *> skiplistSet[config::kNumLevels];
+  bool preserve_flag;
 
  private:
   friend class DB;

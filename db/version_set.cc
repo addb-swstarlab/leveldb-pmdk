@@ -242,6 +242,7 @@ class Version::LevelFilesConcatIteratorFromPmem : public Iterator {
     return (current_ != nullptr && current_->Valid());
   }
   virtual void Seek(const Slice& target) {
+    // printf("LevelFilesConcatIterator Start\n");
     // Specific searching
     assert(Valid());
     // Copy from FindFile() in version_set.cc
@@ -249,7 +250,9 @@ class Version::LevelFilesConcatIteratorFromPmem : public Iterator {
     uint32_t right = flist_->size();
     while (left < right) {
       uint32_t mid = (left + right) / 2;
+      // printf("LevelFilesConcatIterator right %d mid %d\n", right, mid);
       const FileMetaData* f = flist_->at(mid);
+      // printf("LevelFilesConcatIterator at '%s'\n", f->largest.Encode().data());
       if (icmp_.InternalKeyComparator::Compare(f->largest.Encode(), target) < 0) {
         // Key at "mid.largest" is < "target".  Therefore all
         // files at or before "mid" are uninteresting.
@@ -260,9 +263,13 @@ class Version::LevelFilesConcatIteratorFromPmem : public Iterator {
         right = mid;
       }
     }
+    // printf("LevelFilesConcatIterator size %d\n", right);
+    // printf("LevelFilesConcatIterator 2\n");
     current_index_ = right;
     current_ = pmem_iterator[current_index_];
+    // printf("LevelFilesConcatIterator index %d\n", current_->GetIndex());
     current_->Seek(target);
+    // printf("LevelFilesConcatIterator End\n");
   }
   virtual void SeekToFirst() {
     current_index_ = 0;
@@ -355,23 +362,83 @@ Iterator* Version::NewConcatenatingIterator(const ReadOptions& options,
       &GetFileIterator, vset_->table_cache_, options);
 }
 
+// Customized by JH
+// YCSB workloade - scanAscending
+// PROGRESS:
 void Version::AddIterators(const ReadOptions& options,
-                           std::vector<Iterator*>* iters) {
-  // Merge all level zero files together since they may overlap
-  for (size_t i = 0; i < files_[0].size(); i++) {
-    iters->push_back(
-        vset_->table_cache_->NewIterator(
-            options, files_[0][i]->number, files_[0][i]->file_size));
+                           std::vector<Iterator*>* iters,
+                           Tiering_stats* tiering_stats,
+                           std::vector<FileMetaData *>* fileSet,
+                           std::vector<FileMetaData *>* skiplistSet,
+                           bool preserve_flag) {
+  // Initialize fileSet and skiplistSet
+  if (!preserve_flag) {
+    for (int level = 1; level < config::kNumLevels; level++) {
+      fileSet[level].clear();
+      skiplistSet[level].clear();
+    }  
   }
 
-  // For levels > 0, we can use a concatenating iterator that sequentially
-  // walks through the non-overlapping files in the level, opening them
-  // lazily.
-  for (int level = 1; level < config::kNumLevels; level++) {
-    if (!files_[level].empty()) {
-      iters->push_back(NewConcatenatingIterator(options, level));
+  // Level 0
+  // printf("Level 0\n");
+  for (size_t i = 0; i < files_[0].size(); i++) {
+    uint64_t number = files_[0][i]->number;
+    if (tiering_stats->IsInFileSet(number)) {
+      // printf("file '%d' ", number);
+      iters->push_back(
+          vset_->table_cache_->NewIterator(
+              options, number, files_[0][i]->file_size));
+    } else if (tiering_stats->IsInSkiplistSet(number)) {
+      // printf("skiplist '%d' ", number);
+      iters->push_back(
+          vset_->table_cache_->NewIteratorFromPmem(
+              options, number, files_[0][i]->file_size));
+    } else {
+      // WARN
+      printf("[WARN][Version][AddIterators][L0] number '%d' is not in both fileset and skiplistset\n", number);
     }
   }
+
+  // Levels > 0
+  for (int level = 1; level < config::kNumLevels; level++) {
+    if (!files_[level].empty()) {
+      // printf("Level %d\n", level);
+      for (int i=0; i < files_[level].size(); i++) {
+        uint64_t number = files_[level][i]->number;
+        if (tiering_stats->IsInFileSet(number)) {
+          if (!preserve_flag) {
+            fileSet[level].push_back(files_[level][i]);
+            // printf("file '%d' ", number);
+          }
+        } else if (tiering_stats->IsInSkiplistSet(number)) {
+          // printf("skiplist '%d' ", number);
+          if (!preserve_flag) {
+            skiplistSet[level].push_back(files_[level][i]);
+          }
+        } else {
+          // WARN
+          printf("[WARN][Version][AddIterators][L%d] number '%d' is not in both fileset and skiplistset\n", level, number);
+        }
+      }
+      // printf("\n");
+      if (fileSet[level].size() > 0) {
+          // printf("file size '%d' \n", fileSet[level].size());
+        iters->push_back(NewTwoLevelIterator(
+          new Version::LevelFileNumIterator(vset_->icmp_, &fileSet[level]),
+          &GetFileIterator, vset_->table_cache_, options));
+      } 
+      if (skiplistSet[level].size() > 0) {
+          // printf("skiplist size '%d' \n", skiplistSet[level].size());
+        iters->push_back(new Version::LevelFilesConcatIteratorFromPmem(
+            vset_->icmp_, 
+            vset_->options_->pmem_skiplist,
+            &skiplistSet[level]));
+
+      }
+    }
+  }
+  if (!preserve_flag) 
+    preserve_flag = true;  
 }
 
 // Callback from TableCache::Get()

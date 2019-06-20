@@ -35,6 +35,7 @@
 #include "util/logging.h"
 #include "util/mutexlock.h"
 
+
 namespace leveldb {
 
 const int kNumNonTableCacheFiles = 10;
@@ -129,6 +130,9 @@ Options SanitizeOptions(const std::string& dbname,
         result.pmem_skiplist[7] = new PmemSkiplist(SKIPLIST_MANAGER_PATH_7);
         result.pmem_skiplist[8] = new PmemSkiplist(SKIPLIST_MANAGER_PATH_8);
         result.pmem_skiplist[9] = new PmemSkiplist(SKIPLIST_MANAGER_PATH_9);
+
+        // result.pmem_skiplist[10] = new PmemSkiplist(SKIPLIST_MANAGER_PATH_10);
+        // result.pmem_skiplist[11] = new PmemSkiplist(SKIPLIST_MANAGER_PATH_11);
         
         // Initialize
         for (int i=0; i<NUM_OF_SKIPLIST_MANAGER; i++) {
@@ -149,6 +153,9 @@ Options SanitizeOptions(const std::string& dbname,
         result.pmem_internal_iterator[7] = new PmemIterator(7, result.pmem_skiplist[7]);
         result.pmem_internal_iterator[8] = new PmemIterator(8, result.pmem_skiplist[8]);
         result.pmem_internal_iterator[9] = new PmemIterator(9, result.pmem_skiplist[9]);
+
+        // result.pmem_internal_iterator[10] = new PmemIterator(10, result.pmem_skiplist[10]);
+        // result.pmem_internal_iterator[11] = new PmemIterator(11, result.pmem_skiplist[11]);
         break;
       // DS_Option2: Hashmap
       case kHashmap:
@@ -200,6 +207,12 @@ Options SanitizeOptions(const std::string& dbname,
     result.pmem_buffer[8] = new PmemBuffer(BUFFER_PATH_8);
     result.pmem_buffer[9] = new PmemBuffer(BUFFER_PATH_9);
 
+    // result.pmem_buffer[10] = new PmemBuffer(BUFFER_PATH_10);
+    // result.pmem_buffer[11] = new PmemBuffer(BUFFER_PATH_11);
+    // result.pmem_buffer[12] = new PmemBuffer(BUFFER_PATH_12);
+    // result.pmem_buffer[13] = new PmemBuffer(BUFFER_PATH_13);
+    // result.pmem_buffer[14] = new PmemBuffer(BUFFER_PATH_14);
+
     // Initialize
     for (int i=0; i<NUM_OF_BUFFER; i++) {
       result.pmem_buffer[i]->ClearAll();
@@ -239,7 +252,8 @@ DBImpl::DBImpl(const Options& raw_options, const std::string& dbname)
                                &internal_comparator_)),
       // JH
       total_delayed_micros(0),
-      tiering_stats_{}                         
+      tiering_stats_{},
+      preserve_flag(false)
       {
   has_imm_.Release_Store(nullptr);
 }
@@ -1141,7 +1155,8 @@ Status DBImpl::DoCompactionWork(CompactionState* compact) {
   bool maintain_flag = false;
   bool need_file_creation = false; // flag that store contents as SST file
   bool leveled_trigger = false;    // Opt1
-
+  bool lru_trigger = false;        // Opt3
+  uint64_t lru_flushed_bytes_written = 0; // Opt3 for stats
   // std::vector<uint64_t> pending_deleted_number_in_pmem; // for synchronization
 
   if (options_.ds_type == kSkiplist) {
@@ -1150,14 +1165,22 @@ Status DBImpl::DoCompactionWork(CompactionState* compact) {
       case kLeveledTiering:
       { 
         int output_file_level = compact->compaction->level()+1;
-        if (output_file_level > SIMPLE_LEVEL) {
+        if (output_file_level > PMEM_SKIPLIST_LEVEL_THRESHOLD) {
           leveled_trigger = true;
         }
         break;
       }
-      // Opt2, 3, 4
+      // Opt2
       case kColdDataTiering:
+      // Opt3
       case kLRUTiering:
+        // If compaction candidate include any SST files, create output as SST
+        // It prevents from skip list + SST => skip list
+        if (compact->compaction->inputs_in_fileset_->size() > 0) {
+          lru_trigger = true;
+        }
+        break;
+      // Opt4
       case kNoTiering:
         // Done
         break;
@@ -1187,7 +1210,7 @@ Status DBImpl::DoCompactionWork(CompactionState* compact) {
       if (write_pmem_buffer) {
         uint64_t file_number = compact->current_output()->number;
         PmemBuffer* pmem_buffer = 
-                options_.pmem_buffer[file_number % NUM_OF_SKIPLIST_MANAGER];
+                options_.pmem_buffer[file_number % NUM_OF_BUFFER];
         compact->builder->FlushBufferToPmemBuffer(pmem_buffer, file_number);
         write_pmem_buffer = false;
       }
@@ -1272,7 +1295,11 @@ Status DBImpl::DoCompactionWork(CompactionState* compact) {
                 break;
               case kLRUTiering:
               {
-                if (is_freelist_empty) {
+                if (lru_trigger) {
+                  // compulsory creation of SST
+                  need_file_creation = true;
+                }
+                else if (is_freelist_empty) {
                   /* 1) Get candidate number */
                   level_number evicted_level_number;
                   for (int i=0 ; ; i++) {
@@ -1325,6 +1352,7 @@ Status DBImpl::DoCompactionWork(CompactionState* compact) {
                   if (s.ok()) {
                     meta.file_size = builder->FileSize();
                     assert(meta.file_size > 0);
+                    lru_flushed_bytes_written += meta.file_size; // stats
                   }
                   delete builder;
 
@@ -1354,19 +1382,23 @@ Status DBImpl::DoCompactionWork(CompactionState* compact) {
                   tiering_stats_.InsertIntoFileSet(evicted_level_number.number);
                   mutex_.Unlock();
                   // printf("[DEBUG] End LRU tiering on %d %d\n", evicted_level_number.number, file_number);
-                }
-                need_file_creation = false;
-                need_file_creation = pmem_skiplist->IsFreeListEmpty() ? true : false;
-                if (need_file_creation) {
-                  printf("[WARNING][Compaction] already use LRU-tiering option. but temporarily need_file_creation\n");
-                  printf("file_number %d\n", file_number);
+                  need_file_creation = false;
+                  need_file_creation = pmem_skiplist->IsFreeListEmpty() ? true : false;
+                  if (need_file_creation) {
+                    printf("[WARNING][Compaction] already use LRU-tiering option. but temporarily need_file_creation\n");
+                    printf("file_number %d\n", file_number);
+                  }
+                } else {
+                  need_file_creation = false;
                 }
                 break;
               }
               case kNoTiering:
                 need_file_creation = is_freelist_empty ? true : false;
-                // if (need_file_creation)
-                //   printf("[WARNING][Compaction] already use no-tiering option. but temporarily need_file_creation\n");
+                if (need_file_creation) {
+                  printf("[WARNING][Compaction] already use no-tiering option. but temporarily need_file_creation\n");
+                  abort(); // optionally
+                }
                 break;
             } 
           break;
@@ -1406,12 +1438,12 @@ Status DBImpl::DoCompactionWork(CompactionState* compact) {
             pmem_skiplist = options_.pmem_skiplist[file_number % NUM_OF_SKIPLIST_MANAGER];
             if (options_.use_pmem_buffer) {
               PmemBuffer* pmem_buffer =
-                    options_.pmem_buffer[file_number % NUM_OF_SKIPLIST_MANAGER];
-              if(input->buffer_ptr() == nullptr) {
+                    options_.pmem_buffer[file_number % NUM_OF_BUFFER];
+              if(input->buffer_ptr() == nullptr) { // SST -> skip list
                 compact->builder->AddToBufferAndSkiplist(pmem_buffer, pmem_skiplist,
                                                     file_number, key, value);
                 if(!write_pmem_buffer) write_pmem_buffer = true;
-              } else {
+              } else { // skip list -> skip list
                 compact->builder->AddToSkiplistByPtr (pmem_skiplist,
                               file_number, key, value, input->buffer_ptr());
               }
@@ -1446,7 +1478,7 @@ Status DBImpl::DoCompactionWork(CompactionState* compact) {
             compact->compaction->MaxOutputEntriesNum() -1 ) {
           if (write_pmem_buffer) {
             PmemBuffer* pmem_buffer = 
-                    options_.pmem_buffer[file_number % NUM_OF_SKIPLIST_MANAGER];
+                    options_.pmem_buffer[file_number % NUM_OF_BUFFER];
             compact->builder->FlushBufferToPmemBuffer(pmem_buffer, file_number);
             write_pmem_buffer = false;
           }
@@ -1473,7 +1505,7 @@ Status DBImpl::DoCompactionWork(CompactionState* compact) {
     if (write_pmem_buffer) {
       uint64_t file_number = compact->current_output()->number;
       PmemBuffer* pmem_buffer = 
-              options_.pmem_buffer[file_number % NUM_OF_SKIPLIST_MANAGER];
+              options_.pmem_buffer[file_number % NUM_OF_BUFFER];
       compact->builder->FlushBufferToPmemBuffer(pmem_buffer, file_number);
       write_pmem_buffer = false;
     }
@@ -1508,10 +1540,21 @@ Status DBImpl::DoCompactionWork(CompactionState* compact) {
       stats.bytes_read += compact->compaction->input(which, i)->file_size;
     }
   }
+  // customized by JH for measuring WAF
   for (size_t i = 0; i < compact->outputs.size(); i++) {
-    stats.bytes_written += compact->outputs[i].file_size;
+    uint64_t number = compact->outputs[i].number;
+    if (tiering_stats_.IsInFileSet(number)) {
+      stats.bytes_written += compact->outputs[i].file_size;
+    } else if (tiering_stats_.IsInSkiplistSet(number)) {
+      uint64_t estimated_written = (compact->outputs[i].file_size / 120) * 8; // pointer = 8bytes
+      stats.bytes_written += estimated_written;
+    } else {
+      printf("[WARN][BGCompaction][Stats] % is not in both fileset and skiplistset\n", number);
+      stats.bytes_written += compact->outputs[i].file_size;
+    }
   }
-
+  // LRU stats
+  stats.bytes_written += lru_flushed_bytes_written;
 
   mutex_.Lock();
   stats_[compact->compaction->level() + 1].Add(stats);
@@ -1611,11 +1654,10 @@ Iterator* DBImpl::NewInternalIterator(const ReadOptions& options,
     list.push_back(imm_->NewIterator());
     imm_->Ref();
   }
-  versions_->current()->AddIterators(options, &list);
+  versions_->current()->AddIterators(options, &list, &tiering_stats_, fileSet, skiplistSet, &preserve_flag);
   Iterator* internal_iter =
       NewMergingIterator(&internal_comparator_, &list[0], list.size());
   versions_->current()->Ref();
-
   IterState* cleanup = new IterState(&mutex_, mem_, imm_, versions_->current());
   internal_iter->RegisterCleanup(CleanupIteratorState, cleanup, nullptr);
 

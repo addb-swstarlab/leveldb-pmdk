@@ -44,11 +44,28 @@ Options::Options()
       // , skiplist_cache(true) // NOTE: Only ds_type is "kSkiplist"
       , skiplist_cache(false)
 
-      /* Tiering option */
-      // , tiering_option(kSimpleLevelTiering)
+      /*
+       * [Tiering policies]
+       * Opt1: Leveled-tiering
+       *  := Set PMEM_SKIPLIST_LEVEL_THRESHOLD in tiering_stats.h
+       *     if (new output level > PMEM_SKIPLIST_LEVEL_THRESHOLD); 
+       *       then create SST in disk.
+       *     else; create skip list in pmem.
+       * Opt2: Cold_data-tiering TODO:
+       * Opt3: LRU-tiering
+       *  := Flush Least Recently Used skip list into SST in disk.
+       *     It requires mutex lock/unlock.
+       *     PROGRESS: skip list Ref(), UnRef() is used. But is it essential procedure? 
+       * 
+       * Opt4: No-tiering
+       *  := Store all data as persistent skip list in pmem.
+       *     But, if system exceed threshold of skip list, 
+       *          create SST file in disk temporarily.[Opt]
+       */
+      , tiering_option(kLeveledTiering)
       // , tiering_option(kColdDataTiering)
       // , tiering_option(kLRUTiering)
-      , tiering_option(kNoTiering)
+      // , tiering_option(kNoTiering)
 
       // TODO: hashmap is not implemented perfectly
       /* Data-Structure option */

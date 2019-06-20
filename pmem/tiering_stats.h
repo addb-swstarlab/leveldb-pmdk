@@ -8,7 +8,7 @@
 
 /* Tiering trigger options */
 // Opt1: Simple level tiering
-#define SIMPLE_LEVEL 2
+#define PMEM_SKIPLIST_LEVEL_THRESHOLD 3
 
 // Opt2: Cold data tiering
 #define L0_LIFETIME_THRESHOLD 8
@@ -40,9 +40,11 @@ namespace leveldb {
     void DeleteFromSkiplistSet(uint64_t number);
     
     void PushToNumberListInPmem(int level, uint64_t number);
-    level_number PopFromNumberListInPmem(uint64_t number);
     void RemoveFromNumberListInPmem(uint64_t number);
     level_number GetElementFromNumberListInPmem(uint64_t number, uint64_t n);
+    
+    /* Deprecated function */
+    // level_number PopFromNumberListInPmem(uint64_t number);
 
     uint64_t GetFileSetSize();
     uint64_t GetSkiplistSetSize();
