@@ -14,6 +14,16 @@
 
 /* Multiple skiplists controlled by manager */
 #define SKIPLIST_MANAGER_PATH "/home/hwan/pmem_dir/skiplist_manager"
+#define SKIPLIST_MANAGER_PATH_0 "/home/hwan/pmem_dir/skiplist_manager_0"
+#define SKIPLIST_MANAGER_PATH_1 "/home/hwan/pmem_dir/skiplist_manager_1"
+#define SKIPLIST_MANAGER_PATH_2 "/home/hwan/pmem_dir/skiplist_manager_2"
+#define SKIPLIST_MANAGER_PATH_3 "/home/hwan/pmem_dir/skiplist_manager_3"
+#define SKIPLIST_MANAGER_PATH_4 "/home/hwan/pmem_dir/skiplist_manager_4"
+#define SKIPLIST_MANAGER_PATH_5 "/home/hwan/pmem_dir/skiplist_manager_5"
+#define SKIPLIST_MANAGER_PATH_6 "/home/hwan/pmem_dir/skiplist_manager_6"
+#define SKIPLIST_MANAGER_PATH_7 "/home/hwan/pmem_dir/skiplist_manager_7"
+#define SKIPLIST_MANAGER_PATH_8 "/home/hwan/pmem_dir/skiplist_manager_8"
+#define SKIPLIST_MANAGER_PATH_9 "/home/hwan/pmem_dir/skiplist_manager_9"
 /* 
  * FIXME: Seek proper pool size
  * 1.0 : 75-23961
@@ -21,11 +31,12 @@
  * 3 : 228-23674
  */
 #define SKIPLIST_MANAGER_POOL_SIZE 3 * (1 << 30)
-// #define SKIPLIST_MANAGER_LIST_SIZE 150
-#define SKIPLIST_MANAGER_LIST_SIZE 200
+// #define SKIPLIST_MANAGER_LIST_SIZE 170 // 4MB:  170 280 350 635 600
+#define SKIPLIST_MANAGER_LIST_SIZE 38 // 64MB: 33 
 // #define SKIPLIST_BULK_INSERT_NUM 36500
-#define SKIPLIST_BULK_INSERT_NUM 10
-#define NUM_OF_SKIPLIST_MANAGER 1
+#define MAX_SKIPLIST_NODE_SIZE 16180 // Compaction Output file max
+// #define SKIPLIST_BULK_INSERT_NUM 28300
+#define NUM_OF_SKIPLIST_MANAGER 10
 
 #define SKIPLIST_OFFSET_PATH "/home/hwan/pmem_dir/skiplist_offset"
 #define SKIPLIST_OFFSET_SIZE 100 * (1<< 20)

@@ -169,27 +169,27 @@ TEST (PmemMapTest, Skiplist_map) {
 
 		root = POBJ_ROOT(pool, struct root_skiplist_map);
 
-		int res = map_create(mapc, &D_RW(root)->map, 0, &args);
+	// 	int res = map_create(mapc, &D_RW(root)->map, 0, &args);
 
-		if (res) printf("[CREATE ERROR] %d\n",res);
-		else printf("[CREATE SUCCESS] %d\n",res);	
-		map = D_RO(root)->map;
+	// 	if (res) printf("[CREATE ERROR] %d\n",res);
+	// 	else printf("[CREATE SUCCESS] %d\n",res);	
+	// 	map = D_RO(root)->map;
 
-	} else {
-		pool = pmemobj_open(SKIPLIST_PATH, POBJ_LAYOUT_NAME(root_skiplist_map));
-		if (pool == NULL) {
-			fprintf(stderr, "failed to open pool: %s\n",
-					pmemobj_errormsg());
-			exit(1);
-		}
-		mapc = map_ctx_init(ops, pool);
-		if (!mapc) {
-			pmemobj_close(pool);
-			perror("map_ctx_init");
-			exit(1);
-		}
-		root = POBJ_ROOT(pool, struct root_skiplist_map);
-		map = D_RW(root)->map;
+	// } else {
+	// 	pool = pmemobj_open(SKIPLIST_PATH, POBJ_LAYOUT_NAME(root_skiplist_map));
+	// 	if (pool == NULL) {
+	// 		fprintf(stderr, "failed to open pool: %s\n",
+	// 				pmemobj_errormsg());
+	// 		exit(1);
+	// 	}
+	// 	mapc = map_ctx_init(ops, pool);
+	// 	if (!mapc) {
+	// 		pmemobj_close(pool);
+	// 		perror("map_ctx_init");
+	// 		exit(1);
+	// 	}
+	// 	root = POBJ_ROOT(pool, struct root_skiplist_map);
+	// 	map = D_RW(root)->map;
 		// char *test = " 12";
 		// char *key = "789";
 		// char *value = "value45";

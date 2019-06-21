@@ -107,7 +107,7 @@ Iterator* TableCache::NewIteratorFromPmem(const ReadOptions& options,
                                   uint64_t file_number,
                                   uint64_t file_size,
                                   Table** tableptr) {
-  PmemSkiplist *pmem_skiplist = options_.pmem_skiplist;
+  // PmemSkiplist *pmem_skiplist = options_.pmem_skiplist;
   if (tableptr != nullptr) {
     *tableptr = nullptr;
   }
@@ -118,9 +118,11 @@ Iterator* TableCache::NewIteratorFromPmem(const ReadOptions& options,
   //   return NewErrorIterator(s);
   // }
 
-  // FIXME: Checks cache logic
+  PmemSkiplist* pmem_skiplist = options_.pmem_skiplist[file_number % NUM_OF_SKIPLIST_MANAGER];
   Iterator* result = new PmemIterator(file_number, pmem_skiplist);
   result->SeekToFirst();
+  // Iterator* result = new PmemIterator(file_number, pmem_skiplist);
+  // result->SeekToFirst();
   // Table* table = reinterpret_cast<TableAndFile*>(cache_->Value(handle))->table;
   // Iterator* result = table->NewIteratorFromPmem(options_, options);
   // result->RegisterCleanup(&UnrefEntry, cache_, handle);
@@ -152,19 +154,26 @@ Status TableCache::GetFromPmem(const Options& options,
                    void* arg,
                    void (*saver)(void*, const Slice&, const Slice&)) {
   Status s;
+  PmemIterator* pmem_iterator = options.pmem_internal_iterator[file_number % NUM_OF_SKIPLIST_MANAGER]; 
+  // pmem_iterator->SetIndex(file_number);
+  // pmem_iterator->Seek(k);
+  pmem_iterator->SetIndexAndSeek(file_number, k);
+  Slice res_key = pmem_iterator->key();
+  (*saver)(arg, res_key, pmem_iterator->value());
+
   // PmemSkiplist *pmem_skiplist = options.pmem_skiplist;
-  PmemIterator *pmem_iterator = options.pmem_internal_iterator;
+  // PmemIterator *pmem_iterator = options.pmem_internal_iterator;
   // pmem_iterator->SetIndex(file_number);
   // printf("3 %d\n", file_number);
   // PmemIterator *pmem_iterator = new PmemIterator(file_number, pmem_skiplist);
   // printf("1\n");
-  pmem_iterator->SetIndexAndSeek(file_number, k);
+  // pmem_iterator->SetIndexAndSeek(file_number, k);
   // printf("2\n");
   // pmem_iterator->Seek(k);
   // Slice key(pmem_iterator->key());
   // Slice value(pmem_iterator->value());
   // (*saver)(arg, key, value);
-  (*saver)(arg, pmem_iterator->key(), pmem_iterator->value());
+  // (*saver)(arg, pmem_iterator->key(), pmem_iterator->value());
   // printf("key1:'%s'\n", pmem_iterator->key());
   // printf("value1:'%s'\n", pmem_iterator->value());
 

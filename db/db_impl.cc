@@ -113,9 +113,40 @@ Options SanitizeOptions(const std::string& dbname,
   if (result.block_cache == nullptr) {
     result.block_cache = NewLRUCache(8 << 20);
   }
-  // JH
-  result.pmem_skiplist = new PmemSkiplist;
-  result.pmem_internal_iterator = new PmemIterator(0, result.pmem_skiplist);
+  // PROGRESS: JH
+  if (result.sst_type == kPmemSST) {
+    result.pmem_skiplist = new PmemSkiplist*[NUM_OF_SKIPLIST_MANAGER];
+    result.pmem_skiplist[0] = new PmemSkiplist(SKIPLIST_MANAGER_PATH_0);
+    result.pmem_skiplist[1] = new PmemSkiplist(SKIPLIST_MANAGER_PATH_1);
+    result.pmem_skiplist[2] = new PmemSkiplist(SKIPLIST_MANAGER_PATH_2);
+    result.pmem_skiplist[3] = new PmemSkiplist(SKIPLIST_MANAGER_PATH_3);
+    result.pmem_skiplist[4] = new PmemSkiplist(SKIPLIST_MANAGER_PATH_4);
+    result.pmem_skiplist[5] = new PmemSkiplist(SKIPLIST_MANAGER_PATH_5);
+    result.pmem_skiplist[6] = new PmemSkiplist(SKIPLIST_MANAGER_PATH_6);
+    result.pmem_skiplist[7] = new PmemSkiplist(SKIPLIST_MANAGER_PATH_7);
+    result.pmem_skiplist[8] = new PmemSkiplist(SKIPLIST_MANAGER_PATH_8);
+    result.pmem_skiplist[9] = new PmemSkiplist(SKIPLIST_MANAGER_PATH_9);
+    
+    // Initialize
+    for (int i=0; i<NUM_OF_SKIPLIST_MANAGER; i++) {
+      result.pmem_skiplist[i]->ClearAll();
+    }
+
+    result.pmem_internal_iterator = new PmemIterator*[NUM_OF_SKIPLIST_MANAGER];
+    result.pmem_internal_iterator[0] = new PmemIterator(0, result.pmem_skiplist[0]);
+    result.pmem_internal_iterator[1] = new PmemIterator(1, result.pmem_skiplist[1]);
+    result.pmem_internal_iterator[2] = new PmemIterator(2, result.pmem_skiplist[2]);
+    result.pmem_internal_iterator[3] = new PmemIterator(3, result.pmem_skiplist[3]);
+    result.pmem_internal_iterator[4] = new PmemIterator(4, result.pmem_skiplist[4]);
+    result.pmem_internal_iterator[5] = new PmemIterator(5, result.pmem_skiplist[5]);
+    result.pmem_internal_iterator[6] = new PmemIterator(6, result.pmem_skiplist[6]);
+    result.pmem_internal_iterator[7] = new PmemIterator(7, result.pmem_skiplist[7]);
+    result.pmem_internal_iterator[8] = new PmemIterator(8, result.pmem_skiplist[8]);
+    result.pmem_internal_iterator[9] = new PmemIterator(9, result.pmem_skiplist[9]);
+  }
+  
+  // result.pmem_skiplist = new PmemSkiplist;
+  // result.pmem_internal_iterator = new PmemIterator(0, result.pmem_skiplist);
   return result;
 }
 
@@ -159,6 +190,16 @@ DBImpl::~DBImpl() {
     background_work_finished_signal_.Wait();
   }
   mutex_.Unlock();
+
+  // JH
+  if (options_.sst_type == kPmemSST) {
+    printf("[DEBUG] free_list size\n");
+    for (int i=0; i<NUM_OF_SKIPLIST_MANAGER; i++) {
+      size_t freeListSize = options_.pmem_skiplist[i]->GetFreeListSize();
+      size_t allocatedMapSize = options_.pmem_skiplist[i]->GetAllocatedMapSize();
+      printf("%d] free_list:'%d', allocated_map:'%d'\n", i, freeListSize, allocatedMapSize);
+    }
+  }
 
   if (db_lock_ != nullptr) {
     env_->UnlockFile(db_lock_);
@@ -1044,19 +1085,33 @@ Status DBImpl::DoCompactionWork(CompactionState* compact) {
       compact->current_output()->largest.DecodeFrom(key);
       if (sst_type == kFileDescriptorSST) {
         compact->builder->Add(key, input->value());
+        // Close output file if it is big enough
+        if (compact->builder->FileSize() >=
+            compact->compaction->MaxOutputFileSize()) {
+          status = FinishCompactionOutputFile(compact, input);
+          // printf("fd] %d\n", i);
+          // i = 0;
+          
+          if (!status.ok()) {
+            break;
+          }
+        }
       } else if (sst_type == kPmemSST) {
-        compact->builder->AddToPmem(options_.pmem_skiplist, 
+        PmemSkiplist* pmem_skiplist;
+        uint64_t file_number = compact->current_output()->number;
+        pmem_skiplist = options_.pmem_skiplist[file_number % NUM_OF_SKIPLIST_MANAGER];
+        compact->builder->AddToPmem(pmem_skiplist, 
                       compact->current_output()->number, key, input->value());
-      }
-
-      // Close output file if it is big enough
-      if (compact->builder->FileSize() >=
-          compact->compaction->MaxOutputFileSize()) {
-        status = FinishCompactionOutputFile(compact, input);
-        if (!status.ok()) {
-          break;
+        // Close output file if it is big enough
+        if (compact->builder->NumEntries() >=
+            compact->compaction->MaxOutputEntriesNum() - 1) {
+          status = FinishCompactionOutputFile(compact, input);
+          if (!status.ok()) {
+            break;
+          }
         }
       }
+
     }
 
     input->Next();
@@ -1100,6 +1155,29 @@ Status DBImpl::DoCompactionWork(CompactionState* compact) {
   VersionSet::LevelSummaryStorage tmp;
   Log(options_.info_log,
       "compacted to: %s", versions_->LevelSummary(&tmp));
+
+  // [JH] Delete files from allocated_map
+  if (options_.sst_type == kPmemSST) {
+    PmemSkiplist* pmem_skiplist;
+    // L(i)
+    for (int i=0; i<compact->compaction->num_input_files(0); i++) {
+      uint64_t file_number = compact->compaction->input(0, i)->number;
+      pmem_skiplist = options_.pmem_skiplist[file_number % NUM_OF_SKIPLIST_MANAGER];
+      pmem_skiplist->DeleteFile(file_number);
+      // size_t freeListSize = pmem_skiplist->GetFreeListSize();
+      // size_t allocatedMapSize = pmem_skiplist->GetAllocatedMapSize();
+      // printf("%d] free_list:'%d', allocated_map:'%d'\n", i, freeListSize, allocatedMapSize);
+    }
+    // L(i+1)
+    for (int i=0; i<compact->compaction->num_input_files(1); i++) {
+      uint64_t file_number = compact->compaction->input(1, i)->number;
+      pmem_skiplist = options_.pmem_skiplist[file_number % NUM_OF_SKIPLIST_MANAGER];
+      pmem_skiplist->DeleteFile(file_number);
+      // size_t freeListSize = pmem_skiplist->GetFreeListSize();
+      // size_t allocatedMapSize = pmem_skiplist->GetAllocatedMapSize();
+      // printf("%d] free_list:'%d', allocated_map:'%d'\n", i, freeListSize, allocatedMapSize);
+    }
+  }
   return status;
 }
 

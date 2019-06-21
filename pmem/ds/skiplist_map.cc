@@ -68,7 +68,7 @@ struct store_last_node {
 	TOID(struct skiplist_map_node) path[SKIPLIST_LEVELS_NUM];
 };
 struct store_last_node last_node;
-TOID(struct skiplist_map_node) current_node[NUM_OF_PRE_ALLOC_NODE];
+// TOID(struct skiplist_map_node) current_node[NUM_OF_PRE_ALLOC_NODE];
 
 
 /*
@@ -77,15 +77,13 @@ TOID(struct skiplist_map_node) current_node[NUM_OF_PRE_ALLOC_NODE];
 int
 skiplist_map_clear(PMEMobjpool *pop, TOID(struct skiplist_map_node) map)
 {
-	while (!TOID_EQUALS(D_RO(map)->next[0], NULL_NODE)) {
-		TOID(struct skiplist_map_node) next = D_RO(map)->next[0];
+	TOID(struct skiplist_map_node) next = D_RO(map)->next[0];
+	while (!TOID_EQUALS(next, NULL_NODE)) {
 
-		uint8_t key_len = D_RO(next)->entry.key_len+STRING_PADDING;
-		char *buf = (char *)malloc(key_len);
-		void *ptr = pmemobj_direct(D_RO(next)->entry.key);
-		pmemobj_memcpy_persist(pop, buf, ptr, key_len);
-		skiplist_map_remove_free(pop, map, buf);
-		free(buf);
+		D_RW(next)->entry.key_len = 0;
+		D_RW(next)->entry.value_len = 0;
+		next = D_RO(next)->next[0];
+
 	}
 	return 0;
 }
@@ -251,6 +249,7 @@ skiplist_map_insert_find(PMEMobjpool *pop,
  */
 int
 skiplist_map_insert(PMEMobjpool *pop, TOID(struct skiplist_map_node) map,
+	TOID(struct skiplist_map_node)* current_node,
 	char *key, char *value, int key_len, int value_len, int index)
 	// char *key, PMEMoid value)
 {
@@ -258,11 +257,11 @@ skiplist_map_insert(PMEMobjpool *pop, TOID(struct skiplist_map_node) map,
 	int ret = 0;
 	/* Get from L0 */
 		// begin = std::chrono::steady_clock::now();
-	TOID(struct skiplist_map_node) new_node = D_RW(current_node[index])->next[0];
+	TOID(struct skiplist_map_node) new_node = D_RW(*current_node)->next[0];
 	if (TOID_IS_NULL(new_node) || TOID_EQUALS(new_node, NULL_NODE)) {
 		printf("[ERROR][Skiplist][insertion] Out of bound \n");
 	}
-	current_node[index] = new_node;
+	*current_node = new_node;
 	// 	end= std::chrono::steady_clock::now();
 	// std::cout << "insert0 = " << std::chrono::duration_cast<std::chrono::nanoseconds> (end - begin).count() <<"\n";
 	// TOID(struct skiplist_map_node) path[SKIPLIST_LEVELS_NUM];
@@ -343,7 +342,7 @@ skiplist_map_create_insert(PMEMobjpool *pop, TOID(struct skiplist_map_node) map)
  */
 int
 skiplist_map_create(PMEMobjpool *pop, TOID(struct skiplist_map_node) *map,
-	int index, void *arg)
+	TOID(struct skiplist_map_node)* current_node, int index, void *arg)
 {
 	int ret = 0;
 
@@ -362,7 +361,7 @@ skiplist_map_create(PMEMobjpool *pop, TOID(struct skiplist_map_node) *map,
 		}
 		/* Set current-node */
 		// printf("33\n");
-		current_node[index] = *map;
+		*current_node = *map;
 		// printf("44\n");
 
 		// printf(" - [DEBUG3] \n");
