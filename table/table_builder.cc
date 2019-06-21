@@ -144,7 +144,7 @@ void TableBuilder::AddToPmem(PmemSkiplist *pmem_skiplist, uint64_t number,
 // PROGRESS:
 void TableBuilder::AddToPmemByOID(PmemSkiplist *pmem_skiplist, uint64_t number,
                               const Slice& key, const Slice& value,
-                              PMEMoid *key_oid, PMEMoid *value_oid) {
+                              PMEMoid* node, PMEMoid *key_oid, PMEMoid *value_oid) {
   Rep* r = rep_;
   assert(!r->closed);
   if (!ok()) return;
@@ -159,7 +159,7 @@ void TableBuilder::AddToPmemByOID(PmemSkiplist *pmem_skiplist, uint64_t number,
   // printf("%d] %s\n", number, key.ToString().c_str());
   // pmem_skiplist->Insert(number, (char *)key.data(), (char *)value.data());  
   // printf("3]\n");
-  pmem_skiplist->InsertByOID(key_oid, value_oid, 
+  pmem_skiplist->InsertByOID(node, key_oid, value_oid, 
                         key.size(), value.size(), number);
   // printf("4]\n");
 }

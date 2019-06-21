@@ -56,12 +56,13 @@ map_skiplist_check(PMEMobjpool *pop, TOID(struct map) map)
  * map_skiplist_create -- wrapper for skiplist_map_new
  */
 static int
-map_skiplist_create(PMEMobjpool *pop, TOID(struct map) *map, int index, void *arg)
+map_skiplist_create(PMEMobjpool *pop, TOID(struct map) *map, TOID(struct map) *current_node, int index, void *arg)
 {
 	TOID(struct skiplist_map_node) *skiplist_map =
 		(TOID(struct skiplist_map_node) *)map;
+	TOID(struct skiplist_map_node) *current_node_ = (TOID(struct skiplist_map_node) *)current_node;
 
-	return skiplist_map_create(pop, skiplist_map, index, arg);
+	return skiplist_map_create(pop, skiplist_map, current_node_, index, arg);
 }
 
 /*
@@ -80,13 +81,14 @@ map_skiplist_destroy(PMEMobjpool *pop, TOID(struct map) *map)
  * map_skiplist_insert -- wrapper for skiplist_map_insert
  */
 static int
-map_skiplist_insert(PMEMobjpool *pop, TOID(struct map) map,
+map_skiplist_insert(PMEMobjpool *pop, TOID(struct map) map, TOID(struct map)* current_node,
 		char *key, char *value, int key_len, int value_len, int index)
 {
 	TOID(struct skiplist_map_node) skiplist_map;
 	TOID_ASSIGN(skiplist_map, map.oid);
+	TOID(struct skiplist_map_node) *current_node_ = (TOID(struct skiplist_map_node) *)current_node;
 
-	return skiplist_map_insert(pop, skiplist_map, key, value, 
+	return skiplist_map_insert(pop, skiplist_map, current_node_, key, value, 
 																key_len, value_len, index);
 }
 
@@ -94,13 +96,14 @@ map_skiplist_insert(PMEMobjpool *pop, TOID(struct map) map,
  * map_skiplist_insert_by_oid -- wrapper for skiplist_map_insert_by_oid
  */
 static int
-map_skiplist_insert_by_oid(PMEMobjpool *pop, TOID(struct map) map, 
-	PMEMoid *key_oid, PMEMoid *value_oid, int key_len, int value_len, int index)
+map_skiplist_insert_by_oid(PMEMobjpool *pop, TOID(struct map) map, TOID(struct map)* current_node,
+ PMEMoid* node, PMEMoid *key_oid, PMEMoid *value_oid, int key_len, int value_len, int index)
 {
 	TOID(struct skiplist_map_node) skiplist_map;
 	TOID_ASSIGN(skiplist_map, map.oid);
+	TOID(struct skiplist_map_node) *current_node_ = (TOID(struct skiplist_map_node) *)current_node;
 
-	return skiplist_map_insert_by_oid(pop, skiplist_map, key_oid, value_oid, key_len,
+	return skiplist_map_insert_by_oid(pop, skiplist_map, current_node_, node, key_oid, value_oid, key_len,
 		value_len, index);
 }
 

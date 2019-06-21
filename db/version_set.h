@@ -367,6 +367,10 @@ class Compaction {
   // is successful.
   void ReleaseInputs();
 
+  // JH
+  uint64_t MaxOutputEntriesNum() const {return MAX_SKIPLIST_NODE_SIZE; };
+
+
  private:
   friend class Version;
   friend class VersionSet;

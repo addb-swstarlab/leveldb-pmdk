@@ -49,6 +49,7 @@ class IteratorWrapper {
   void SeekToLast()         { assert(iter_); iter_->SeekToLast();  Update(); }
   PMEMoid* key_oid() const { assert(iter_);  return iter_->key_oid(); }
   PMEMoid* value_oid() const { assert(iter_); return iter_->value_oid();}
+  PMEMoid* node() const {assert(iter_); return iter_->node();}
  private:
   void Update() {
     valid_ = iter_->Valid();

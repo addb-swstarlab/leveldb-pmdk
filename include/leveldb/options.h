@@ -163,8 +163,8 @@ struct LEVELDB_EXPORT Options {
   const FilterPolicy* filter_policy;
 
   // JH 
-  PmemSkiplist *pmem_skiplist;
-  PmemIterator *pmem_internal_iterator;
+  PmemSkiplist **pmem_skiplist;
+  PmemIterator **pmem_internal_iterator;
   SSTMakerType sst_type;
 
   // Create an Options object with default values for all fields.

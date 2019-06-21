@@ -44,9 +44,9 @@
 #define SKIPLIST_MAP_TYPE_OFFSET 2020
 #endif
 
-#define NUM_OF_PRE_ALLOC_NODE 32077 // TODO: Need to adjust
-#define PRE_ALLOC_KEY_SIZE 26 // 16
-#define PRE_ALLOC_VALUE_SIZE 120 // 120
+#define NUM_OF_PRE_ALLOC_NODE 28300 // TODO: Need to adjust
+#define PRE_ALLOC_KEY_SIZE 24 // 16
+#define PRE_ALLOC_VALUE_SIZE 100 // 120
 #define STRING_PADDING 0 // \0
 // #define INSERT_PADDING 5 // kHeader, etc.
 #define NUM_OF_TAG_BYTES 8
@@ -62,13 +62,13 @@ TOID_DECLARE(struct skiplist_map_node, SKIPLIST_MAP_TYPE_OFFSET + 0);
 
 int skiplist_map_check(PMEMobjpool *pop, TOID(struct skiplist_map_node) map);
 int skiplist_map_create(PMEMobjpool *pop, TOID(struct skiplist_map_node) *map,
-	int index, void *arg);
+	TOID(struct skiplist_map_node)* current_node, int index, void *arg);
 int skiplist_map_destroy(PMEMobjpool *pop, TOID(struct skiplist_map_node) *map);
 int skiplist_map_insert(PMEMobjpool *pop, TOID(struct skiplist_map_node) map,
-		char *key, char *value, int key_len, int value_len, int index);
+	TOID(struct skiplist_map_node)* current_node,	char *key, char *value, int key_len, int value_len, int index);
 int skiplist_map_insert_by_oid(PMEMobjpool *pop, 
-		TOID(struct skiplist_map_node) map, 
-		PMEMoid *key_oid, PMEMoid *value_oid, int key_len, int value_len,
+		TOID(struct skiplist_map_node) map, TOID(struct skiplist_map_node)* current_node,
+		PMEMoid* node, PMEMoid *key_oid, PMEMoid *value_oid, int key_len, int value_len,
 		int index);
 int skiplist_map_insert_null_node(PMEMobjpool *pop, 
 		TOID(struct skiplist_map_node) map, int index);

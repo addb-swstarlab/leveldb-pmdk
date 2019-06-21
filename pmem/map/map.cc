@@ -79,10 +79,11 @@ map_ctx_free(struct map_ctx *mapc)
  * map_create -- create new map
  */
 int
-map_create(struct map_ctx *mapc, TOID(struct map) *map, int index, void *arg)
+map_create(struct map_ctx *mapc, TOID(struct map) *map, TOID(struct map)* current_node,
+					 int index, void *arg)
 {
 	ABORT_NOT_IMPLEMENTED(mapc, create);
-	return mapc->ops->create(mapc->pop, map, index, arg);
+	return mapc->ops->create(mapc->pop, map, current_node, index, arg);
 }
 
 /*
@@ -119,11 +120,11 @@ map_check(struct map_ctx *mapc, TOID(struct map) map)
  * map_insert -- insert key value pair
  */
 int
-map_insert(struct map_ctx *mapc, TOID(struct map) map,
+map_insert(struct map_ctx *mapc, TOID(struct map) map, TOID(struct map)* current_node,
 	char *key, char *value, int key_len, int value_len, int index)
 {
 	ABORT_NOT_IMPLEMENTED(mapc, insert);
-	return mapc->ops->insert(mapc->pop, map, key, value, 
+	return mapc->ops->insert(mapc->pop, map, current_node, key, value, 
 														key_len, value_len, index);
 }
 
@@ -131,11 +132,11 @@ map_insert(struct map_ctx *mapc, TOID(struct map) map,
  * map_insert_by_oid -- insert by kv-oid
  */
 int
-map_insert_by_oid(struct map_ctx *mapc, TOID(struct map) map,
-	PMEMoid *key_oid, PMEMoid *value_oid, int key_len, int value_len, int index)
+map_insert_by_oid(struct map_ctx *mapc, TOID(struct map) map, TOID(struct map)* current_node,
+	PMEMoid* node, PMEMoid *key_oid, PMEMoid *value_oid, int key_len, int value_len, int index)
 {
 	ABORT_NOT_IMPLEMENTED(mapc, insert_by_oid);
-	return mapc->ops->insert_by_oid(mapc->pop, map, key_oid, value_oid, key_len,
+	return mapc->ops->insert_by_oid(mapc->pop, map, current_node, node, key_oid, value_oid, key_len,
 		value_len, index);
 }
 

@@ -27,7 +27,7 @@ Status BuildTable(const std::string& dbname,
                   Iterator* iter,
                   FileMetaData* meta) {
   SSTMakerType sst_type = options.sst_type;
-  std::chrono::steady_clock::time_point begin = std::chrono::steady_clock::now();
+  // std::chrono::steady_clock::time_point begin = std::chrono::steady_clock::now();
 
   Status s;
   meta->file_size = 0;
@@ -105,11 +105,12 @@ Status BuildTable(const std::string& dbname,
       TableBuilder* builder = new TableBuilder(options, nullptr);
       meta->smallest.DecodeFrom(iter->key());
 
-      PmemSkiplist* pmem_skiplist = options.pmem_skiplist;
       uint64_t file_number;
       FileType type;
       if (ParseFileName(fname.substr(fname.rfind("/")+1, fname.size()), &file_number, &type) &&
             type != kDBLockFile) {
+          PmemSkiplist* pmem_skiplist;
+          pmem_skiplist = options.pmem_skiplist[file_number % NUM_OF_SKIPLIST_MANAGER];
           // DEBUG:
           // printf("file_number: %d\n", file_number);
           // int i =0;
@@ -138,8 +139,8 @@ Status BuildTable(const std::string& dbname,
     }
   }
   // TODO: Minimize time to insertion
-  std::chrono::steady_clock::time_point end= std::chrono::steady_clock::now();
-  std::cout << "result = " << std::chrono::duration_cast<std::chrono::nanoseconds> (end - begin).count() <<std::endl;
+  // std::chrono::steady_clock::time_point end= std::chrono::steady_clock::now();
+  // std::cout << "result = " << std::chrono::duration_cast<std::chrono::nanoseconds> (end - begin).count() <<std::endl;
   return s;
 }
 

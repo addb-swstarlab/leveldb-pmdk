@@ -218,7 +218,7 @@ class Version::LevelFilesConcatIteratorFromPmem : public Iterator {
  public:
   LevelFilesConcatIteratorFromPmem(
                        const InternalKeyComparator& icmp,
-                       PmemSkiplist *pmem_skiplist,
+                       PmemSkiplist **pmem_skiplist,
                        const std::vector<FileMetaData*>* flist)
       : icmp_(icmp), flist_(flist), size_(flist->size()), current_(nullptr)
         // ,index_(flist->size()) 
@@ -227,9 +227,9 @@ class Version::LevelFilesConcatIteratorFromPmem : public Iterator {
     pmem_iterator = new PmemIterator*[size_];
     // Make PmemIterators based on each index
     for (int i=0; i<size_; i++) {
-      // printf("i %d, number %d\n", i, flist_->at(i)->number);
-      // pmem_iterator[i] = new PmemIterator(flist_->at(i)->number, pmem_skiplist);
-      pmem_iterator[i] = new PmemIterator(flist_->at(i)->number, pmem_skiplist);
+      uint64_t file_number = flist_->at(i)->number;
+      pmem_iterator[i] = new PmemIterator(file_number, 
+                                          pmem_skiplist[file_number % NUM_OF_SKIPLIST_MANAGER]); 
     }
     // printf("Constructor End\n");
   }
@@ -237,7 +237,7 @@ class Version::LevelFilesConcatIteratorFromPmem : public Iterator {
     for (int i=0; i<size_; i++) {
       delete pmem_iterator[i];
     }
-    delete pmem_iterator;
+    delete[] pmem_iterator;
   }
   virtual bool Valid() const {
     return (current_ != nullptr && current_->Valid());
@@ -316,6 +316,9 @@ class Version::LevelFilesConcatIteratorFromPmem : public Iterator {
   }
   PMEMoid* value_oid() const {
     return current_->value_oid();
+  }
+  PMEMoid* node() const {
+    return current_->node();
   }
  private:
   InternalKeyComparator icmp_;

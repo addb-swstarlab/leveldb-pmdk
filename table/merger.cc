@@ -140,6 +140,9 @@ class MergingIterator : public Iterator {
   PMEMoid* value_oid() const {
     return current_->value_oid();
   }
+  PMEMoid* node() const {
+    return current_->node();
+  }
  private:
   void FindSmallest();
   void FindLargest();

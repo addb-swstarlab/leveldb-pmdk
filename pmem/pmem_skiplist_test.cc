@@ -186,40 +186,40 @@ TEST (PmemSkiplistManagerTest, Skiplist_manager) {
 		// } TX_END
 		// printf("[5]\n");
 		/* NOTE: create */
-		for (int i=0; i<SKIPLIST_MANAGER_LIST_SIZE; i++) {
-			int res = map_create(mapc, &(skiplists[i].map), i, &args); // [ERROR] D_RW need TOID
-			if (res) printf("[CREATE ERROR %d] %d\n",i ,res);
-			else printf("[CREATE SUCCESS %d] %d\n",i ,res);	
-			map[i] = skiplists[i].map;
-		}
+		// for (int i=0; i<SKIPLIST_MANAGER_LIST_SIZE; i++) {
+		// 	int res = map_create(mapc, &(skiplists[i].map), i, &args); // [ERROR] D_RW need TOID
+		// 	if (res) printf("[CREATE ERROR %d] %d\n",i ,res);
+		// 	else printf("[CREATE SUCCESS %d] %d\n",i ,res);	
+		// 	map[i] = skiplists[i].map;
+		// }
 		/* NOTE: bulk insert */
-		for (int i=0; i<SKIPLIST_MANAGER_LIST_SIZE; i++) {
-			// for (int j=0; j<NUM_OF_PRE_ALLOC_NODE; j++) {
-			chrono::steady_clock::time_point begin, end;
+		// for (int i=0; i<SKIPLIST_MANAGER_LIST_SIZE; i++) {
+		// 	// for (int j=0; j<NUM_OF_PRE_ALLOC_NODE; j++) {
+		// 	chrono::steady_clock::time_point begin, end;
 
-			for (int j=0; j<5; j++) {
-			// for (int j=0; j<SKIPLIST_BULK_INSERT_NUM; j++) {
-				char key[] = "key-";
-				stringstream ss_key, ss_value;
-				ss_key << key << i << "-" << j;
-				char value[] = "value-";
-				// make max 100bytes
-				ss_value << value << i << "-" << j 
-				<< ".......................................................................................";
-				// << "..............................................";
-				// printf("'%s'-'%s'\n", (char *)ss_key.str().c_str(), (char *)ss_value.str().c_str());
-			begin = std::chrono::steady_clock::now();
-				int res = map_insert(mapc, map[i], 
-									(char *)ss_key.str().c_str(), (char *)ss_value.str().c_str(), 
-									ss_key.str().size(), ss_value.str().size(), i);
-			end = std::chrono::steady_clock::now();
-			std::cout << "insert"<< i <<" = " << std::chrono::duration_cast<std::chrono::nanoseconds> (end - begin).count() <<"\n";
-				if(res) { fprintf(stderr, "[ERROR] insert %d-%d\n", i, j);  abort();} 
-				// else if (!res && (j%10==0)) printf("insert %d] success\n", j);
-			}
+		// 	for (int j=0; j<5; j++) {
+		// 	// for (int j=0; j<SKIPLIST_BULK_INSERT_NUM; j++) {
+		// 		char key[] = "key-";
+		// 		stringstream ss_key, ss_value;
+		// 		ss_key << key << i << "-" << j;
+		// 		char value[] = "value-";
+		// 		// make max 100bytes
+		// 		ss_value << value << i << "-" << j 
+		// 		<< ".......................................................................................";
+		// 		// << "..............................................";
+		// 		// printf("'%s'-'%s'\n", (char *)ss_key.str().c_str(), (char *)ss_value.str().c_str());
+		// 	begin = std::chrono::steady_clock::now();
+		// 		int res = map_insert(mapc, map[i], 
+		// 							(char *)ss_key.str().c_str(), (char *)ss_value.str().c_str(), 
+		// 							ss_key.str().size(), ss_value.str().size(), i);
+		// 	end = std::chrono::steady_clock::now();
+		// 	std::cout << "insert"<< i <<" = " << std::chrono::duration_cast<std::chrono::nanoseconds> (end - begin).count() <<"\n";
+		// 		if(res) { fprintf(stderr, "[ERROR] insert %d-%d\n", i, j);  abort();} 
+		// 		// else if (!res && (j%10==0)) printf("insert %d] success\n", j);
+		// 	}
 
-			printf("Insert %d] End\n", i);
-		}
+		// 	printf("Insert %d] End\n", i);
+		// }
 
 	} 
 	// NOTE: Open
